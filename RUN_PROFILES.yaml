@@ -1,0 +1,29 @@
+{
+  "default_profile": "quick_test",
+  "allowed_profiles": {
+    "quick_test": {
+      "description": "Minimal full-chain debug profile. Still a real integrated run.",
+      "mode_default": "integrated_supervisor",
+      "v6_plan_reuse_hours": 24,
+      "v5_cycles": 1,
+      "operator_use": "debugging the integrated chain with lower runtime cost"
+    },
+    "overnight": {
+      "description": "Heavy nightly profile for deeper V5 research.",
+      "mode_default": "integrated_supervisor",
+      "v6_plan_reuse_hours": 24,
+      "v5_cycles": 8,
+      "operator_use": "nightly research when long runtime is acceptable"
+    }
+  },
+  "allowed_modes": [
+    "integrated_supervisor",
+    "resume_downstream",
+    "full_cycle",
+    "ingest_only",
+    "extract_only",
+    "gap_only",
+    "plan_only",
+    "bridge_only"
+  ]
+}

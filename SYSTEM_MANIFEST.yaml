@@ -1,0 +1,32 @@
+{
+  "project_id": "ashare_quant_runtime",
+  "law_version": 1,
+  "canonical": {
+    "formal_operator_entry": "F:\\quant_data\\Ashare\\launch_canonical.py",
+    "wrapped_business_root_entry": "F:\\quant_data\\Ashare\\main_research_runner.py",
+    "live_runtime_root": "F:\\quant_data\\Ashare\\quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean",
+    "default_mode": "integrated_supervisor",
+    "default_profile": "quick_test",
+    "formal_output_root": "F:\\quant_data\\Ashare\\outputs\\canonical_runs",
+    "formal_run_manifest_name": "run_manifest.json"
+  },
+  "paths": {
+    "repo_root": "F:\\quant_data\\Ashare",
+    "live_data_root": "F:\\quant_data\\Ashare\\data",
+    "active_v6_root": "F:\\quant_data\\Ashare\\quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean",
+    "active_v5_runtime_root": "F:\\quant_data\\Ashare\\quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\v5_gpu_runtime",
+    "archive_roots": [
+      "F:\\quant_data\\早期实验数据\\Ashare_legacy_code_20260321"
+    ],
+    "experiment_roots": [
+      "F:\\quant_data\\Ashare\\outputs",
+      "F:\\quant_data\\Ashare\\quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\examples"
+    ]
+  },
+  "directory_definitions": {
+    "live": "Current runtime code or operator-facing output used by the official chain.",
+    "archive": "Historical rollback/reference assets. Not a live source of truth.",
+    "experiment": "Samples, generated workspaces, scratch outputs, or other non-canonical artifacts.",
+    "deprecated": "Transitional paths that must point to the current replacement."
+  }
+}

@@ -22,18 +22,37 @@
 - Snapshot date: `2026-03-21`
 - Canonical root entry: `F:\quant_data\Ashare\main_research_runner.py`
 - Default mode: `integrated_supervisor`
-- Default profile: `overnight`
+- Default profile: `quick_test`
+- Root layout note:
+  - active runtime code now remains under `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean`
+  - the active V5.1 research brain is embedded under `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime`
+  - archived legacy root packages were moved to `F:\quant_data\早期实验数据\Ashare_legacy_code_20260321`
+- Git sync behavior:
+  - local commits auto-push to GitHub in this workspace through `.githooks/post-commit`
+  - use `$env:DISABLE_AUTO_PUSH='1'; git commit -m "..."; Remove-Item Env:DISABLE_AUTO_PUSH` when a local-only commit is needed in PowerShell
+- Google Drive dev-log mirror:
+  - `CODEX_DEV_LOG.md` can be mirrored into `G:\我的云端硬盘\Ashare_backups\codex_dev_log_mirror`
+  - watcher script: `F:\quant_data\Ashare\scripts\sync_codex_dev_log_to_gdrive.py`
+  - start script: `F:\quant_data\Ashare\scripts\start_codex_dev_log_sync.ps1`
+  - stop script: `F:\quant_data\Ashare\scripts\stop_codex_dev_log_sync.ps1`
+  - autostart install script: `F:\quant_data\Ashare\scripts\install_codex_dev_log_sync_autostart.ps1`
+  - autostart remove script: `F:\quant_data\Ashare\scripts\remove_codex_dev_log_sync_autostart.ps1`
+  - scheduled task name: `Ashare Codex Dev Log Mirror`
+  - startup behavior: logon trigger with 2-minute delay, hidden PowerShell launcher, low-priority watcher, 5-second poll interval
 - Canonical research Python:
   - `C:\Users\Administrator\PyCharmMiscProject\.venv\Scripts\python.exe`
 - Canonical Gmtrade Python:
   - `F:\quant_data\Ashare\venvs\gmtrade39\Scripts\python.exe`
 - Current recommended commands:
+  - `python F:\quant_data\Ashare\main_research_runner.py`
   - `python F:\quant_data\Ashare\main_research_runner.py --profile overnight`
   - `python F:\quant_data\Ashare\main_research_runner.py --profile quick_test`
   - `python F:\quant_data\Ashare\main_research_runner.py --mode resume_downstream --profile quick_test`
 - Latest confirmed milestone:
   - V6 research plan generation confirmed on `2026-03-21 14:09:34`
   - quick_test V5 cycle observed generating new candidates on `2026-03-21 14:39:15`
+  - downstream recovery plus fresh portfolio output confirmed on `2026-03-21 15:32`
+  - execution bridge connectivity confirmed on `2026-03-21 15:39:49`
 - Current truth:
   - old V6 readmes pointing to `run_v6_full_cycle_real.py` are stale
   - this log is the current source of truth
@@ -47,14 +66,18 @@
 ## Run Profile Quick Reference
 | Profile | Intent | V6 Plan Reuse | V5 Cycles | Use Case | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `overnight` | full nightly research | `24h` | `8` | sleep-time full research pass | default profile; highest runtime cost |
-| `quick_test` | minimal full-chain debug | `24h` | `1` | faster debugging of the integrated chain | not a smoke test; still runs the real chain |
+| `overnight` | full nightly research | `24h` | `8` | sleep-time full research pass | heavy nightly mode; highest runtime cost |
+| `quick_test` | minimal full-chain debug | `24h` | `1` | faster debugging of the integrated chain | current code default; not a smoke test |
 
 ## Known Dangerous Operations
 - Do not run the full integrated pipeline just to validate a small code edit.
 - Do not switch the Gmtrade bridge off `gmtrade39`.
 - Do not hand-edit generated runtime configs such as `hub_config.v6.runtime.*.json`; they are regenerated.
 - Do not assume `F:\quant_data\Ashare` is a normal git repository.
+- Do not forget this workspace auto-pushes after `git commit` unless `DISABLE_AUTO_PUSH=1` is set.
+- Do not assume the Google Drive mirror is active after a reboot unless the watcher has been started again.
+- Do not restore archived legacy packages back into the repo root unless you are intentionally undoing the March 21 legacy-code cleanup.
+- If the dev-log mirror appears broken after boot, check the scheduled task `Ashare Codex Dev Log Mirror` before changing the sync scripts.
 - Do not spam Tushare news endpoints when quotas are already tight.
 - Do not echo tokens or duplicate secrets into normal user-facing output.
 - Do not treat `quick_test` as a seconds-level smoke test; it is still a real integrated run.
@@ -72,6 +95,26 @@
   7. Portfolio recommendation generation
   8. Gmtrade simulation execution
   9. Daily performance feedback back into the next run
+
+## Active Runtime vs Archived Roots
+- Active root entry:
+  - `F:\quant_data\Ashare\main_research_runner.py`
+- Active runtime package tree:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean`
+- Active V6 orchestrator and supervisor:
+  - `...\hub_v6`
+- Active V5.1 research brain and iterator:
+  - `...\v5_gpu_runtime`
+  - launcher: `...\v5_gpu_runtime\run_research_hub_v5_1_local.py`
+  - main control: `...\v5_gpu_runtime\hub\cli_v5.py`
+- Active downstream outputs:
+  - `F:\quant_data\Ashare\data`
+- Archived root-level legacy packages:
+  - `F:\quant_data\早期实验数据\Ashare_legacy_code_20260321\quant_research_hub_v5`
+  - `F:\quant_data\早期实验数据\Ashare_legacy_code_20260321\quant_research_hub_v5_1`
+- Operator warning:
+  - The archived root-level `quant_research_hub_v5*` folders are not the live research engine anymore.
+  - If you need the real research brain, inspect `v5_gpu_runtime` inside the active package tree, not the archived root copies.
 
 ## Core Module Relationship Map
 - Root entry and runtime config:
@@ -103,6 +146,9 @@
     - `performance_feedback.json`
     - `last_token_plan.json`
 - V5.1 GPU research runtime:
+  - The live V5.1 runtime is the embedded package tree `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime`.
+  - The archived root-level `quant_research_hub_v5` and `quant_research_hub_v5_1` directories are not imported by `main_research_runner.py`.
+  - `v5_gpu_runtime/run_research_hub_v5_1_local.py` launches the research brain and immediately hands off to `v5_gpu_runtime/hub/cli_v5.py`.
   - `v5_gpu_runtime/hub/cli_v5.py` drives the adaptive research loop and writes `controller_state.json` plus per-cycle `cycle_summary.json`.
   - `candidate_factory.py` creates route/model/feature candidates, partly influenced by bridge overrides and performance feedback.
   - `codegen.py` builds candidate-local feature/model/training files in each lab workspace.
@@ -158,7 +204,7 @@
 ## Config Surface
 | Config | Location | Current | Impact |
 | --- | --- | --- | --- |
-| `DEFAULT_RUN_PROFILE` | `hub_v6/local_settings.py` | `overnight` | changes which runtime profile is used when no `--profile` is passed |
+| `DEFAULT_RUN_PROFILE` | `hub_v6/local_settings.py` | `quick_test` | changes which runtime profile is used when no `--profile` is passed |
 | `TOKEN_PLAN_MIN_INTERVAL_HOURS` | `hub_v6/local_settings.py` | `24` | controls V6 research-plan reuse frequency |
 | `OVERNIGHT_V5_GPU_MAX_CYCLES_PER_TICK` | `hub_v6/local_settings.py` | `8` | controls overnight runtime and research depth |
 | `QUICK_TEST_V5_GPU_MAX_CYCLES_PER_TICK` | `hub_v6/local_settings.py` | `1` | controls quick_test runtime and debugging speed |
@@ -167,11 +213,15 @@
 | `ENABLE_TUSHARE_NEWS` / `ENABLE_TUSHARE_MAJOR_NEWS` | `hub_v6/local_settings.py` | `True / True` | enables Tushare message-layer inputs |
 | `TUSHARE_NEWS_MAX_SOURCES_PER_RUN` | `hub_v6/local_settings.py` | `1` | affects short-news breadth vs quota safety |
 | `TUSHARE_MAJOR_NEWS_MAX_SOURCES_PER_RUN` | `hub_v6/local_settings.py` | `3` | affects major-news breadth vs quota safety |
+| `V5_PROJECT_ROOT` | `hub_v6/local_settings.py` | `F:\quant_data\Ashare\quant_research_hub_v5_1_gpu_integrated` | legacy-named metadata field passed into V5 config; not the actual script launch path |
+| `V5_HUB_OUTPUT_ROOT` | `hub_v6/local_settings.py` | `F:\quant_data\Ashare\data\research_hub_v5_1_gpu_integrated` | current V5 output root consumed by registry, cycle summaries, and portfolio recommendation |
 
 ## Known Issues
 - OpenAI upstream network resets can still happen occasionally; the client now retries transient failures and auto-drops unsupported `reasoning.effort`.
 - Tushare news can still return zero rows when upstream quota is exhausted even after local quota guarding.
 - V5.1 runtime exposes sparse heartbeat artifacts while a cycle is running; operators often need to infer progress from candidate file timestamps.
+- `hub_v6/local_settings.py` still contains legacy V5 naming such as `V5_PROJECT_ROOT`, which can mislead readers into thinking a root-level package is launched directly.
+- The actual V5 launcher path is package-local `...\v5_gpu_runtime\run_research_hub_v5_1_local.py`; treat `project_root` inside V5 JSON as required config metadata, not launch-path truth.
 
 ## Deferred Work
 - Improve multi-source news coverage beyond Tushare quota limits.
@@ -183,14 +233,18 @@
   - Reason: multiple legacy V6 entrypoints were diverging; one root entry is easier to operate.
   - Alternatives considered: keep `run_v6_full_cycle_real.py` as primary.
   - Consequence: old V6 runtime readmes are now historical.
-- Decision: default profile remains `overnight`, not `quick_test`.
-  - Reason: the user treats quick_test as a debugging mode, not the daily default.
-  - Alternatives considered: make quick_test the default for safety.
-  - Consequence: one-click default remains the heavier research path.
+- Decision: documentation must reflect the current code default profile as `quick_test`.
+  - Reason: `hub_v6/local_settings.py` currently sets `DEFAULT_RUN_PROFILE = "quick_test"`; handoff notes must track code truth, not stale intent.
+  - Alternatives considered: keep the docs saying `overnight` because that was the earlier operator preference.
+  - Consequence: operators must pass `--profile overnight` explicitly when they want the heavy nightly path.
 - Decision: keep dual Python environments.
   - Reason: Gmtrade does not support the main Python runtime used by the research stack.
   - Alternatives considered: unify all runtimes under one interpreter.
   - Consequence: execution-bridge environment must be protected from accidental switching.
+- Decision: the archived root-level `quant_research_hub_v5*` directories are now historical only; the live research brain is the embedded `v5_gpu_runtime`.
+  - Reason: `main_research_runner.py` and `hub_v6/supervisor.py` launch the package-local V5 runtime directly.
+  - Alternatives considered: treat the archived root-level copy as still active.
+  - Consequence: future debugging must inspect `v5_gpu_runtime` inside the active package tree rather than the archived root packages.
 - Decision: message-layer logic now uses evidence quality and anti-overfit weighting instead of raw title importance alone.
   - Reason: title-driven signals were too easy to overfit.
   - Alternatives considered: keep simple rule score or hardcode more keywords.
@@ -245,7 +299,7 @@
 - Older V6 readmes still point to `run_v6_full_cycle_real.py`. Treat that as historical documentation.
 - The real root entry in the current integrated system is `main_research_runner.py`.
 - V6 is now the orchestrator and supervisor layer.
-- V5.1 remains the heavy research engine.
+- V5.1 remains the heavy research engine, but the live copy is the embedded `v5_gpu_runtime`, not the archived root-level `quant_research_hub_v5_1`.
 - The execution bridge is now part of the main supervised flow, not a separate side package.
 - Portfolio recommendation is a first-class output in the daily chain.
 
@@ -286,6 +340,31 @@
 
 ## Change Log
 All timestamps below are local file write times in the current workspace and should be read as Asia/Shanghai local time.
+
+### 2026-03-21 18:06
+- Type:
+  - `docs`
+- Scope:
+  - `infra`
+- Files:
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+  - `F:\quant_data\Ashare\AGENTS.md`
+- Change:
+  - Re-audited the real integrated call chain and corrected stale documentation that still implied `overnight` was the default profile.
+  - Added an explicit `Active Runtime vs Archived Roots` section clarifying that the live research brain is the embedded `v5_gpu_runtime`, while root-level `quant_research_hub_v5*` copies are now archived only.
+  - Documented the remaining naming debt around `V5_PROJECT_ROOT` and `project_root` so future sessions do not mistake config metadata for the actual launcher path.
+- Impact:
+  - Future Codex sessions and the operator now have a cleaner source of truth for where the live modules actually run.
+  - No runtime behavior changed.
+- Validation:
+  - Manually re-read `main_research_runner.py`, `hub_v6/supervisor.py`, `hub_v6/local_settings.py`, and `v5_gpu_runtime/hub/config_utils.py`.
+  - Verified the active V5 launcher path still resolves inside `quant_research_hub_v6_repacked_clean\...\v5_gpu_runtime`.
+  - No code execution and no full pipeline run.
+- Compatibility:
+  - Backward compatible.
+  - This change corrects stale handoff text only.
+- Rollback:
+  - Revert the doc updates if a later code change restores a different default profile or reintroduces a root-level V5 runtime as the live path.
 
 ### 2026-03-21 15:52
 - Type:
@@ -530,3 +609,147 @@ All timestamps below are local file write times in the current workspace and sho
   - New clones will require developers to create their own local settings/runtime configs from example files.
 - Rollback:
   - Remove or relax the new `.gitignore` rules and restage the previously excluded files if a private-only repository later needs to track them.
+
+### 2026-03-21 17:41
+- Type:
+  - `ops`
+- Scope:
+  - `infra`
+- Files:
+  - `F:\quant_data\Ashare\.githooks\post-commit`
+  - `F:\quant_data\Ashare\.gitattributes`
+  - `F:\quant_data\Ashare\AGENTS.md`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added a local `post-commit` hook under `.githooks` so this workspace auto-pushes to GitHub after each successful local commit.
+  - Added an opt-out switch for PowerShell: `$env:DISABLE_AUTO_PUSH='1'; git commit -m "..."; Remove-Item Env:DISABLE_AUTO_PUSH`.
+  - Added `.gitattributes` rule forcing LF line endings under `.githooks` so the shell hook stays executable on Windows Git.
+  - Documented the new auto-push behavior in the stable snapshot, dangerous-operations section, and AGENTS handoff notes.
+- Impact:
+  - Normal `git commit` now also triggers a GitHub push in this workspace.
+  - Operators need to remember that a commit is no longer local-only unless they explicitly disable auto-push for that command.
+- Validation:
+  - Wrote the hook file and configured `core.hooksPath` locally.
+  - Staged the hook/doc updates.
+  - No extra commit, no test push, and no pipeline run were performed.
+- Compatibility:
+  - Backward compatible with current repo contents.
+  - Hook activation is local to this workspace because `core.hooksPath` is stored in local git config.
+- Rollback:
+  - Run `git config --unset core.hooksPath` and remove `.githooks/post-commit` if you want to return to manual push behavior.
+
+### 2026-03-21 17:38
+- Type:
+  - `ops`
+- Scope:
+  - `docs`
+- Files:
+  - `F:\quant_data\Ashare\scripts\sync_codex_dev_log_to_gdrive.py`
+  - `F:\quant_data\Ashare\scripts\start_codex_dev_log_sync.ps1`
+  - `F:\quant_data\Ashare\scripts\stop_codex_dev_log_sync.ps1`
+  - `F:\quant_data\Ashare\AGENTS.md`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added a lightweight watcher that mirrors `CODEX_DEV_LOG.md` into Google Drive whenever the file changes.
+  - Added PowerShell start/stop scripts for the watcher and documented the mirror path plus operational caveats.
+  - Started the watcher in the current session after validating one-shot sync behavior.
+- Impact:
+  - Future edits to `CODEX_DEV_LOG.md` in this session will automatically produce both a latest copy and timestamped history copies under Google Drive.
+  - The mirror is session-local unless the watcher is started again after reboot.
+- Validation:
+  - `python -m py_compile` passed for `scripts/sync_codex_dev_log_to_gdrive.py`.
+  - One-shot sync copied the log to `G:\我的云端硬盘\Ashare_backups\codex_dev_log_mirror`.
+  - Verified a running background watcher process: `pythonw.exe` with `sync_codex_dev_log_to_gdrive.py`.
+- Compatibility:
+  - Backward compatible with current repo behavior.
+  - No change to the research/execution pipeline.
+- Rollback:
+  - Stop the watcher with `scripts/stop_codex_dev_log_sync.ps1` and delete the `scripts/sync_codex_dev_log_to_gdrive.py` family if the mirror is no longer wanted.
+
+### 2026-03-21 17:50
+- Type:
+  - `ops`
+- Scope:
+  - `infra`
+- Files:
+  - `F:\quant_data\Ashare\scripts\sync_codex_dev_log_to_gdrive.py`
+  - `F:\quant_data\Ashare\scripts\start_codex_dev_log_sync.ps1`
+  - `F:\quant_data\Ashare\scripts\stop_codex_dev_log_sync.ps1`
+  - `F:\quant_data\Ashare\scripts\install_codex_dev_log_sync_autostart.ps1`
+  - `F:\quant_data\Ashare\scripts\remove_codex_dev_log_sync_autostart.ps1`
+  - `F:\quant_data\Ashare\AGENTS.md`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Lowered watcher runtime overhead by switching to 5-second polling, file-stat checks before hashing, and idle process priority on Windows.
+  - Added a Windows single-instance mutex so duplicate watcher launches exit safely.
+  - Added logon autostart install/remove scripts using Task Scheduler instead of Startup-folder style persistence.
+  - Registered the scheduled task `Ashare Codex Dev Log Mirror` in the current workspace.
+  - Routed autostart through hidden PowerShell plus the existing start script because direct scheduled launches of the watcher were less stable.
+- Impact:
+  - `CODEX_DEV_LOG.md` mirror now survives reboot/login without manual startup, provided the scheduled task remains enabled.
+  - Resource usage stays very low and the launcher relies on Windows-native scheduling primitives, which should be less fragile than ad-hoc autorun methods in a 360-enabled environment.
+- Validation:
+  - `python -m py_compile` passed for `scripts/sync_codex_dev_log_to_gdrive.py`.
+  - Manual watcher start successfully produced a stable background `python.exe` process.
+  - `schtasks /Run /TN "Ashare Codex Dev Log Mirror"` successfully launched the watcher.
+  - `schtasks /Query /TN "Ashare Codex Dev Log Mirror" /V /FO LIST` ended in `Status: Ready` and `Last Result: 0`.
+- Compatibility:
+  - Backward compatible with the existing Google Drive mirror path and start/stop scripts.
+  - The scheduled task is local-machine state; cloning the repo elsewhere will not recreate it automatically unless the install script is run there.
+- Rollback:
+  - Run `scripts/remove_codex_dev_log_sync_autostart.ps1`, then use `scripts/stop_codex_dev_log_sync.ps1` if you want to disable both autostart and the current watcher instance.
+
+### 2026-03-21 18:03
+- Type:
+  - `refactor`
+- Scope:
+  - `infra`
+- Files:
+  - `F:\quant_data\Ashare\quant_research_hub_v5`
+  - `F:\quant_data\Ashare\quant_research_hub_v5_1`
+  - `F:\quant_data\早期实验数据\Ashare_legacy_code_20260321`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Moved the unused root-level legacy packages `quant_research_hub_v5` and `quant_research_hub_v5_1` out of the repo root.
+  - Archived them under `F:\quant_data\早期实验数据\Ashare_legacy_code_20260321` so the repo root keeps only the current live chain plus tooling.
+- Impact:
+  - The repo root is materially cleaner and less ambiguous.
+  - Future work on the live chain is less likely to accidentally touch obsolete package trees.
+  - A future git commit from this workspace will record these legacy roots as deletions from the repository.
+- Validation:
+  - Confirmed `main_research_runner.py` still points only at `quant_research_hub_v6_repacked_clean`.
+  - Re-listed the repo root after the move and verified both legacy directories are now absent there.
+  - Re-listed `F:\quant_data\早期实验数据\Ashare_legacy_code_20260321` and confirmed both archived directories landed there.
+  - No full pipeline run was performed.
+- Compatibility:
+  - Backward compatible for the current live chain.
+  - Any manual workflow that still expected the old root-level `quant_research_hub_v5*` directories must now read them from the archive location instead.
+- Rollback:
+  - Move `F:\quant_data\早期实验数据\Ashare_legacy_code_20260321\quant_research_hub_v5*` back into `F:\quant_data\Ashare\` if the cleanup must be reverted locally.
+
+### 2026-03-21 19:29
+- Type:
+  - `docs`
+- Scope:
+  - `infra`
+- Files:
+  - `F:\quant_data\Ashare\PROJECT_LAW.md`
+  - `F:\quant_data\Ashare\SYSTEM_MANIFEST.yaml`
+  - `F:\quant_data\Ashare\RUN_PROFILES.yaml`
+  - `F:\quant_data\Ashare\CHANGELOG_CANONICAL.md`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added a low-risk governance layer that defines the formal operator entry, wrapped business root entry, unique live runtime root, formal run-trace output root, and archive/experiment/deprecated directory meanings.
+  - Added a canonical governance changelog separate from the broader Codex handoff log.
+- Impact:
+  - Improves operator clarity and reduces ambiguity about which paths are live versus historical or experimental.
+  - No runtime behavior, imports, or business logic changed in this phase.
+- Validation:
+  - Manual file review after creation.
+  - Confirmed the law files match the current documented live chain and default profile.
+  - No full pipeline run was performed.
+- Compatibility:
+  - Backward compatible.
+  - Phase 1 is documentation/governance only.
+- Rollback:
+  - Remove the new governance files and this entry if the law layer is not wanted.
