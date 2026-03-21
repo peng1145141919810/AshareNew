@@ -17,6 +17,16 @@ Before making changes in this repository, read `F:\quant_data\Ashare\CODEX_DEV_L
   - targeted `Select-String`
   - targeted small commands
   - `python -m py_compile` on touched files
+- This workspace may auto-push to GitHub after each local commit through a local post-commit hook.
+- If a session needs a local-only commit in PowerShell, use `$env:DISABLE_AUTO_PUSH='1'; git commit -m "..."; Remove-Item Env:DISABLE_AUTO_PUSH`.
+- `CODEX_DEV_LOG.md` may also be mirrored to Google Drive by `scripts/sync_codex_dev_log_to_gdrive.py` when the local watcher is running.
+- Watcher control scripts:
+  - start: `powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\start_codex_dev_log_sync.ps1`
+  - stop: `powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\stop_codex_dev_log_sync.ps1`
+- Logon autostart installer:
+  - install: `powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\install_codex_dev_log_sync_autostart.ps1`
+  - remove: `powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\remove_codex_dev_log_sync_autostart.ps1`
+- Scheduled task name: `Ashare Codex Dev Log Mirror`
 - Do not switch the Gmtrade bridge to the main Python environment. It must keep using the dedicated `gmtrade39` Python.
 - Do not echo API tokens or duplicate secrets into normal user-facing output unless explicitly asked.
 
@@ -53,10 +63,14 @@ Before making changes in this repository, read `F:\quant_data\Ashare\CODEX_DEV_L
 - Do not leave undocumented behavioral changes in code.
 
 ## Current Canonical Entry
-- Use `F:\quant_data\Ashare\main_research_runner.py` as the primary root entry unless the user asks for an older path on purpose.
+- Formal operator entry: `F:\quant_data\Ashare\launch_canonical.py`
+- Wrapped business root entry: `F:\quant_data\Ashare\main_research_runner.py`
+- If you are reasoning about the live code chain itself, inspect `main_research_runner.py`.
+- If you are reasoning about the formal operator path, start from `launch_canonical.py`.
 
 ## Runtime Notes
 - Default mode is `integrated_supervisor`.
-- Default profile is `overnight`.
+- Default profile is `quick_test`.
 - `quick_test` exists for minimal full-chain debugging.
+- The live V5.1 research runtime is the embedded `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime`, not the archived root-level `quant_research_hub_v5*` copies.
 - Tushare quotas and the execution-bridge dual-Python setup are documented in `CODEX_DEV_LOG.md`.

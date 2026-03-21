@@ -20,3 +20,17 @@ Detailed engineering handoff and runtime history remain in:
 - Intent:
   - Freeze one live runtime identity and define archive/experiment semantics
     without changing business logic.
+
+### 2026-03-21 19:36
+- Phase: `2`
+- Change:
+  - Added the formal operator wrapper `launch_canonical.py`.
+  - Added `tools/preflight_check.py` for lightweight path/profile/import/py_compile checks.
+- Files:
+  - `F:\quant_data\Ashare\launch_canonical.py`
+  - `F:\quant_data\Ashare\tools\preflight_check.py`
+  - `F:\quant_data\Ashare\AGENTS.md`
+  - `F:\quant_data\Ashare\CHANGELOG_CANONICAL.md`
+- Intent:
+  - Make one operator-facing launch path real without changing the underlying business call chain.
+  - Keep the wrapper thin by dispatching to the canonical research Python instead of assuming the shell Python is the live runtime.

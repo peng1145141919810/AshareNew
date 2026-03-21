@@ -20,7 +20,8 @@
 
 ## Latest Stable Snapshot
 - Snapshot date: `2026-03-21`
-- Canonical root entry: `F:\quant_data\Ashare\main_research_runner.py`
+- Formal operator entry: `F:\quant_data\Ashare\launch_canonical.py`
+- Canonical business root entry: `F:\quant_data\Ashare\main_research_runner.py`
 - Default mode: `integrated_supervisor`
 - Default profile: `quick_test`
 - Root layout note:
@@ -44,10 +45,10 @@
 - Canonical Gmtrade Python:
   - `F:\quant_data\Ashare\venvs\gmtrade39\Scripts\python.exe`
 - Current recommended commands:
-  - `python F:\quant_data\Ashare\main_research_runner.py`
-  - `python F:\quant_data\Ashare\main_research_runner.py --profile overnight`
-  - `python F:\quant_data\Ashare\main_research_runner.py --profile quick_test`
-  - `python F:\quant_data\Ashare\main_research_runner.py --mode resume_downstream --profile quick_test`
+  - `python F:\quant_data\Ashare\launch_canonical.py`
+  - `python F:\quant_data\Ashare\launch_canonical.py --profile overnight`
+  - `python F:\quant_data\Ashare\launch_canonical.py --profile quick_test`
+  - `python F:\quant_data\Ashare\launch_canonical.py --mode resume_downstream --profile quick_test`
 - Latest confirmed milestone:
   - V6 research plan generation confirmed on `2026-03-21 14:09:34`
   - quick_test V5 cycle observed generating new candidates on `2026-03-21 14:39:15`
@@ -60,7 +61,8 @@
 ## Session Start Checklist
 - Read `Latest Stable Snapshot`, `Known Dangerous Operations`, and `Known Issues` before touching code.
 - Confirm whether the user has explicitly allowed any long-running integrated run in the current session.
-- Use `main_research_runner.py` plus the documented profile unless the user explicitly asks for another entrypoint.
+- Use `launch_canonical.py` plus the documented profile for formal operator runs.
+- Use `main_research_runner.py` when you need to inspect or reason about the wrapped business chain directly.
 - If a change alters current runtime truth, update the stable sections first, then append a new change-log entry.
 
 ## Run Profile Quick Reference
@@ -71,6 +73,7 @@
 
 ## Known Dangerous Operations
 - Do not run the full integrated pipeline just to validate a small code edit.
+- Do not bypass `launch_canonical.py` for a formal operator run unless the user explicitly asks to use the wrapped business root directly.
 - Do not switch the Gmtrade bridge off `gmtrade39`.
 - Do not hand-edit generated runtime configs such as `hub_config.v6.runtime.*.json`; they are regenerated.
 - Do not assume `F:\quant_data\Ashare` is a normal git repository.
@@ -118,7 +121,9 @@
 
 ## Core Module Relationship Map
 - Root entry and runtime config:
-  - `main_research_runner.py` is the only canonical root entry.
+  - `launch_canonical.py` is the formal operator entry.
+  - `main_research_runner.py` is the wrapped business root entry.
+  - The wrapper does not replace business logic; it only performs governance-layer selection and preflight before dispatching to the wrapped root.
   - It reads `hub_v6/local_settings.py`, calls `hub_v6/config_builder.py`, and generates `configs/hub_config.v6.runtime.<profile>.json`.
   - It then dispatches by mode:
     - `integrated_supervisor` -> `hub_v6/supervisor.py`
@@ -229,6 +234,10 @@
 - Add message-derived features deeper into downstream data construction if they are not already present.
 
 ## Decision Log
+- Decision: `launch_canonical.py` is the formal operator entry while `main_research_runner.py` remains the wrapped business root.
+  - Reason: the project needed a single operator-facing entry without rewriting the existing business chain.
+  - Alternatives considered: keep `main_research_runner.py` as both operator entry and business root, or refactor the core call chain directly.
+  - Consequence: future formal runs should default to the wrapper, while code-level debugging can still inspect the wrapped root directly.
 - Decision: `main_research_runner.py` is the canonical root entry.
   - Reason: multiple legacy V6 entrypoints were diverging; one root entry is easier to operate.
   - Alternatives considered: keep `run_v6_full_cycle_real.py` as primary.
@@ -753,3 +762,33 @@ All timestamps below are local file write times in the current workspace and sho
   - Phase 1 is documentation/governance only.
 - Rollback:
   - Remove the new governance files and this entry if the law layer is not wanted.
+
+### 2026-03-21 19:36
+- Type:
+  - `ops`
+- Scope:
+  - `infra`
+- Files:
+  - `F:\quant_data\Ashare\launch_canonical.py`
+  - `F:\quant_data\Ashare\tools\preflight_check.py`
+  - `F:\quant_data\Ashare\AGENTS.md`
+  - `F:\quant_data\Ashare\CHANGELOG_CANONICAL.md`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added `launch_canonical.py` as the formal governance wrapper around `main_research_runner.py`.
+  - Added `tools/preflight_check.py` for lightweight path, profile, import, and `py_compile` checks without running heavy business workloads.
+  - Made the wrapper dispatch to the canonical research Python from `hub_v6/local_settings.py` so the formal operator path does not depend on whichever shell Python launched the wrapper.
+  - Updated AGENTS and the stable log sections so future sessions distinguish the formal operator entry from the wrapped business root.
+- Impact:
+  - Formal operator runs now have one wrapper entrypoint without changing the business call chain.
+  - Preflight failures can stop obvious path/profile/import mistakes before a real run starts.
+- Validation:
+  - `python -m py_compile launch_canonical.py tools\preflight_check.py`
+  - `python tools\preflight_check.py --profile quick_test --mode integrated_supervisor`
+  - `python launch_canonical.py --preflight-only --profile quick_test --mode integrated_supervisor`
+  - No full pipeline run was performed in this phase.
+- Compatibility:
+  - Backward compatible for the underlying business chain.
+  - Direct `main_research_runner.py` usage still works when explicitly chosen.
+- Rollback:
+  - Remove `launch_canonical.py` and `tools/preflight_check.py`, then restore the log/AGENTS wording if the wrapper layer is not wanted.
