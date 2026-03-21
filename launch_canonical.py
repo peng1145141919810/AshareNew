@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from tools.preflight_check import run_preflight
+from tools.register_run import finalize_registered_run, start_registered_run
 
 
 def _repo_root() -> Path:
@@ -103,6 +104,15 @@ def main() -> None:
 
     research_python = _research_python(repo_root=repo_root, manifest=manifest)
     command = _build_command(research_python=research_python, manifest=manifest, args=args, mode=mode, profile=profile)
+    run_payload = start_registered_run(
+        repo_root=repo_root,
+        mode=mode,
+        profile=profile,
+        explicit_config=str(args.config).strip(),
+        include_resume_execution=bool(args.resume_execution),
+        invocation_python=sys.executable,
+        research_python=research_python,
+    )
     print("===== CANONICAL LAUNCH START =====")
     print("Formal operator entry:", Path(__file__).resolve())
     print("Wrapped business root:", manifest["canonical"]["wrapped_business_root_entry"])
@@ -110,7 +120,14 @@ def main() -> None:
     print("Mode:", mode)
     print("Profile:", profile)
     print("Research Python:", research_python)
-    subprocess.run(command, cwd=str(repo_root), check=True)
+    print("Run ID:", run_payload["run_id"])
+    print("Run manifest:", run_payload["run_manifest_path"])
+    try:
+        subprocess.run(command, cwd=str(repo_root), check=True)
+    except subprocess.CalledProcessError as exc:
+        finalize_registered_run(run_payload, status="failed", exit_code=exc.returncode)
+        raise
+    finalize_registered_run(run_payload, status="completed", exit_code=0)
     print("===== CANONICAL LAUNCH DONE =====")
 
 

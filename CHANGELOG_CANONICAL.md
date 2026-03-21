@@ -34,3 +34,16 @@ Detailed engineering handoff and runtime history remain in:
 - Intent:
   - Make one operator-facing launch path real without changing the underlying business call chain.
   - Keep the wrapper thin by dispatching to the canonical research Python instead of assuming the shell Python is the live runtime.
+
+### 2026-03-21 19:43
+- Phase: `3`
+- Change:
+  - Added `tools/register_run.py`.
+  - Made `launch_canonical.py` create one governance run directory and `run_manifest.json` for each formal run.
+- Files:
+  - `F:\quant_data\Ashare\tools\register_run.py`
+  - `F:\quant_data\Ashare\launch_canonical.py`
+  - `F:\quant_data\Ashare\AGENTS.md`
+  - `F:\quant_data\Ashare\CHANGELOG_CANONICAL.md`
+- Intent:
+  - Ensure formal runs have one lightweight trace artifact without changing the business output chain.

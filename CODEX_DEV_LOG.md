@@ -24,6 +24,8 @@
 - Canonical business root entry: `F:\quant_data\Ashare\main_research_runner.py`
 - Default mode: `integrated_supervisor`
 - Default profile: `quick_test`
+- Formal run-trace root:
+  - `F:\quant_data\Ashare\outputs\canonical_runs`
 - Root layout note:
   - active runtime code now remains under `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean`
   - the active V5.1 research brain is embedded under `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime`
@@ -123,6 +125,7 @@
 - Root entry and runtime config:
   - `launch_canonical.py` is the formal operator entry.
   - `main_research_runner.py` is the wrapped business root entry.
+  - `launch_canonical.py` also writes `run_manifest.json` through `tools/register_run.py` under `outputs\canonical_runs\<run_id>\`.
   - The wrapper does not replace business logic; it only performs governance-layer selection and preflight before dispatching to the wrapped root.
   - It reads `hub_v6/local_settings.py`, calls `hub_v6/config_builder.py`, and generates `configs/hub_config.v6.runtime.<profile>.json`.
   - It then dispatches by mode:
@@ -198,6 +201,7 @@
 | `market_pipeline_report.json` | market pipeline | operator / debugging | `F:\quant_data\Ashare\data\daily_cache_v6\market_pipeline_report.json` | JSON | shows data sync and train append status |
 | `research_context_pack.json` | context pack builder | research brief engine / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\context_pack\research_context_pack.json` | JSON | full evidence pack |
 | `research_brief.json` | V6 research planner | V5 bridge / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\briefs\research_brief.json` | JSON | core planning artifact |
+| `run_manifest.json` | formal governance wrapper | operator / debugging | `F:\quant_data\Ashare\outputs\canonical_runs\<run_id>\run_manifest.json` | JSON | run id, operator entry, runtime root, mode/profile, and trace metadata |
 | `candidate_override.json` | V5 bridge | V5.1 runtime | `F:\quant_data\Ashare\data\event_lake_v6\bridge\candidate_override.json` | JSON | tells V5 what routes, models, labels to favor |
 | `portfolio_recommendation.json` | portfolio recommendation layer | operator / execution bridge | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_recommendation.json` | JSON | summary of selected strategy and portfolio state |
 | `target_positions.csv` | portfolio recommendation layer | Gmtrade execution bridge | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\target_positions.csv` | CSV | target holdings with price fields |
@@ -238,6 +242,10 @@
   - Reason: the project needed a single operator-facing entry without rewriting the existing business chain.
   - Alternatives considered: keep `main_research_runner.py` as both operator entry and business root, or refactor the core call chain directly.
   - Consequence: future formal runs should default to the wrapper, while code-level debugging can still inspect the wrapped root directly.
+- Decision: every formal wrapper run should emit one `run_manifest.json` under `outputs\canonical_runs`.
+  - Reason: the project needed a minimal, non-invasive trace artifact for operator audit and rollback-friendly run identification.
+  - Alternatives considered: store no wrapper-level trace at all, or push run registration into the business chain itself.
+  - Consequence: `launch_canonical.py` now owns run-level trace registration while the business chain remains unchanged.
 - Decision: `main_research_runner.py` is the canonical root entry.
   - Reason: multiple legacy V6 entrypoints were diverging; one root entry is easier to operate.
   - Alternatives considered: keep `run_v6_full_cycle_real.py` as primary.
@@ -792,3 +800,32 @@ All timestamps below are local file write times in the current workspace and sho
   - Direct `main_research_runner.py` usage still works when explicitly chosen.
 - Rollback:
   - Remove `launch_canonical.py` and `tools/preflight_check.py`, then restore the log/AGENTS wording if the wrapper layer is not wanted.
+
+### 2026-03-21 19:43
+- Type:
+  - `ops`
+- Scope:
+  - `infra`
+- Files:
+  - `F:\quant_data\Ashare\tools\register_run.py`
+  - `F:\quant_data\Ashare\launch_canonical.py`
+  - `F:\quant_data\Ashare\AGENTS.md`
+  - `F:\quant_data\Ashare\CHANGELOG_CANONICAL.md`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added `tools\register_run.py` as a thin governance utility for creating and updating `run_manifest.json`.
+  - Updated `launch_canonical.py` so every formal run gets a dedicated `outputs\canonical_runs\<run_id>\` directory and a wrapper-level run manifest.
+  - Recorded the new trace artifact in AGENTS and the stable dev-log sections.
+- Impact:
+  - Formal runs now have a lightweight audit trail with run id, timestamps, entrypoint, runtime root, data root, output root, and optional git commit.
+  - No business module imports, runtime config generation, or downstream logic were moved into the governance layer.
+- Validation:
+  - `python -m py_compile launch_canonical.py tools\register_run.py`
+  - `python tools\register_run.py --profile quick_test --mode integrated_supervisor`
+  - `python launch_canonical.py --preflight-only --profile quick_test --mode integrated_supervisor`
+  - No full pipeline run was performed in this phase.
+- Compatibility:
+  - Backward compatible for direct `main_research_runner.py` usage.
+  - Wrapper-launched formal runs now create one extra governance output directory under `outputs\canonical_runs`.
+- Rollback:
+  - Remove `tools\register_run.py`, remove the wrapper manifest calls from `launch_canonical.py`, and delete the generated `outputs\canonical_runs` directories if the trace layer is not wanted.

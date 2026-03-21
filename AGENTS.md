@@ -73,4 +73,5 @@ Before making changes in this repository, read `F:\quant_data\Ashare\CODEX_DEV_L
 - Default profile is `quick_test`.
 - `quick_test` exists for minimal full-chain debugging.
 - The live V5.1 research runtime is the embedded `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime`, not the archived root-level `quant_research_hub_v5*` copies.
+- Formal runs started from `launch_canonical.py` should write `outputs\canonical_runs\<run_id>\run_manifest.json`.
 - Tushare quotas and the execution-bridge dual-Python setup are documented in `CODEX_DEV_LOG.md`.
