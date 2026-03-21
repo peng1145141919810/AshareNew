@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+if [ "${DISABLE_AUTO_PUSH:-0}" = "1" ]; then
+  echo "[post-commit] auto-push disabled by DISABLE_AUTO_PUSH=1"
+  exit 0
+fi
+
+branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+if [ -z "$branch" ]; then
+  echo "[post-commit] no current branch, skipping push"
+  exit 0
+fi
+
+remote="$(git config --get "branch.$branch.remote" || true)"
+if [ -z "$remote" ]; then
+  remote="${GIT_AUTO_PUSH_REMOTE:-origin}"
+fi
+
+echo "[post-commit] pushing ${branch} to ${remote}..."
+git push "$remote" "$branch"
