@@ -47,3 +47,19 @@ Detailed engineering handoff and runtime history remain in:
   - `F:\quant_data\Ashare\CHANGELOG_CANONICAL.md`
 - Intent:
   - Ensure formal runs have one lightweight trace artifact without changing the business output chain.
+
+### 2026-03-21 19:49
+- Phase: `4`
+- Change:
+  - Added explicit non-canonical marker files for mixed output, example, and deprecated-entrypoint locations.
+  - Corrected the law/manifest classification so `outputs\canonical_runs` is formal while the rest of `outputs\` remains non-canonical by default.
+- Files:
+  - `F:\quant_data\Ashare\PROJECT_LAW.md`
+  - `F:\quant_data\Ashare\SYSTEM_MANIFEST.yaml`
+  - `F:\quant_data\早期实验数据\Ashare_legacy_code_20260321\CANONICAL_STATUS.md`
+  - `F:\quant_data\Ashare\outputs\CANONICAL_STATUS.md`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\examples\CANONICAL_STATUS.md`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\docs\DEPRECATED_ENTRYPOINTS.md`
+  - `F:\quant_data\Ashare\CHANGELOG_CANONICAL.md`
+- Intent:
+  - Mark non-live paths explicitly without moving files or changing imports.

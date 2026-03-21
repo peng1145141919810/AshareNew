@@ -56,10 +56,11 @@ formal, live, archived, experimental, or deprecated.
   - `main_research_runner.py`
   - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean`
   - `data\`
+  - `outputs\canonical_runs`
 - `archive`
   - `F:\quant_data\早期实验数据\Ashare_legacy_code_20260321`
 - `experiment`
-  - `outputs\`
+  - `outputs\` except `outputs\canonical_runs`
   - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\examples`
 - `deprecated`
   - Historical direct operator habits that bypass the governance wrapper once

@@ -87,6 +87,7 @@
 - Do not echo tokens or duplicate secrets into normal user-facing output.
 - Do not treat `quick_test` as a seconds-level smoke test; it is still a real integrated run.
 - Do not use `--resume-execution` casually after a prior bridge run; it can replay simulated orders on refreshed portfolio files.
+- Do not treat the whole `outputs\` tree as canonical; only `outputs\canonical_runs` is the formal wrapper trace root unless another local marker says otherwise.
 
 ## Project Overview
 - This is a complex medium-sized A-share research and execution system, not a small script project.
@@ -829,3 +830,33 @@ All timestamps below are local file write times in the current workspace and sho
   - Wrapper-launched formal runs now create one extra governance output directory under `outputs\canonical_runs`.
 - Rollback:
   - Remove `tools\register_run.py`, remove the wrapper manifest calls from `launch_canonical.py`, and delete the generated `outputs\canonical_runs` directories if the trace layer is not wanted.
+
+### 2026-03-21 19:49
+- Type:
+  - `docs`
+- Scope:
+  - `infra`
+- Files:
+  - `F:\quant_data\Ashare\PROJECT_LAW.md`
+  - `F:\quant_data\Ashare\SYSTEM_MANIFEST.yaml`
+  - `F:\quant_data\早期实验数据\Ashare_legacy_code_20260321\CANONICAL_STATUS.md`
+  - `F:\quant_data\Ashare\outputs\CANONICAL_STATUS.md`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\examples\CANONICAL_STATUS.md`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\docs\DEPRECATED_ENTRYPOINTS.md`
+  - `F:\quant_data\Ashare\CHANGELOG_CANONICAL.md`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added explicit marker files for mixed-output, examples, and deprecated-entrypoint locations so operators can see which paths are non-live.
+  - Corrected the governance documents so `outputs\canonical_runs` is treated as formal while the rest of `outputs\` remains experimental by default.
+- Impact:
+  - Reduces the chance of accidental work in non-current paths without moving any legacy or example files.
+  - No runtime behavior or import structure changed in this phase.
+- Validation:
+  - Manual file review after patching.
+  - Confirmed the markers point operators back to `launch_canonical.py` and `main_research_runner.py`.
+  - No full pipeline run was performed in this phase.
+- Compatibility:
+  - Backward compatible.
+  - Marker files are additive only.
+- Rollback:
+  - Remove the marker files and restore the prior law/manifest wording if the explicit path-status layer is not wanted.
