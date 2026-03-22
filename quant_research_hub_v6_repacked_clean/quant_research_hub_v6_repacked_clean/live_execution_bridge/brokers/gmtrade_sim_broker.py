@@ -278,6 +278,86 @@ class GMTradeSimBroker(BaseBroker):
             },
         }
 
+    def load_fill_rows(self) -> List[Dict[str, Any]]:
+        """读取当日成交回报的标准化快照。"""
+        self._login()
+        reports = gm.get_execution_reports() if hasattr(gm, "get_execution_reports") else []
+        rows: List[Dict[str, Any]] = []
+        for item in reports:
+            symbol = from_gm_symbol(getattr(item, "symbol", ""))
+            if not symbol:
+                continue
+            price = safe_float(getattr(item, "price", 0.0))
+            volume = safe_int(getattr(item, "volume", 0))
+            amount = safe_float(getattr(item, "amount", price * volume))
+            cost = safe_float(getattr(item, "cost", 0.0))
+            side = self._side_name(getattr(item, "side", 0))
+            fee = max(cost - amount, 0.0) if side == "BUY" else max(amount - cost, 0.0)
+            rows.append(
+                {
+                    "fill_id": str(getattr(item, "exec_id", "") or ""),
+                    "exec_id": str(getattr(item, "exec_id", "") or ""),
+                    "order_id": str(getattr(item, "order_id", "") or ""),
+                    "cl_ord_id": str(getattr(item, "cl_ord_id", "") or ""),
+                    "symbol": symbol,
+                    "side": side,
+                    "filled_qty": volume,
+                    "filled_price": price,
+                    "filled_amount": amount,
+                    "fee": fee,
+                    "filled_time": str(
+                        getattr(item, "created_at", "")
+                        or getattr(item, "exec_time", "")
+                        or getattr(item, "time", "")
+                        or ""
+                    ),
+                }
+            )
+        return rows
+
+    def cancel_orders(self, order_rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """按 cl_ord_id 请求撤单，返回标准化撤单结果。"""
+        self._login()
+        payloads = []
+        for row in list(order_rows or []):
+            cl_ord_id = str(row.get("cl_ord_id", "") or "").strip()
+            if not cl_ord_id:
+                continue
+            payloads.append({"cl_ord_id": cl_ord_id, "account_id": self.account_id})
+        if not payloads or not hasattr(gm, "order_cancel"):
+            return []
+        gm.order_cancel(payloads)
+        time.sleep(min(max(self.order_wait_seconds, 0.5), 2.0))
+        day_orders = [self._normalize_order_row(item) for item in self._get_orders_raw()]
+        day_by_cl_ord = {str(item.get("cl_ord_id", "") or ""): item for item in day_orders if str(item.get("cl_ord_id", "") or "")}
+        results: List[Dict[str, str]] = []
+        for row in list(order_rows or []):
+            cl_ord_id = str(row.get("cl_ord_id", "") or "").strip()
+            if not cl_ord_id:
+                continue
+            order_ref = dict(day_by_cl_ord.get(cl_ord_id, {}) or {})
+            status_name = str(order_ref.get("status_name", "") or "")
+            if status_name in {"Canceled", "Expired"}:
+                status = "cancelled"
+            elif status_name in {"PendingCancel"}:
+                status = "accepted"
+            elif status_name in {"Filled"}:
+                status = "filled"
+            elif status_name in {"Rejected"}:
+                status = "rejected"
+            else:
+                status = "accepted"
+            results.append(
+                {
+                    "symbol": str(row.get("symbol", "") or ""),
+                    "order_id": str(row.get("order_id", "") or order_ref.get("order_id", "") or ""),
+                    "cl_ord_id": cl_ord_id,
+                    "status": status,
+                    "result_text": status_name or "order_cancel_submitted",
+                }
+            )
+        return results
+
     def execute_orders(
         self,
         order_intents: List[OrderIntent],

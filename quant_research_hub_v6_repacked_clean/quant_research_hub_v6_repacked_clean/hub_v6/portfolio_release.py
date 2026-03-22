@@ -45,6 +45,14 @@ def _copy_if_exists(src: Path, dst: Path) -> str:
     return str(dst)
 
 
+def _copy_optional_artifact(summary: Dict[str, Any], artifact_key: str, release_dir: Path, filename: str) -> str:
+    raw = str(dict(summary.get("artifacts", {}) or {}).get(artifact_key, "") or "").strip()
+    if not raw:
+        return ""
+    src = Path(raw).resolve()
+    return _copy_if_exists(src, release_dir / filename)
+
+
 def _sha256_of_file(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as fh:
@@ -143,6 +151,14 @@ def publish_portfolio_release(
     _copy_if_exists(src_summary, summary_copy)
     if src_rebalance is not None:
         _copy_if_exists(src_rebalance, rebalance_copy)
+    market_state_copy = _copy_optional_artifact(summary=summary, artifact_key="market_state_path", release_dir=release_dir, filename="latest_market_state.json")
+    tech_copy = _copy_optional_artifact(summary=summary, artifact_key="technical_confirmation_path", release_dir=release_dir, filename="technical_confirmation.csv")
+    tech_summary_copy = _copy_optional_artifact(summary=summary, artifact_key="technical_confirmation_summary_path", release_dir=release_dir, filename="technical_confirmation_summary.json")
+    posture_copy = _copy_optional_artifact(summary=summary, artifact_key="portfolio_posture_path", release_dir=release_dir, filename="latest_portfolio_posture.json")
+    lifecycle_copy = _copy_optional_artifact(summary=summary, artifact_key="position_lifecycle_path", release_dir=release_dir, filename="latest_position_lifecycle.csv")
+    lifecycle_daily_copy = _copy_optional_artifact(summary=summary, artifact_key="position_lifecycle_daily_path", release_dir=release_dir, filename="position_lifecycle_daily.csv")
+    admission_copy = _copy_optional_artifact(summary=summary, artifact_key="admission_replacement_audit_path", release_dir=release_dir, filename="admission_replacement_audit.json")
+    control_summary_copy = _copy_optional_artifact(summary=summary, artifact_key="portfolio_control_summary_path", release_dir=release_dir, filename="portfolio_control_summary.json")
 
     release_doc = {
         "schema_version": RELEASE_SCHEMA_VERSION,
@@ -163,12 +179,24 @@ def publish_portfolio_release(
         "simulation_ready": bool(summary.get("simulation_ready", True)),
         "execution_policy": execution_policy(config),
         "constraints": _release_constraints(config=config, summary=summary),
+        "market_state": dict(summary.get("market_state", {}) or {}),
+        "technical_confirmation": dict(summary.get("technical_confirmation", {}) or {}),
+        "portfolio_v2a": dict(summary.get("portfolio_v2a", {}) or {}),
+        "portfolio_posture": dict(summary.get("portfolio_posture", {}) or {}),
         "artifacts": {
             "manifest_path": str(manifest_path),
             "release_dir": str(release_dir),
             "target_positions_path": str(target_copy),
             "portfolio_summary_path": str(summary_copy),
             "rebalance_orders_path": str(rebalance_copy) if rebalance_copy.exists() else "",
+            "market_state_path": str(market_state_copy),
+            "technical_confirmation_path": str(tech_copy),
+            "technical_confirmation_summary_path": str(tech_summary_copy),
+            "portfolio_posture_path": str(posture_copy),
+            "position_lifecycle_path": str(lifecycle_copy),
+            "position_lifecycle_daily_path": str(lifecycle_daily_copy),
+            "admission_replacement_audit_path": str(admission_copy),
+            "portfolio_control_summary_path": str(control_summary_copy),
             "source_target_positions_path": str(src_target),
             "source_portfolio_summary_path": str(src_summary),
         },
@@ -192,6 +220,22 @@ def publish_portfolio_release(
     _copy_if_exists(summary_copy, latest_root / "portfolio_recommendation.json")
     if rebalance_copy.exists():
         _copy_if_exists(rebalance_copy, latest_root / "rebalance_orders.csv")
+    if market_state_copy:
+        _copy_if_exists(Path(market_state_copy), latest_root / "latest_market_state.json")
+    if tech_copy:
+        _copy_if_exists(Path(tech_copy), latest_root / "technical_confirmation.csv")
+    if tech_summary_copy:
+        _copy_if_exists(Path(tech_summary_copy), latest_root / "technical_confirmation_summary.json")
+    if posture_copy:
+        _copy_if_exists(Path(posture_copy), latest_root / "latest_portfolio_posture.json")
+    if lifecycle_copy:
+        _copy_if_exists(Path(lifecycle_copy), latest_root / "latest_position_lifecycle.csv")
+    if lifecycle_daily_copy:
+        _copy_if_exists(Path(lifecycle_daily_copy), latest_root / "position_lifecycle_daily.csv")
+    if admission_copy:
+        _copy_if_exists(Path(admission_copy), latest_root / "admission_replacement_audit.json")
+    if control_summary_copy:
+        _copy_if_exists(Path(control_summary_copy), latest_root / "portfolio_control_summary.json")
 
     pointer_doc = {
         "release_id": release_id,

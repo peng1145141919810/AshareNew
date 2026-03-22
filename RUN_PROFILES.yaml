@@ -22,6 +22,7 @@
     "release_only",
     "execution_only",
     "resume_downstream",
+    "oms_validate",
     "full_cycle",
     "ingest_only",
     "extract_only",

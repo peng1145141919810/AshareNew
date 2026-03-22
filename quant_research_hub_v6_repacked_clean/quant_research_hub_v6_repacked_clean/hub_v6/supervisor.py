@@ -423,7 +423,10 @@ def run_resume_downstream(config_path: Path, include_execution: bool = False) ->
                 '断点续跑持仓建议生成',
                 1,
                 stage_total,
-                summary=f"run_id={rec.get('run_id')} n_names={rec.get('n_names')}",
+                summary=(
+                    f"run_id={rec.get('run_id')} n_names={rec.get('n_names')} "
+                    f"regime={rec.get('market_regime', '')} tech_allow={rec.get('tech_allow_count', 0)}"
+                ),
             )
         except Exception as exc:
             state['portfolio_recommendation_error'] = str(exc)
@@ -630,7 +633,10 @@ def run_integrated_supervisor(
                     stage_label_map['portfolio_recommendation'],
                     stage_order_map['portfolio_recommendation'],
                     stage_total,
-                    summary=f"run_id={rec.get('run_id')} n_names={rec.get('n_names')}",
+                    summary=(
+                        f"run_id={rec.get('run_id')} n_names={rec.get('n_names')} "
+                        f"regime={rec.get('market_regime', '')} tech_allow={rec.get('tech_allow_count', 0)}"
+                    ),
                 )
             except Exception as exc:
                 state['portfolio_recommendation_error'] = str(exc)

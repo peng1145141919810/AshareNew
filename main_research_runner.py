@@ -34,6 +34,7 @@ def parse_args() -> argparse.Namespace:
             "release_only",
             "execution_only",
             "resume_downstream",
+            "oms_validate",
             "full_cycle",
             "ingest_only",
             "extract_only",
@@ -177,13 +178,14 @@ def _mode_stage_preview(mode: str, config: Dict[str, Any]) -> list[str]:
         "research_only": ["市场数据流水线", "策略反馈刷新", "V6 研究计划", "V5.1 GPU 研究", "持仓建议生成", "组合 release 发布"],
         "release_only": ["发布最新持仓建议为组合 release"],
         "execution_only": ["读取最新 release", "交易时钟门禁检查", "执行桥"],
-        "full_cycle": ["基础表刷新与事件抓取", "事件抽取", "分行业/分机制路由", "数据缺口分析", "研究计划生成", "桥接产物生成"],
+        "oms_validate": ["OMS synthetic/replay validation harness", "状态迁移与连续性探针", "validation artifact 输出"],
+        "full_cycle": ["基础表刷新与事件抓取", "事件抽取", "分行业/分机制路由", "市场状态/资金面总阀门", "数据缺口分析", "研究计划生成", "桥接产物生成"],
         "ingest_only": ["基础表刷新与事件抓取"],
         "extract_only": ["基础表刷新与事件抓取", "事件抽取"],
         "gap_only": ["基础表刷新与事件抓取", "事件抽取", "数据缺口分析"],
         "industry_router_only": ["分行业/分机制路由", "stock_signal_daily 生成", "分机制回测骨架"],
-        "plan_only": ["基础表刷新与事件抓取", "事件抽取", "分行业/分机制路由", "数据缺口分析", "研究计划生成"],
-        "bridge_only": ["基础表刷新与事件抓取", "事件抽取", "分行业/分机制路由", "数据缺口分析", "研究计划生成", "桥接产物生成"],
+        "plan_only": ["基础表刷新与事件抓取", "事件抽取", "分行业/分机制路由", "市场状态/资金面总阀门", "数据缺口分析", "研究计划生成"],
+        "bridge_only": ["基础表刷新与事件抓取", "事件抽取", "分行业/分机制路由", "市场状态/资金面总阀门", "数据缺口分析", "研究计划生成", "桥接产物生成"],
     }
     return mapping.get(mode, ["未知阶段"])
 
@@ -233,6 +235,11 @@ def main() -> None:
             trigger_label="manual",
             trigger_source="main_research_runner",
         )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif args.mode == "oms_validate":
+        from hub_v6.oms.validation import run_oms_validation_suite
+
+        result = run_oms_validation_suite(config=config)
         print(json.dumps(result, ensure_ascii=False, indent=2))
     elif args.mode == "resume_downstream":
         run_resume_downstream(config_path, include_execution=bool(args.resume_execution))

@@ -41,6 +41,24 @@ def _target_maps(target_positions: List[TargetPosition]) -> Tuple[Dict[str, floa
     return target_weight_map, target_score_map
 
 
+def _target_meta_map(target_positions: List[TargetPosition]) -> Dict[str, Dict[str, Any]]:
+    meta_map: Dict[str, Dict[str, Any]] = {}
+    for item in target_positions:
+        raw = dict(item.raw or {})
+        meta_map[str(item.symbol)] = {
+            "previous_state": str(raw.get("previous_state", "") or ""),
+            "desired_state": str(raw.get("desired_state", raw.get("current_state", "")) or ""),
+            "current_state": str(raw.get("current_state", "") or ""),
+            "desired_action": str(raw.get("desired_action", raw.get("recommended_action", "")) or ""),
+            "recommended_action": str(raw.get("recommended_action", "") or ""),
+            "position_action_intent": str(raw.get("position_action_intent", "") or ""),
+            "size_confidence": safe_float(raw.get("size_confidence", 0.0), 0.0),
+            "target_weight_cap_v2a": safe_float(raw.get("target_weight_cap_v2a", 0.0), 0.0),
+            "proposal_target_weight": safe_float(raw.get("proposal_target_weight", 0.0), 0.0),
+        }
+    return meta_map
+
+
 def _actual_weight_map(account_state: AccountState) -> Dict[str, float]:
     nav = max(account_state.nav(), 1e-9)
     return {
@@ -78,12 +96,14 @@ def _build_symbol_rows(
     pending_buy_map: Dict[str, int] | None = None,
     pending_sell_map: Dict[str, int] | None = None,
     control_reason_map: Dict[str, Dict[str, Any]] | None = None,
+    target_meta_map: Dict[str, Dict[str, Any]] | None = None,
 ) -> List[Dict[str, Any]]:
     current_map = _positions_to_map(account_state.positions)
     actual_weight_map = _actual_weight_map(account_state)
     pending_buy_map = dict(pending_buy_map or {})
     pending_sell_map = dict(pending_sell_map or {})
     control_reason_map = dict(control_reason_map or {})
+    target_meta_map = dict(target_meta_map or {})
     nav = max(account_state.nav(), 1e-9)
     symbols = sorted(
         set(current_map.keys())
@@ -108,6 +128,7 @@ def _build_symbol_rows(
         effective_target_weight_est = (effective_target_shares * last_price / nav) if last_price > 0 else 0.0
         estimated_post_trade_weight = (estimated_post_trade_shares * last_price / nav) if last_price > 0 else 0.0
         control_info = dict(control_reason_map.get(symbol, {}) or {})
+        target_meta = dict(target_meta_map.get(symbol, {}) or {})
         rows.append(
             {
                 "symbol": symbol,
@@ -126,6 +147,15 @@ def _build_symbol_rows(
                 "control_action": str(control_info.get("control_action", "") or ""),
                 "control_reason": str(control_info.get("control_reason", "") or ""),
                 "weight_diff": round(abs(actual_weight_map.get(symbol, 0.0) - target_weight), 6),
+                "previous_state": str(target_meta.get("previous_state", "") or ""),
+                "desired_state": str(target_meta.get("desired_state", "") or ""),
+                "current_state": str(target_meta.get("current_state", "") or ""),
+                "desired_action": str(target_meta.get("desired_action", "") or ""),
+                "recommended_action": str(target_meta.get("recommended_action", "") or ""),
+                "position_action_intent": str(target_meta.get("position_action_intent", "") or ""),
+                "size_confidence": round(float(target_meta.get("size_confidence", 0.0) or 0.0), 6),
+                "target_weight_cap_v2a": round(float(target_meta.get("target_weight_cap_v2a", 0.0) or 0.0), 6),
+                "proposal_target_weight": round(float(target_meta.get("proposal_target_weight", 0.0) or 0.0), 6),
             }
         )
     return rows
@@ -142,6 +172,7 @@ def _build_position_state_payload(
     pending_buy_map: Dict[str, int] | None = None,
     pending_sell_map: Dict[str, int] | None = None,
     control_reason_map: Dict[str, Dict[str, Any]] | None = None,
+    target_meta_map: Dict[str, Dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     rows = _build_symbol_rows(
         account_state=account_state,
@@ -152,6 +183,7 @@ def _build_position_state_payload(
         pending_buy_map=pending_buy_map,
         pending_sell_map=pending_sell_map,
         control_reason_map=control_reason_map,
+        target_meta_map=target_meta_map,
     )
     return {
         "generated_at": _now_text(),
@@ -451,6 +483,7 @@ def plan_portfolio_control(
     control_cfg: Dict[str, Any],
 ) -> Dict[str, Any]:
     target_weight_map, target_score_map = _target_maps(target_positions)
+    target_meta_map = _target_meta_map(target_positions)
     raw_target_shares_map = _estimate_target_shares_map(
         account_state=account_state,
         target_positions=target_positions,
@@ -515,6 +548,7 @@ def plan_portfolio_control(
         price_map=price_map,
         control_cfg=control_cfg,
         control_reason_map=control_reason_map,
+        target_meta_map=target_meta_map,
     )
     after_plan_state = _build_position_state_payload(
         stage="after_plan",
@@ -527,6 +561,7 @@ def plan_portfolio_control(
         pending_buy_map=pending_buy_map,
         pending_sell_map=pending_sell_map,
         control_reason_map=control_reason_map,
+        target_meta_map=target_meta_map,
     )
     drift_skipped = sum(1 for item in control_reason_map.values() if item.get("control_action") == "skip_drift")
     audit = {
@@ -553,6 +588,7 @@ def plan_portfolio_control(
     return {
         "control_config": control_cfg,
         "target_weight_map": target_weight_map,
+        "target_meta_map": target_meta_map,
         "raw_target_shares_map": raw_target_shares_map,
         "effective_target_shares_map": effective_target_shares_map,
         "raw_orders": raw_orders,

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from time import perf_counter
 
@@ -15,8 +16,22 @@ from .industry_router import build_industry_router_artifacts
 from .event_ingest import ingest_events_real, refresh_market_basics
 from .local_augmentations import build_announcement_evidence_cards, build_manual_review_queue
 from .logging_utils import log_line
+from .market_state import build_market_state_artifacts
 from .research_brief_engine import build_research_brief, save_research_brief
 from .v5_bridge import build_research_actions, save_bridge_outputs
+
+
+def _load_research_meta_feedback(config: dict) -> dict:
+    path_text = str(config.get("oms", {}).get("output_root", "") or "").strip()
+    if not path_text:
+        return {}
+    path = Path(path_text).resolve() / "feedback" / "research_meta_feedback_latest.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
 
 
 def _v6_stage_labels(mode: str) -> list[str]:
@@ -27,6 +42,8 @@ def _v6_stage_labels(mode: str) -> list[str]:
         labels.append("事件抽取")
     if mode in {"industry_router_only", "plan_only", "bridge_only", "full_cycle"}:
         labels.append("分行业研究骨架")
+    if mode in {"plan_only", "bridge_only", "full_cycle"}:
+        labels.append("市场状态与资金面总阀门")
     if mode in {"gap_only", "plan_only", "bridge_only", "full_cycle"}:
         labels.append("数据清单与缺口分析")
     if mode in {"plan_only", "bridge_only", "full_cycle"}:
@@ -54,6 +71,7 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
     research_brief = {}
     stage_idx = 0
     industry_router_payload = {}
+    market_state_payload = {}
 
     if mode in {"ingest_only", "extract_only", "gap_only", "plan_only", "bridge_only", "full_cycle"}:
         stage_idx += 1
@@ -103,6 +121,21 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
             f"summary={industry_router_result.get('summary_path', '')} elapsed={perf_counter() - t0:.1f}s",
         )
 
+    if mode in {"plan_only", "bridge_only", "full_cycle"}:
+        stage_idx += 1
+        t0 = perf_counter()
+        log_line(config, f"V6: [{stage_idx}/{len(stage_labels)}] 市场状态与资金面总阀门开始")
+        market_state_result = build_market_state_artifacts(config=config)
+        market_state_payload = dict(market_state_result.get("payload", {}) or {})
+        log_line(
+            config,
+            f"V6: [{stage_idx}/{len(stage_labels)}] 市场状态与资金面总阀门完成 "
+            f"regime={market_state_payload.get('market_regime', '')} "
+            f"style={market_state_payload.get('style_bias', '')} "
+            f"mechanism={market_state_payload.get('mechanism_bias', '')} "
+            f"elapsed={perf_counter() - t0:.1f}s",
+        )
+
     if mode in {"gap_only", "plan_only", "bridge_only", "full_cycle"}:
         stage_idx += 1
         t0 = perf_counter()
@@ -132,6 +165,8 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
             data_gap_report=data_gap_report,
             evidence_cards=evidence_cards,
             industry_router_payload=industry_router_payload,
+            market_state_payload=market_state_payload,
+            research_meta_feedback=_load_research_meta_feedback(config=config),
         )
         save_research_context_pack(config=config, pack=context_pack)
         log_line(config, f"V6: 研究证据包已合并公告证据卡 evidence_cards={len(list(context_pack.get('evidence_cards', []) or []))}")

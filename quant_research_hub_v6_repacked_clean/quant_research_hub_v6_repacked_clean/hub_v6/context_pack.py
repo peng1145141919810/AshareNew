@@ -89,6 +89,8 @@ def build_research_context_pack(
     data_gap_report: Dict[str, Any],
     evidence_cards: List[Dict[str, Any]] | None = None,
     industry_router_payload: Dict[str, Any] | None = None,
+    market_state_payload: Dict[str, Any] | None = None,
+    research_meta_feedback: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """构建研究证据包。"""
     max_priority_events = int(config.get("research_context_pack", {}).get("max_priority_events", 30) or 30)
@@ -96,6 +98,8 @@ def build_research_context_pack(
     compact_priority_events = [_compact_event(x) for x in priority_events]
     compact_evidence_cards = [_compact_evidence_card(x) for x in list(evidence_cards or [])[:4] if isinstance(x, dict)]
     industry_router_payload = dict(industry_router_payload or {})
+    market_state_payload = dict(market_state_payload or {})
+    research_meta_feedback = dict(research_meta_feedback or {})
 
     source_type_counter = Counter(_safe_text(x.get("source_type")) or "unknown" for x in structured_events)
     event_type_counter = Counter(_safe_text(x.get("event_type")) or "其他" for x in structured_events)
@@ -158,10 +162,19 @@ def build_research_context_pack(
         "evidence_cards": compact_evidence_cards,
         "data_gap_report": data_gap_report,
         "market_state": {
-            "style_bias": "unknown",
-            "vol_regime": "unknown",
-            "breadth": "unknown",
-            "turnover_regime": "unknown",
+            "market_regime": _safe_text(market_state_payload.get("market_regime") or "neutral"),
+            "style_bias": _safe_text(market_state_payload.get("style_bias") or "balanced"),
+            "mechanism_bias": _safe_text(market_state_payload.get("mechanism_bias") or "balanced"),
+            "risk_budget_multiplier": round(float(market_state_payload.get("risk_budget_multiplier", 1.0) or 1.0), 4),
+            "turnover_multiplier": round(float(market_state_payload.get("turnover_multiplier", 1.0) or 1.0), 4),
+            "entry_strictness": round(float(market_state_payload.get("entry_strictness", 0.5) or 0.5), 4),
+            "new_position_policy": _safe_text(market_state_payload.get("new_position_policy") or "allow"),
+            "de_risk_hint": _safe_text(market_state_payload.get("de_risk_hint") or ""),
+            "trend_score": round(float(market_state_payload.get("trend_score", 0.0) or 0.0), 4),
+            "breadth_score": round(float(market_state_payload.get("breadth_score", 0.0) or 0.0), 4),
+            "liquidity_score": round(float(market_state_payload.get("liquidity_score", 0.0) or 0.0), 4),
+            "style_score": round(float(market_state_payload.get("style_score", 0.0) or 0.0), 4),
+            "market_regime_score": round(float(market_state_payload.get("market_regime_score", 0.0) or 0.0), 4),
         },
         "recent_experiments": [],
         "family_state": {},
@@ -175,6 +188,11 @@ def build_research_context_pack(
             "mechanism_overview": list(industry_router_payload.get("mechanism_overview", []) or []),
             "top_stock_signals": list(industry_router_payload.get("top_stock_signals", []) or [])[:8],
             "source_overview": list(industry_router_payload.get("source_overview", []) or [])[:6],
+        },
+        "execution_meta_feedback": {
+            "generated_at": _safe_text(research_meta_feedback.get("generated_at")),
+            "mechanism_execution_realization": list(research_meta_feedback.get("mechanism_execution_realization", []) or [])[:6],
+            "repeated_non_executable_symbols": list(research_meta_feedback.get("repeated_non_executable_symbols", []) or [])[:12],
         },
     }
 
@@ -195,6 +213,7 @@ def save_research_context_pack(config: Dict[str, Any], pack: Dict[str, Any]) -> 
         "data_gap_report": pack.get("data_gap_report", {}),
         "market_state": pack.get("market_state", {}),
         "industry_router": pack.get("industry_router", {}),
+        "execution_meta_feedback": pack.get("execution_meta_feedback", {}),
         "research_space": pack.get("research_space", {}),
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     return out_path

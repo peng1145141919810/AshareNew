@@ -106,7 +106,7 @@ def update_codex_dev_log_portfolio_snapshot(
             r"## Latest Live Portfolio Snapshot\s*" + re.escape(SNAPSHOT_START) + r".*?" + re.escape(SNAPSHOT_END) + r"\s*",
             flags=re.DOTALL,
         )
-        new_text = pattern.sub(block, text, count=1)
+        new_text = pattern.sub(lambda _: block, text, count=1)
     else:
         marker = "## Session Start Checklist"
         if marker in text:
@@ -115,4 +115,3 @@ def update_codex_dev_log_portfolio_snapshot(
             new_text = text + "\n\n" + block
     path.write_text(new_text, encoding="utf-8")
     return True
-

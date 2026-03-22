@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from datetime import datetime
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import Any, Dict
 
 from .config_utils import ensure_dir, load_config
 from .execution_bridge_runner import execution_policy, run_execution_bridge
+from .market_state import load_latest_market_state
 from .portfolio_release import load_latest_release, load_release_by_id, record_release_execution
 from .safety_guard import (
     apply_execution_safety_overrides,
@@ -36,6 +38,34 @@ def _load_release(config: Dict[str, Any], release_id: str = "") -> Dict[str, Any
     if str(release_id).strip():
         return load_release_by_id(config=config, release_id=str(release_id).strip())
     return load_latest_release(config=config)
+
+
+def _market_state_runtime(release_doc: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(release_doc.get("market_state", {}) or {})
+    if payload:
+        return payload
+    return dict(load_latest_market_state(config=config, allow_build=False) or {})
+
+
+def _apply_market_state_execution_overrides(config: Dict[str, Any], market_state: Dict[str, Any]) -> Dict[str, Any]:
+    updated = copy.deepcopy(config)
+    portfolio_control = dict(updated.get("portfolio_control", {}) or {})
+    current_turnover = float(portfolio_control.get("max_daily_turnover_ratio", 0.25) or 0.25)
+    turnover_multiplier = float(market_state.get("turnover_multiplier", 1.0) or 1.0)
+    portfolio_control["max_daily_turnover_ratio"] = round(max(current_turnover * turnover_multiplier, 0.0), 6)
+    if str(market_state.get("new_position_policy", "") or "") in {"no_new_positions", "reduce_only"}:
+        portfolio_control["reduce_only"] = True
+    updated["portfolio_control"] = portfolio_control
+    updated["market_state_runtime"] = {
+        "market_regime": str(market_state.get("market_regime", "") or ""),
+        "style_bias": str(market_state.get("style_bias", "") or ""),
+        "mechanism_bias": str(market_state.get("mechanism_bias", "") or ""),
+        "risk_budget_multiplier": float(market_state.get("risk_budget_multiplier", 1.0) or 1.0),
+        "turnover_multiplier": turnover_multiplier,
+        "entry_strictness": float(market_state.get("entry_strictness", 0.5) or 0.5),
+        "new_position_policy": str(market_state.get("new_position_policy", "allow") or "allow"),
+    }
+    return updated
 
 
 def assess_execution_gate(
@@ -154,23 +184,29 @@ def run_execution_only(
             "status": "gate_only",
             "gate": gate,
             "safety": safety,
+            "market_state": _market_state_runtime(release_doc=_load_release(config=config, release_id=release_id), config=config) if bool(gate.get("ok", False)) else {},
         }
     if not bool(gate.get("should_execute", False)):
+        release_doc = _load_release(config=config, release_id=release_id) if bool(gate.get("ok", False)) else {}
         return {
             "ok": bool(gate.get("ok", False)),
             "status": "skipped",
             "gate": gate,
             "safety": safety,
+            "market_state": _market_state_runtime(release_doc=release_doc, config=config) if release_doc else {},
         }
     if not bool(safety.get("allow_execution", False)):
+        release_doc = _load_release(config=config, release_id=release_id) if bool(gate.get("ok", False)) else {}
         return {
             "ok": False,
             "status": "safety_blocked",
             "gate": gate,
             "safety": safety,
+            "market_state": _market_state_runtime(release_doc=release_doc, config=config) if release_doc else {},
         }
 
     release_doc = _load_release(config=config, release_id=release_id)
+    market_state = _market_state_runtime(release_doc=release_doc, config=config)
     release_context = {
         "release_id": str(release_doc.get("release_id", "") or ""),
         "trade_date": str(release_doc.get("trade_date", "") or ""),
@@ -181,10 +217,15 @@ def run_execution_only(
         "trigger_source": str(trigger_source or "manual"),
         "system_mode": str(safety.get("system_mode", "") or ""),
         "market_safety_regime": str(safety.get("market_safety_regime", "") or ""),
+        "market_regime": str(market_state.get("market_regime", "") or ""),
+        "style_bias": str(market_state.get("style_bias", "") or ""),
+        "mechanism_bias": str(market_state.get("mechanism_bias", "") or ""),
+        "new_position_policy": str(market_state.get("new_position_policy", "") or ""),
         "effective_reduce_only": bool(safety.get("effective_reduce_only", False)),
         "effective_turnover_multiplier": float(safety.get("effective_turnover_multiplier", 1.0) or 1.0),
     }
     execution_config = apply_execution_safety_overrides(config=config, safety_report=safety)
+    execution_config = _apply_market_state_execution_overrides(config=execution_config, market_state=market_state)
     try:
         report = run_execution_bridge(
             config=execution_config,
@@ -252,6 +293,7 @@ def run_execution_only(
         "status": "executed",
         "gate": gate,
         "safety": safety,
+        "market_state": market_state,
         "release": release_context,
         "dispatch_path": str(dispatch_path),
         "latest_dispatch_path": str(latest_path),

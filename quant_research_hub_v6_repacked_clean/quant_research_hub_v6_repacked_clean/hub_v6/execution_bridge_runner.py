@@ -61,6 +61,7 @@ def build_execution_runtime_config(
     control_cfg = dict(config.get("portfolio_control", {}) or {})
     control_cfg.setdefault("codex_dev_log_path", str(Path(__file__).resolve().parents[3] / "CODEX_DEV_LOG.md"))
     payload["portfolio_control"] = control_cfg
+    payload["oms"] = dict(config.get("oms", {}) or {})
     if release_context:
         payload["release"] = release_context
     payload = _apply_account_profile(payload=payload, policy=policy)

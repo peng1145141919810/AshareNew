@@ -11,6 +11,9 @@ from typing import Any, Dict, Iterable, List, Tuple
 import pandas as pd
 
 from .config_utils import ensure_dir
+from .market_state import load_latest_market_state
+from .portfolio_v2a import build_portfolio_v2a_artifacts
+from .technical_confirmation import build_technical_confirmation_artifacts
 
 
 def _sort_score_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -270,6 +273,223 @@ def _attach_price_context(pos_df: pd.DataFrame, config: Dict[str, Any]) -> pd.Da
     return out
 
 
+def _load_market_state_summary(config: Dict[str, Any]) -> Dict[str, Any]:
+    return dict(load_latest_market_state(config=config, allow_build=True) or {})
+
+
+def _normalize_symbol(value: Any) -> str:
+    text = str(value or "").strip().upper()
+    if not text:
+        return ""
+    if "." in text:
+        return text
+    code = _ts_to_code(text)
+    if not code:
+        return ""
+    if code.startswith(("600", "601", "603", "605", "688", "900")):
+        return f"{code}.SH"
+    if code.startswith(("000", "001", "002", "003", "200", "300", "301")):
+        return f"{code}.SZ"
+    if code.startswith(("430", "830", "831", "832", "833", "834", "835", "836", "837", "838", "839", "870", "871", "872", "873", "874", "875", "876", "877", "878", "879", "880", "881", "882", "883", "884", "885", "886", "887", "888", "889", "920")):
+        return f"{code}.BJ"
+    return f"{code}.SZ"
+
+
+def _load_router_signal_context(config: Dict[str, Any]) -> pd.DataFrame:
+    root = Path(str(config.get("paths", {}).get("industry_router_output_root", "") or "")).resolve()
+    path = root / "latest_stock_signal.csv"
+    if not path.exists():
+        return pd.DataFrame(columns=["ts_code", "mechanism_primary", "router_final_score", "router_allow_entry", "router_signal_state"])
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return pd.DataFrame(columns=["ts_code", "mechanism_primary", "router_final_score", "router_allow_entry", "router_signal_state"])
+    if df.empty:
+        return pd.DataFrame(columns=["ts_code", "mechanism_primary", "router_final_score", "router_allow_entry", "router_signal_state"])
+    if "symbol" in df.columns and "ts_code" not in df.columns:
+        df["ts_code"] = df["symbol"].astype(str).str.strip().str.upper()
+    elif "ts_code" in df.columns:
+        df["ts_code"] = df["ts_code"].astype(str).str.strip().str.upper()
+    else:
+        df["ts_code"] = ""
+    df["router_final_score"] = pd.to_numeric(df["final_score"], errors="coerce").fillna(0.0) if "final_score" in df.columns else 0.0
+    if "allow_entry" in df.columns:
+        df["router_allow_entry"] = df["allow_entry"].fillna(True).astype(bool)
+    else:
+        df["router_allow_entry"] = True
+    if "signal_state" in df.columns:
+        df["router_signal_state"] = df["signal_state"].astype(str)
+    else:
+        df["router_signal_state"] = ""
+    keep = [col for col in ["ts_code", "mechanism_primary", "router_final_score", "router_allow_entry", "router_signal_state"] if col in df.columns]
+    return df[keep].drop_duplicates(subset=["ts_code"], keep="first")
+
+
+def _market_adjusted_limits(limits: Dict[str, float], market_state: Dict[str, Any]) -> Dict[str, float]:
+    risk_budget = float(market_state.get("risk_budget_multiplier", 1.0) or 1.0)
+    adjusted = dict(limits)
+    adjusted["base_max_names"] = int(limits["max_names"])
+    adjusted["base_single_name_cap"] = float(limits["single_name_cap"])
+    adjusted["base_total_exposure_cap"] = float(limits["total_exposure_cap"])
+    adjusted["max_names"] = max(1, int(round(float(limits["max_names"]) * max(risk_budget, 0.35))))
+    adjusted["single_name_cap"] = min(float(limits["single_name_cap"]), float(limits["total_exposure_cap"]) * max(risk_budget, 0.35))
+    adjusted["total_exposure_cap"] = max(0.0, float(limits["total_exposure_cap"]) * max(risk_budget, 0.0))
+    return adjusted
+
+
+def _clean_target_position_columns(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    rename_map = {
+        "date_x": "date",
+        "date_y": "tech_date",
+        "close_x": "close",
+        "close_y": "tech_close",
+    }
+    for old, new in rename_map.items():
+        if old in out.columns and new not in out.columns:
+            out = out.rename(columns={old: new})
+    return out
+
+
+def _rebalance_to_target_fill(df: pd.DataFrame, target_total: float, single_name_cap: float) -> tuple[pd.DataFrame, float, float]:
+    out = df.copy()
+    if out.empty or "portfolio_weight" not in out.columns:
+        return out, 0.0, 0.0
+    cap_series = pd.Series(float(single_name_cap), index=out.index)
+    if "target_weight_cap_v2a" in out.columns:
+        cap_series = pd.to_numeric(out["target_weight_cap_v2a"], errors="coerce").fillna(float(single_name_cap)).clip(lower=0.0, upper=float(single_name_cap))
+    weights = pd.to_numeric(out["portfolio_weight"], errors="coerce").fillna(0.0).clip(lower=0.0)
+    weights = pd.concat([weights, cap_series], axis=1).min(axis=1)
+    before_total = float(weights.sum())
+    target_total = max(0.0, float(target_total))
+    if before_total >= target_total - 1e-9:
+        out["portfolio_weight"] = weights
+        return out, before_total, float(weights.sum())
+
+    if before_total <= 1e-9:
+        if len(out.index) <= 0:
+            out["portfolio_weight"] = weights
+            return out, before_total, 0.0
+        eligible_count = max(len(out.index), 1)
+        base_equal = target_total / eligible_count
+        weights[:] = pd.Series([min(float(cap_series.iloc[idx]), base_equal) for idx in range(len(out.index))], index=out.index)
+    else:
+        for _ in range(8):
+            current_total = float(weights.sum())
+            gap = target_total - current_total
+            if gap <= 1e-6:
+                break
+            eligible = weights < (cap_series - 1e-9)
+            if not bool(eligible.any()):
+                break
+            eligible_weights = weights.loc[eligible]
+            eligible_caps = cap_series.loc[eligible]
+            capacity = float((eligible_caps - eligible_weights).clip(lower=0.0).sum())
+            if capacity <= 1e-9:
+                break
+            base = eligible_weights.copy()
+            if float(base.sum()) <= 1e-9:
+                add = pd.Series(gap / max(len(base.index), 1), index=base.index)
+            else:
+                add = base / float(base.sum()) * gap
+            add = add.clip(upper=eligible_caps - eligible_weights)
+            weights.loc[eligible] = pd.concat([(eligible_weights + add), eligible_caps], axis=1).min(axis=1)
+    out["portfolio_weight"] = pd.concat([weights, cap_series], axis=1).min(axis=1)
+    return out, before_total, float(out["portfolio_weight"].sum())
+
+
+def _apply_candidate_controls(
+    pos_df: pd.DataFrame,
+    prev_df: pd.DataFrame,
+    config: Dict[str, Any],
+    market_state: Dict[str, Any],
+) -> tuple[pd.DataFrame, Dict[str, Any]]:
+    router_df = _load_router_signal_context(config=config)
+    out = pos_df.copy()
+    if "ts_code" in out.columns:
+        out["ts_code"] = out["ts_code"].astype(str).str.strip().str.upper()
+    elif "code" in out.columns:
+        out["ts_code"] = out["code"].astype(str).str.strip().map(_normalize_symbol)
+    else:
+        out["ts_code"] = ""
+    if "code" in out.columns:
+        out["code"] = out["code"].map(_ts_to_code)
+    else:
+        out["code"] = out["ts_code"].map(_ts_to_code)
+    if not router_df.empty:
+        out = out.merge(router_df, on="ts_code", how="left")
+    tech_result = build_technical_confirmation_artifacts(
+        config=config,
+        candidate_df=out,
+        prev_df=prev_df,
+        market_state=market_state,
+    )
+    tech_df = pd.DataFrame(tech_result.get("frame", pd.DataFrame()))
+    if not tech_df.empty:
+        tech_df["ts_code"] = tech_df["ts_code"].astype(str).str.strip().str.upper()
+        tech_cols = [col for col in tech_df.columns if col != "code"]
+        out = out.merge(tech_df[tech_cols], on="ts_code", how="left")
+    for col, default in [
+        ("router_final_score", 0.0),
+        ("router_allow_entry", True),
+        ("router_signal_state", ""),
+        ("mechanism_primary", ""),
+        ("tech_trend_score", 0.0),
+        ("tech_volume_score", 0.0),
+        ("tech_stretch_penalty", 0.0),
+        ("tech_hold_health", 0.0),
+        ("tech_final_score", 0.0),
+        ("tech_allow_entry", True),
+        ("tech_gate_reason", "tech_unavailable"),
+        ("tech_entry_style", "pullback"),
+        ("tech_weight_multiplier", 1.0),
+        ("is_existing_position", False),
+    ]:
+        if col not in out.columns:
+            out[col] = default
+        else:
+            out[col] = out[col].fillna(default)
+
+    mechanism_multipliers = dict(market_state.get("mechanism_multipliers", {}) or {})
+    new_position_policy = str(market_state.get("new_position_policy", "allow") or "allow")
+    out["base_portfolio_weight"] = pd.to_numeric(out.get("portfolio_weight"), errors="coerce").fillna(0.0)
+    out["mechanism_bias_multiplier"] = out["mechanism_primary"].map(lambda x: float(mechanism_multipliers.get(str(x or ""), 1.0) or 1.0))
+    out["market_weight_multiplier"] = 1.0
+    if new_position_policy == "tight":
+        out.loc[(~out["is_existing_position"].astype(bool)) & (out["tech_entry_style"].astype(str) == "wait"), "market_weight_multiplier"] = 0.55
+        out.loc[(~out["is_existing_position"].astype(bool)) & (out["tech_entry_style"].astype(str) == "pilot"), "market_weight_multiplier"] = 0.70
+    elif new_position_policy in {"no_new_positions", "reduce_only"}:
+        out.loc[(~out["is_existing_position"].astype(bool)), "market_weight_multiplier"] = 0.0
+
+    out.loc[(~out["router_allow_entry"].astype(bool)) & (~out["is_existing_position"].astype(bool)), "market_weight_multiplier"] = 0.0
+    out.loc[(~out["tech_allow_entry"].astype(bool)) & (~out["is_existing_position"].astype(bool)), "market_weight_multiplier"] = 0.0
+    out["portfolio_weight"] = (
+        out["base_portfolio_weight"]
+        * pd.to_numeric(out["tech_weight_multiplier"], errors="coerce").fillna(1.0)
+        * pd.to_numeric(out["mechanism_bias_multiplier"], errors="coerce").fillna(1.0)
+        * pd.to_numeric(out["market_weight_multiplier"], errors="coerce").fillna(1.0)
+    )
+    out["portfolio_weight"] = pd.to_numeric(out["portfolio_weight"], errors="coerce").fillna(0.0)
+    out = out.sort_values(["portfolio_weight", "base_portfolio_weight", "tech_final_score"], ascending=[False, False, False]).reset_index(drop=True)
+    control_summary = {
+        "market_state": {
+            "market_regime": str(market_state.get("market_regime", "") or ""),
+            "style_bias": str(market_state.get("style_bias", "") or ""),
+            "mechanism_bias": str(market_state.get("mechanism_bias", "") or ""),
+            "risk_budget_multiplier": float(market_state.get("risk_budget_multiplier", 1.0) or 1.0),
+            "turnover_multiplier": float(market_state.get("turnover_multiplier", 1.0) or 1.0),
+            "entry_strictness": float(market_state.get("entry_strictness", 0.5) or 0.5),
+            "new_position_policy": new_position_policy,
+        },
+        "technical_confirmation": dict(tech_result.get("summary", {}) or {}),
+        "artifacts": {
+            "technical_confirmation_path": str(tech_result.get("latest_path", "") or ""),
+            "technical_confirmation_summary_path": str(tech_result.get("summary_path", "") or ""),
+        },
+    }
+    return out, control_summary
+
+
 def build_portfolio_recommendation(config: Dict[str, Any], bridge_root: Path | None = None) -> Dict[str, Any]:
     runtime_cfg = dict(config.get('v5_gpu_runtime', {}) or {})
     rec_cfg = dict(config.get('portfolio_recommendation', {}) or {})
@@ -279,18 +499,68 @@ def build_portfolio_recommendation(config: Dict[str, Any], bridge_root: Path | N
     out_root = ensure_dir(Path(str(config['paths'].get('portfolio_output_root', '') or '').strip()))
     row, run_dir = _pick_best_run(hub_root=hub_root)
     pos_df = _read_positions(run_dir=run_dir)
-    max_names = int(limits['max_names'])
-    single_name_cap = float(limits['single_name_cap'])
-    total_exposure_cap = float(limits['total_exposure_cap'])
+    prev_path = out_root / 'target_positions_prev.csv'
+    prev_df = pd.read_csv(prev_path) if prev_path.exists() else pd.DataFrame()
+    market_state = _load_market_state_summary(config=config)
+    adjusted_limits = _market_adjusted_limits(limits=limits, market_state=market_state) if bool(rec_cfg.get("market_state_aware_sizing", True)) else dict(limits)
+    max_names = int(adjusted_limits['max_names'])
+    single_name_cap = float(adjusted_limits['single_name_cap'])
+    total_exposure_cap = float(adjusted_limits['total_exposure_cap'])
+    pos_df = pos_df.head(max_names * 2).copy()
+    fallback_candidate_df = pos_df.copy()
+    pos_df = _attach_price_context(pos_df=pos_df, config=config)
+    control_summary: Dict[str, Any] = {}
+    if bool(rec_cfg.get("technical_confirmation_gate", True)):
+        pos_df, control_summary = _apply_candidate_controls(
+            pos_df=pos_df,
+            prev_df=prev_df,
+            config=config,
+            market_state=market_state,
+        )
+    v2a_result = build_portfolio_v2a_artifacts(
+        config=config,
+        candidate_df=pos_df,
+        prev_df=prev_df,
+        market_state=market_state,
+        portfolio_limits=adjusted_limits,
+    )
+    if bool(v2a_result.get("ok", False)) and not pd.DataFrame(v2a_result.get("frame", pd.DataFrame())).empty:
+        pos_df = pd.DataFrame(v2a_result.get("frame", pd.DataFrame())).copy()
+        control_summary["portfolio_v2a"] = dict(v2a_result.get("summary", {}) or {})
+        control_summary["portfolio_posture"] = dict(v2a_result.get("posture", {}) or {})
+        control_summary.setdefault("artifacts", {}).update(dict(v2a_result.get("artifacts", {}) or {}))
+    pos_df = pos_df.loc[pd.to_numeric(pos_df.get('portfolio_weight'), errors='coerce').fillna(0.0) > 0].copy()
+    fallback_retained = False
+    if pos_df.empty and not fallback_candidate_df.empty:
+        pos_df = _attach_price_context(pos_df=fallback_candidate_df.head(1).copy(), config=config)
+        pos_df['portfolio_weight'] = min(max(total_exposure_cap, 0.02), single_name_cap, 0.02)
+        pos_df['tech_gate_reason'] = 'all_candidates_filtered_fallback_retained'
+        pos_df['tech_entry_style'] = 'wait'
+        pos_df['tech_allow_entry'] = False
+        pos_df['tech_weight_multiplier'] = 0.5
+        fallback_retained = True
     pos_df = pos_df.head(max_names).copy()
+    pos_df = _clean_target_position_columns(pos_df)
     if 'portfolio_weight' in pos_df.columns:
-        pos_df['portfolio_weight'] = pos_df['portfolio_weight'].astype(float).clip(upper=single_name_cap)
+        pos_df['portfolio_weight'] = pd.to_numeric(pos_df['portfolio_weight'], errors='coerce').fillna(0.0).clip(upper=single_name_cap)
         total_weight = float(pos_df['portfolio_weight'].sum())
         if total_weight > total_exposure_cap and total_weight > 0:
             pos_df['portfolio_weight'] = pos_df['portfolio_weight'] * (total_exposure_cap / total_weight)
-    pos_df = _attach_price_context(pos_df=pos_df, config=config)
-    prev_path = out_root / 'target_positions_prev.csv'
-    prev_df = pd.read_csv(prev_path) if prev_path.exists() else pd.DataFrame()
+        post_filter_reweight = bool(rec_cfg.get("enable_post_filter_reweight", True))
+        min_fill_ratio = float(rec_cfg.get("min_exposure_fill_ratio", 0.75) or 0.75)
+        target_fill = min(total_exposure_cap, total_exposure_cap * max(min_fill_ratio, 0.0))
+        reweight_before = float(pos_df['portfolio_weight'].sum())
+        reweight_after = reweight_before
+        if post_filter_reweight and target_fill > 0 and reweight_before < target_fill:
+            pos_df, reweight_before, reweight_after = _rebalance_to_target_fill(
+                df=pos_df,
+                target_total=target_fill,
+                single_name_cap=single_name_cap,
+            )
+        total_weight = float(pos_df['portfolio_weight'].sum())
+    else:
+        reweight_before = 0.0
+        reweight_after = 0.0
     rebalance_df = _diff_positions(prev_df=prev_df, new_df=pos_df)
     if not rebalance_df.empty:
         key_col = _symbol_col(pos_df)
@@ -331,7 +601,22 @@ def build_portfolio_recommendation(config: Dict[str, Any], bridge_root: Path | N
             'missing_symbols': missing_price_symbols,
         },
         'simulation_ready': bool(not rec_cfg.get('simulation_ready_need_gate', False) or float(row.get('total_score', 0.0) or 0.0) >= 45.0),
-        'portfolio_limits': limits,
+        'portfolio_limits': adjusted_limits,
+        'portfolio_weight_totals': {
+            'final_total_weight': float(total_weight),
+            'reweight_before': float(reweight_before),
+            'reweight_after': float(reweight_after),
+            'target_fill': float(target_fill) if 'target_fill' in locals() else 0.0,
+        },
+        'portfolio_v2a': dict(control_summary.get('portfolio_v2a', {}) or {}),
+        'portfolio_posture': dict(control_summary.get('portfolio_posture', {}) or {}),
+        'market_state': dict(control_summary.get('market_state', {}) or market_state),
+        'technical_confirmation': dict(control_summary.get('technical_confirmation', {}) or {}),
+        'artifacts': {
+            **dict(control_summary.get('artifacts', {}) or {}),
+            'market_state_path': str(Path(str(config['paths'].get('market_state_root', '') or '')) / 'latest_market_state.json'),
+        },
+        'fallback_retained_due_all_filtered': bool(fallback_retained),
         'performance_feedback': feedback,
         'research_context': bridge_context,
     }
@@ -349,4 +634,8 @@ def build_portfolio_recommendation(config: Dict[str, Any], bridge_root: Path | N
         'rebalance_orders_path': str(rebalance_path),
         'n_names': int(len(pos_df)),
         'run_id': str(row.get('run_id', '')),
+        'market_regime': str(summary.get('market_state', {}).get('market_regime', '') or ''),
+        'style_bias': str(summary.get('market_state', {}).get('style_bias', '') or ''),
+        'tech_allow_count': int(summary.get('technical_confirmation', {}).get('allow_count', 0) or 0),
+        'fallback_retained': bool(summary.get('fallback_retained_due_all_filtered', False)),
     }

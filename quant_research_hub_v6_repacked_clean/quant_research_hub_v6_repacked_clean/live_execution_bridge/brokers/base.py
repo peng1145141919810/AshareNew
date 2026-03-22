@@ -37,3 +37,7 @@ class BaseBroker(ABC):
             Tuple[AccountState, List[FillRecord], List[dict]]: 执行后的账户状态、成交记录和原始委托摘要。
         """
         raise NotImplementedError
+
+    def cancel_orders(self, order_rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """可选的撤单接口。默认不做任何事。"""
+        return []

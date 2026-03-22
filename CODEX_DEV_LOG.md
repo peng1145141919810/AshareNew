@@ -1,4 +1,4 @@
-# Codex Development Log
+﻿# Codex Development Log
 
 ## Must Read First
 - This file is the current handoff document for future Codex sessions in this project.
@@ -17,6 +17,19 @@
   - change summary
   - intended effect
   - any new operator warning
+
+## Engineering Bias
+- Current operator preference:
+  - future Codex work in this repo should lean slightly more aggressive and more willing to innovate on research-side architecture instead of over-preserving transitional compatibility layers
+- Practical meaning:
+  - do not keep adding half-unified wrappers, stale compatibility shims, or duplicate truths just to avoid touching internals
+  - when a cleaner cross-layer redesign is clearly better and the user is explicitly pushing the system forward, prefer the cleaner unified path
+  - avoid “留后路过多” style engineering that makes later integration harder than the current migration
+- Guardrails:
+  - aggressive does not mean reckless
+  - preserve formal operator entry, release contract, safety layer, and gmtrade environment boundaries unless the user explicitly asks to redesign them
+  - still do lightweight validation on touched paths and document behavioral truth in this log before ending the turn
+  - if a proposed innovation increases research-side ambition but weakens execution-side safety, keep the safety boundary conservative and isolate the innovation upstream
 
 ## Latest Stable Snapshot
 - Snapshot date: `2026-03-22`
@@ -64,12 +77,14 @@
 - Trade clock runtime:
   - release root: `F:\quant_data\Ashare\data\trade_release_v1`
   - clock state root: `F:\quant_data\Ashare\data\trade_clock`
+  - OMS truth root: `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1`
   - latest release pointer: `F:\quant_data\Ashare\data\trade_release_v1\latest_release.json`
   - latest clock heartbeat: `F:\quant_data\Ashare\data\trade_clock\clock_state.json`
   - latest safety truth: `F:\quant_data\Ashare\data\trade_clock\system_safety_state.json`
   - incident log: `F:\quant_data\Ashare\data\trade_clock\incident_log.jsonl`
   - manual overrides: `F:\quant_data\Ashare\data\trade_clock\manual_overrides.json`
   - latest account health probe: `F:\quant_data\Ashare\data\trade_clock\latest_account_health.json`
+  - latest OMS actual-state truth: `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\latest_actual_portfolio_state.json`
   - autostart task name: `Ashare Trade Clock`
   - autostart scripts:
     - install: `F:\quant_data\Ashare\scripts\install_trade_clock_autostart.ps1`
@@ -81,6 +96,8 @@
     - `system_safety_state.json` is the current safety truth
     - `incident_log.jsonl` is the append-only abnormal-event ledger
 - Current recommended commands:
+  - operator plain-language guide:
+    - `F:\quant_data\Ashare\SYSTEM_DAILY_USAGE_GUIDE_CN.txt`
   - `python F:\quant_data\Ashare\launch_canonical.py`
   - `python F:\quant_data\Ashare\launch_canonical.py --profile overnight`
   - `python F:\quant_data\Ashare\launch_canonical.py --profile quick_test`
@@ -101,6 +118,10 @@
   - `supervisor_state.json` now also carries recent `runtime_notes` for selected long stages.
   - V6 now emits additive sidecar artifacts for `announcement_evidence_cards.json` and `manual_review_queue.json`.
   - V6 now also emits a formal `industry_router` research skeleton with stock-level signals, mechanism-state tables, and split backtest reports.
+  - V6 now also emits a formal market-state layer with `latest_market_state.json`, `market_state_daily.csv`, and `market_state_explainer.json`.
+  - Portfolio recommendation now emits a formal technical-confirmation layer with `latest_technical_confirmation.csv` and `technical_confirmation_summary.json`.
+  - Technical confirmation now supports a softer `pilot` path for borderline new entries and a graded `reduce_watch` path for weak existing positions instead of relying only on hard zero/one gating.
+  - Portfolio recommendation now supports post-filter reweighting so weak screening does not leave the system trapped in meaningless low-exposure books when capacity still exists under the current regime cap.
   - V5 completion can now emit `latest_v5_cycle_review.json` as a local post-cycle review.
   - execution runs now emit a portfolio-control audit layer with `position_state_before/after_plan/after_execution`, `rebalance_audit.json`, and `execution_feedback.json`.
   - the execution layer can now refresh a dedicated `Latest Live Portfolio Snapshot` block inside this dev log after successful bridge runs.
@@ -113,6 +134,33 @@
 - Portfolio control V1:
   - current low-risk scope is `ledger + drift threshold + daily turnover budget + execution feedback + dev-log portfolio snapshot`
   - industry/theme exposure and staged build/reduce are intentionally deferred for now
+- Portfolio V2A:
+  - the research-side portfolio layer now has a formal deterministic V2A posture engine, lifecycle engine, and admission/replacement layer under `hub_v6\portfolio_v2a`
+  - V2A now upgrades target generation from flat rank-weight output into:
+    - portfolio posture
+    - per-name lifecycle state
+    - action intent
+    - admission/replacement audit
+  - current lifecycle states are:
+    - `watch`
+    - `pilot`
+    - `build`
+    - `hold`
+    - `trim`
+    - `exit`
+  - current V2A scope is portfolio-construction-side and now explicitly separated from OMS truth:
+    - it influences `portfolio_recommendation.json`, `target_positions.csv`, `release_manifest.json`, and execution audit metadata
+    - it now prefers OMS actual-state truth for continuity when available
+    - it still does not make intraday execution micro-decisions
+- OMS narrow but complete truth layer:
+  - a formal OMS package now lives under `hub_v6\oms`
+  - authority split is now:
+    - research/V2A owns `desired_state`
+    - release owns contract freeze/versioning
+    - safety/trade-clock owns permission to attempt execution
+    - OMS owns broker/account truth, order/fill ledgers, desired-vs-actual gap truth, and `actual_state`
+  - the execution bridge is now an operational arm of OMS/runtime, not the authoritative lifecycle ledger
+  - `live_execution_bridge\runtime.py` is now a compatibility wrapper that delegates to OMS runtime
 - Industry router Deepened Three-Mechanism Architecture:
   - static contracts now live under `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\industry_router`
   - runtime code is now split into `contracts\`, `core\`, and `mechanisms\`
@@ -143,35 +191,33 @@
   - `industry_router_only` formal skeleton run confirmed on `2026-03-22 04:18:14`
   - deepened three-mechanism `industry_router_only` run confirmed on `2026-03-22 19:49:01`
   - `plan_only` integration with deepened industry-router context confirmed on `2026-03-22 19:47:22`
+  - market-state and technical-confirmation portfolio integration confirmed on `2026-03-22 21:06:22`
+  - market-state-aware `execution_only --gate-only` release check confirmed on `2026-03-22 21:06:22`
+  - softened market-state / technical-confirmation posture plus post-filter reweight confirmed on `2026-03-22 21:38:38`
+  - Portfolio V2A posture/lifecycle/admission integration plus release/gate compatibility confirmed on `2026-03-22 22:17:56`
+  - OMS authority refactor plus broker-truth-first artifact emission probe confirmed on `2026-03-22 23:29:33`
+  - post-OMS `execution_only --gate-only` split-path compatibility reconfirmed on `2026-03-22 23:30:06`
 - Current truth:
   - old V6 readmes pointing to `run_v6_full_cycle_real.py` are stale
   - this log is the current source of truth
 
 ## Latest Live Portfolio Snapshot
 <!-- LIVE_PORTFOLIO_SNAPSHOT_START -->
-- Updated at: `20260321_153949`
-- Source report: `F:\quant_data\Ashare\data\live_execution_bridge\execution_report_20260321_153949.json`
-- Account: `4d74...2aa6`
-- NAV: `993074.5520`
-- Cash: `310974.5460`
-- Positions: `10`
-- Target names: `15`
-- Orders/Fills: `24` / `0`
-- Turnover raw/final: `0.9602` / `0.2490`
+- Updated at: `20260323_002316`
+- Source report: `F:\quant_data\Ashare\data\live_execution_bridge\execution_report_20260323_002316.json`
+- Account: `oms_...ount`
+- NAV: `10000.0000`
+- Cash: `8000.0000`
+- Positions: `1`
+- Target names: `1`
+- Orders/Fills: `1` / `0`
+- Turnover raw/final: `0.2000` / `0.2000`
 - Drift skipped: `0`
-- Turnover adjustments: `21`
-- Execution status summary: `success=0 partial=0 failed=24 skipped=21`
+- Turnover adjustments: `0`
+- Execution status summary: `success=0 partial=0 failed=1 skipped=0`
 - Top holdings:
-- `688280.SH`: weight=0.0785, shares=7700, price=10.1300
-- `688005.SH`: weight=0.0785, shares=2600, price=29.9700
-- `688549.SH`: weight=0.0781, shares=8500, price=9.1200
-- `688323.SH`: weight=0.0779, shares=3900, price=19.8300
-- `688728.SH`: weight=0.0776, shares=5700, price=13.5200
-- `688596.SH`: weight=0.0770, shares=2600, price=29.4200
-- `688172.SH`: weight=0.0744, shares=1600, price=46.1500
-- `688981.SH`: weight=0.0720, shares=700, price=102.1800
+- `600010.SH`: weight=0.2000, shares=200, price=10.0000
 <!-- LIVE_PORTFOLIO_SNAPSHOT_END -->
-
 ## Session Start Checklist
 - Read `Latest Stable Snapshot`, `Latest Live Portfolio Snapshot`, `Known Dangerous Operations`, and `Known Issues` before touching code.
 - If the task touches precise-style execution, also inspect `data\trade_release_v1\latest_release.json` and `data\trade_clock\clock_state.json` first.
@@ -204,6 +250,7 @@
 | `research_only` | market pipeline -> strategy feedback -> V6 plan -> V5.1 -> portfolio recommendation -> release publish | formal research-side nightly production | does not directly execute |
 | `release_only` | republishes latest portfolio artifacts into `trade_release_v1` | refresh release after portfolio files changed or after recovery | does not directly execute |
 | `execution_only` | reads latest release -> checks trade gate/window -> dispatches execution bridge if allowed | formal execution-side entry | simulation is release-driven; precision is time-gated and obeys `precision_trade` |
+| oms_validate | bounded OMS synthetic/replay validation harness | OMS hardening regression checks after refactors | no execution bridge; no live broker required |
 | `resume_downstream` | restart from portfolio recommendation and optionally rerun execution | downstream recovery after V5 finished but later stages failed | precision direct execution is blocked by default |
 | `full_cycle` | ingest -> extract -> industry router -> gap -> plan -> bridge artifacts | V6 subchain inspection | no execution bridge |
 | `ingest_only` | market/base-table refresh and raw event ingest | upstream source debugging | no execution bridge |
@@ -338,13 +385,43 @@
   1. Market data update and train-table append
   2. Raw event ingest from announcements plus Tushare news
   3. Structured event extraction
-  4. Industry-router stock/mechanism skeleton and split backtest sidecar
-  5. Data-gap analysis
-  6. V6 research brief generation
-  7. V5.1 GPU iterative research
-  8. Portfolio recommendation generation
-  9. Gmtrade simulation execution
-  10. Daily performance feedback back into the next run
+  4. Industry-router stock/mechanism signal layer and split backtest sidecar
+  5. Market-state / capital-flow regime layer
+  6. Data-gap analysis
+  7. V6 research brief generation
+  8. V5.1 GPU iterative research
+  9. Portfolio V2A posture / lifecycle / admission-replacement construction
+  10. Portfolio recommendation with technical confirmation and market-aware sizing
+  11. Portfolio release publish
+  12. Time-gated execution with safety guard and market-state turnover/reduce-only constraints
+  13. Daily performance feedback back into the next run
+
+## Authority Structure
+- Research power:
+  - `hub_v6/portfolio_recommendation.py`, `hub_v6/portfolio_v2a/*`, V6, and V5.1 may define hypotheses, ranking, desired target weights, and desired lifecycle suggestions.
+  - Research is not allowed to define broker/account/order/fill truth.
+- Release power:
+  - `hub_v6/portfolio_release.py` freezes the contract for execution consumption.
+  - Release does not learn from broker noise and does not derive actual-state truth.
+- Safety/gate power:
+  - `trade_clock_service.py`, `execution_manager.py`, and the safety truth files decide whether execution may be attempted.
+  - Safety does not author account truth or lifecycle truth.
+- OMS power:
+  - `hub_v6/oms/*` owns:
+    - broker/account snapshots
+    - position/order/fill ledgers
+    - desired-vs-actual gap
+    - actual-state derivation
+    - intent lifecycle truth
+  - OMS consumes gate truth but does not replace the global safety layer.
+- Execution power:
+  - `live_execution_bridge` submits orders and reads broker replies under OMS governance.
+  - `live_execution_bridge/runtime.py` is now a compatibility wrapper; the canonical execution-side truth runtime is `hub_v6/oms/runtime.py`.
+- Feedback buckets:
+  - Bucket A `truth feedback` stays inside OMS ledgers/artifacts only.
+  - Bucket B `control feedback` flows from OMS into V2A posture pacing.
+  - Bucket C `research meta feedback` flows only as aggregated summary into the research context pack.
+  - Bucket D `narrative feedback` is non-authoritative and for human reading only.
 
 ## Active Runtime vs Archived Roots
 - Active root entry:
@@ -387,12 +464,13 @@
   - `hub_v6/event_ingest.py` collects raw announcements and Tushare news into the event lake.
   - `hub_v6/event_extract.py` converts raw event text into structured event objects with quality and anti-overfit metadata.
   - `hub_v6/industry_router/` now sits between extracted events and the higher research context as the formal stock/mechanism skeleton.
-  - `hub_v6/industry_router/runtime.py` builds `stock_master`, `event_instances`, `event_stock_mapping`, `industry_state_daily`, and `stock_signal_daily`.
+  - `hub_v6/industry_router/runtime.py` builds `stock_master`, `event_instances`, `event_stock_mapping`, `mechanism_state_daily`, and `stock_signal_daily`.
   - `hub_v6/industry_router/backtest.py` runs the split mechanism backtest skeleton over the generated signal table.
+  - `hub_v6/market_state/runtime.py` builds market-state regime truth from trend, breadth, liquidity proxies, style balance, and industry-router bias.
   - `hub_v6/data_gap_engine.py` identifies missing derived features or refresh actions.
-  - `hub_v6/context_pack.py` now merges extracted events, industry-router summary, gap findings, and bridge context into `research_context_pack.json`.
+  - `hub_v6/context_pack.py` now merges extracted events, industry-router summary, market-state truth, gap findings, and bridge context into `research_context_pack.json`.
 - V6 planning layer:
-  - `hub_v6/research_brief_engine.py` reads the context pack and produces `research_brief.json`.
+  - `hub_v6/research_brief_engine.py` reads the context pack, including market-state truth and mechanism-aware context, and produces `research_brief.json`.
   - `hub_v6/llm_router.py` is the provider abstraction for OpenAI / DeepSeek / local Ollama.
   - `hub_v6/v5_bridge.py` converts the research brief into bridge artifacts such as `candidate_override.json` under `data/event_lake_v6/bridge`.
 - Bridge boundary between V6 and V5:
@@ -415,36 +493,81 @@
   - `registry.py` appends run-level results into `registry/experiment_registry.csv`.
   - `strategy_family.py` and deployment gates summarize family-level status after each cycle.
 - Portfolio recommendation layer:
-  - `hub_v6/portfolio_recommendation.py` reads the latest valid V5 result, resolves the corresponding run directory, loads `latest_portfolio_v1.csv`, attaches price context, and writes:
+  - `hub_v6/portfolio_v2a/` is now the formal deterministic posture/state/admission engine between raw candidate ranking and final target-book publication.
+  - `portfolio_v2a/exposure_engine.py` turns market-state + safety linkage + current book posture into total-cap, new-entry-budget, add-budget, and rebalance mode.
+  - `portfolio_v2a/lifecycle_engine.py` turns each candidate into lifecycle state, action intent, size confidence, target cap, and proposal weight.
+  - `portfolio_v2a/admission_engine.py` decides new-entry admission and replacement pressure when slots are limited.
+  - `portfolio_v2a/runtime.py` writes formal sidecars:
+    - `latest_portfolio_posture.json`
+    - `latest_position_lifecycle.csv`
+    - `position_lifecycle_daily.csv`
+    - `admission_replacement_audit.json`
+    - `portfolio_control_summary.json`
+  - `hub_v6/technical_confirmation/runtime.py` scores candidate-level trend, volume, stretch, and hold-health confirmation before final portfolio selection.
+  - `hub_v6/portfolio_recommendation.py` reads the latest valid V5 result, resolves the corresponding run directory, loads `latest_portfolio_v1.csv`, applies market-state-aware sizing plus technical confirmation, attaches price context, and writes:
     - `portfolio_recommendation.json`
     - `target_positions.csv`
     - `rebalance_orders.csv`
-  - It consumes both V5 outputs and the latest market snapshot files, and also reads `performance_feedback.json` for posture overrides.
+  - It consumes both V5 outputs and the latest market snapshot files, reads `performance_feedback.json` for posture overrides, and also reads:
+    - latest market-state truth
+    - latest technical-confirmation table
+    - latest industry-router signal context
+  - Market state can now directly tighten `max_names`, `total_exposure_cap`, and `single_name_cap`.
+  - Technical confirmation can now directly reject weak entries or weight down marginal candidates before the release layer snapshots the final target book.
+  - V2A now directly decides:
+    - lifecycle state
+    - action intent
+    - target-weight cap
+    - proposal target weight
+    - admission/replacement outcome
 - Release layer:
   - `hub_v6/portfolio_release.py` is the new middle layer between research and execution.
   - It reads the latest portfolio recommendation artifacts and publishes a versioned release under `data\trade_release_v1\releases\<release_id>\`.
+  - The release manifest now also snapshots market-state truth and technical-confirmation summary so execution can read one coherent release contract instead of recomputing posture.
+  - It now also snapshots V2A posture and lifecycle-sidecar pointers so release consumers can inspect the portfolio state machine without rerunning research logic.
   - It also maintains:
     - `latest_release.json`
     - `latest\release_manifest.json`
     - `latest\target_positions.csv`
 - Precision execution gate:
   - `hub_v6/execution_manager.py` owns `execution_only`.
-  - It reads the published release, checks trading day plus execution window, and only then dispatches the execution bridge.
+  - It reads the published release, checks trading day plus execution window, evaluates safety, applies market-state turnover and reduce-only posture, and only then dispatches the execution bridge.
   - `hub_v6/trading_clock.py` owns A-share clock windows and the cached trade-calendar check.
   - `hub_v6/clock_supervisor.py` is the lightweight heartbeat loop used by `trade_clock_service.py`.
 - Execution layer:
-  - `live_execution_bridge/runtime.py` is the execution runtime entry used by the supervisor.
-  - `live_execution_bridge/rebalance.py` converts target holdings and current account state into order intents.
-  - `live_execution_bridge/portfolio_control.py` now provides the low-risk control layer for unified position state, drift thresholding, turnover budgeting, and normalized execution feedback.
+  - `hub_v6/oms/runtime.py` is now the canonical execution-side truth runtime.
+  - It owns:
+    - account ledger
+    - position ledger
+    - intent ledger
+    - order ledger
+    - fill ledger
+    - desired-vs-actual gap
+    - actual-state derivation
+  - `live_execution_bridge/runtime.py` remains as a compatibility wrapper and simply delegates into OMS runtime.
+  - `live_execution_bridge/portfolio_control.py` is now a deterministic dispatch-planning and audit utility under OMS governance, not the authoritative source of actual state.
+  - `portfolio_control.py` still carries through V2A metadata from `target_positions.csv` into execution-side position-state audit rows so operator audit can see lifecycle state and action intent next to share math.
   - `live_execution_bridge/brokers/gmtrade_sim_broker.py` is the real gmtrade simulation adapter currently in use.
-  - The execution layer consumes `target_positions.csv` and price snapshots, then writes:
+  - The OMS/execution layer consumes the published release target book plus broker/account truth, then writes:
+    - `latest_actual_portfolio_state.json`
+    - `desired_vs_actual_gap.csv`
+    - `oms_summary.json`
+    - `intent_ledger_latest.csv`
+    - `order_ledger_latest.csv`
+    - `fill_ledger_latest.csv`
+    - `actual_state_daily.csv`
     - `execution_report_*.json`
     - `orders_*.csv`
     - `fills_*.csv`
-    - `latest_account_state.json`
+    - `latest_account_state.json` (compatibility snapshot only; OMS artifacts are authoritative)
     - `equity_curve.csv`
 - Feedback loop:
   - After execution, `hub_v6/supervisor.py` reads `equity_curve.csv` and writes `performance_feedback.json`.
+  - OMS also emits:
+    - Bucket A truth feedback into OMS ledgers/artifacts only
+    - Bucket B control feedback into `control_feedback_latest.json` for V2A posture pacing
+    - Bucket C research meta feedback into `research_meta_feedback_latest.json`, which is now injected into the research context pack as aggregated execution realism
+    - Bucket D narrative feedback into a non-authoritative human-readable sidecar
   - That feedback is then consumed on the next run by:
     - `hub_v6/supervisor.py` itself
     - `v5_gpu_runtime/hub/candidate_factory.py`
@@ -468,6 +591,9 @@
 | `manual_review_queue.json` | event-extract local review-router sidecar | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\extract_summary\manual_review_queue.json` | JSON | compact queue of events worth manual review; additive only |
 | `run_manifest.json` | formal governance wrapper | operator / debugging | `F:\quant_data\Ashare\outputs\canonical_runs\<run_id>\run_manifest.json` | JSON | run id, operator entry, runtime root, mode/profile, and trace metadata |
 | `industry_router_summary.json` | industry-router runtime | context pack / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\industry_router_summary.json` | JSON | high-level summary over mechanism groups, latest active signals, and split-backtest status |
+| `latest_market_state.json` | market-state runtime | context pack / portfolio recommendation / release / execution gate / operator | `F:\quant_data\Ashare\data\market_state_v6\latest_market_state.json` | JSON | current market regime truth with regime score, style bias, mechanism bias, exposure/turnover multipliers, and entry posture |
+| `market_state_daily.csv` | market-state runtime | operator / debugging | `F:\quant_data\Ashare\data\market_state_v6\market_state_daily.csv` | CSV | historical daily market-state rows with sub-score decomposition and final posture fields |
+| `market_state_explainer.json` | market-state runtime | operator / debugging | `F:\quant_data\Ashare\data\market_state_v6\market_state_explainer.json` | JSON | concise explanation of the latest regime drivers, thresholds, and policy decisions |
 | `stock_master.csv` | industry-router runtime | event mapper / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\stock_master.csv` | CSV | resolved stock master with mechanism and subchain tags |
 | `mechanism_map.csv` | industry-router runtime | event mapper / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\mechanism_map.csv` | CSV | symbol-to-mechanism mapping contract used by the router |
 | `stock_profile.csv` | industry-router runtime | mechanism policies / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\stock_profile.csv` | CSV | resolved stock profile contract after merging stock master and mechanism map |
@@ -491,11 +617,40 @@
 | `backtest_attribution_*` | industry-router backtest skeleton | operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\backtests\backtest_attribution_*` | JSON/CSV | component-level attribution summary by mechanism; zero-trade candidate buckets are preserved when future bars are unavailable |
 | `candidate_override.json` | V5 bridge | V5.1 runtime | `F:\quant_data\Ashare\data\event_lake_v6\bridge\candidate_override.json` | JSON | tells V5 what routes, models, labels to favor |
 | `latest_v5_cycle_review.json` | supervisor local V5 review sidecar | operator / debugging | `F:\quant_data\Ashare\data\research_hub_v5_1_gpu_integrated\reviews\latest_v5_cycle_review.json` | JSON | concise local review over latest completed V5 cycle; additive only |
-| `portfolio_recommendation.json` | portfolio recommendation layer | operator / execution bridge | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_recommendation.json` | JSON | summary of selected strategy and portfolio state |
-| `target_positions.csv` | portfolio recommendation layer | Gmtrade execution bridge | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\target_positions.csv` | CSV | target holdings with price fields |
+| `portfolio_recommendation.json` | portfolio recommendation layer | operator / execution bridge | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_recommendation.json` | JSON | summary of selected strategy and portfolio state, now also including market-state posture, technical-confirmation summary, and post-filter reweight totals |
+| `latest_portfolio_posture.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_v2a\latest_portfolio_posture.json` | JSON | portfolio-level posture contract with exposure cap, new-entry budget, add budget, rebalance mode, safety linkage, and replacement aggressiveness |
+| `latest_position_lifecycle.csv` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_v2a\latest_position_lifecycle.csv` | CSV | latest per-name lifecycle state, action intent, proposal weight, final weight, cap, and reason fields |
+| `position_lifecycle_daily.csv` | portfolio V2A runtime | operator / replay / audit | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_v2a\position_lifecycle_daily.csv` | CSV | rolling history of lifecycle states for replay and threshold scans |
+| `admission_replacement_audit.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_v2a\admission_replacement_audit.json` | JSON | explains which new names were admitted, denied, or used to replace weaker incumbents |
+| `portfolio_control_summary.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_v2a\portfolio_control_summary.json` | JSON | V2A state counts, exposure usage, replacement counts, and soft-crowding snapshot |
+| `latest_technical_confirmation.csv` | technical-confirmation runtime | portfolio recommendation / release / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\technical_confirmation\latest_technical_confirmation.csv` | CSV | latest candidate-level technical gate output with entry allow flag, gate reason, and weight multiplier |
+| `technical_confirmation_daily.csv` | technical-confirmation runtime | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\technical_confirmation\technical_confirmation_daily.csv` | CSV | rolling technical-confirmation history across candidate symbols and dates |
+| `technical_confirmation_summary.json` | technical-confirmation runtime | portfolio recommendation / release / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\technical_confirmation\technical_confirmation_summary.json` | JSON | latest confirmation counts, strictness level, and summary posture |
+| `target_positions.csv` | portfolio recommendation layer | Gmtrade execution bridge | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\target_positions.csv` | CSV | target holdings with price fields, technical-confirmation fields, market-aware sizing metadata, post-filter reweighted portfolio weights, and V2A lifecycle/action-intent fields |
 | `rebalance_orders.csv` | portfolio recommendation layer | operator / execution bridge | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\rebalance_orders.csv` | CSV | delta orders relative to prior holdings |
 | `latest_release.json` | portfolio release layer | execution gate / trade clock / operator | `F:\quant_data\Ashare\data\trade_release_v1\latest_release.json` | JSON | pointer to the current formal release |
-| `release_manifest.json` | portfolio release layer | execution gate / operator | `F:\quant_data\Ashare\data\trade_release_v1\releases\<release_id>\release_manifest.json` | JSON | versioned trade-date-scoped release contract between research and execution |
+| `release_manifest.json` | portfolio release layer | execution gate / operator | `F:\quant_data\Ashare\data\trade_release_v1\releases\<release_id>\release_manifest.json` | JSON | versioned trade-date-scoped release contract between research and execution; now also snapshots market-state truth and technical-confirmation summary |
+| `latest_actual_portfolio_state.json` | OMS runtime | operator / V2A continuity / audit | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\latest_actual_portfolio_state.json` | JSON | authoritative OMS actual-state snapshot derived from broker/account truth plus open intents/orders |
+| `desired_vs_actual_gap.csv` | OMS runtime | operator / audit / control feedback | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\desired_vs_actual_gap.csv` | CSV | authoritative desired-vs-actual gap table between the published release book and broker truth |
+| `oms_summary.json` | OMS runtime | operator / postmortem | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\oms_summary.json` | JSON | OMS-level summary over authority ownership, gap size, intent status, dispatch count, and overrides applied |
+| `intent_ledger_latest.csv` | OMS runtime | operator / audit / replay | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\ledgers\intent_ledger_latest.csv` | CSV | authoritative intent ledger with status lifecycle from `planned` through terminal states |
+| `order_ledger_latest.csv` | OMS runtime | operator / audit / replay | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\ledgers\order_ledger_latest.csv` | CSV | authoritative order ledger with broker ids, status, remaining quantity, and intent linkage |
+| `fill_ledger_latest.csv` | OMS runtime | operator / audit / replay | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\ledgers\fill_ledger_latest.csv` | CSV | authoritative fill ledger keyed by broker execution ids when available |
+| `actual_state_daily.csv` | OMS runtime | operator / replay / research continuity fallback | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\actual_state_daily.csv` | CSV | rolling actual-state history derived from broker truth, not from the research-side target book |
+| latest_open_intents.json | OMS runtime | operator / resume logic / audit | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\latest_open_intents.json | JSON | latest unresolved open intents after final ledger deduplication; first-stop snapshot for cross-session continuity |
+| latest_intent_continuity_report.json | OMS runtime | operator / OMS debugging | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\latest_intent_continuity_report.json | JSON | start-of-session continuity classification over carried intents, superseded intents, cancel requests, and reconcile-only blocks |
+| session_resume_audit.json | OMS runtime | operator / recovery | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\session_resume_audit.json | JSON | bounded session-resume audit with ignored stale orders, carried symbols, replacement-required symbols, and cancel requests |
+| cancel_replace_audit.json | OMS runtime | operator / postmortem | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\cancel_replace_audit.json | JSON | explicit cancel/replace lineage over cancel requests/results and old_intent_id -> new_intent_id replacements |
+| latest_manual_intervention_state.json | OMS runtime | operator / audit | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\latest_manual_intervention_state.json | JSON | latest applied OMS intervention state with active override summary, applied counts, and current override payload hash |
+| `control_feedback_latest.json` | OMS runtime | V2A posture engine / operator | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\feedback\control_feedback_latest.json` | JSON | Bucket B feedback for new-entry/add completion, turnover truncation, and persistent gap pressure |
+| gap_control_metrics_daily.csv | OMS runtime | V2A posture engine / operator | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\feedback\gap_control_metrics_daily.csv | CSV | rolling control-feedback history with completion ratios, convergence, replacement churn, and partial-stuck metrics |
+| `research_meta_feedback_latest.json` | OMS runtime | context pack / research meta weighting / operator | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\feedback\research_meta_feedback_latest.json` | JSON | Bucket C aggregated execution-realism feedback for research-side consumption only |
+| mechanism_realism_rollup.csv | OMS runtime | research context / operator | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\feedback\mechanism_realism_rollup.csv | CSV | rolling mechanism-level realizability and convergence rollup over 20/40/60-run windows |
+| `narrative_feedback_latest.json` | OMS runtime | operator | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\feedback\narrative_feedback_latest.json` | JSON | Bucket D non-authoritative human-readable summary; never mutates truth |
+| manual_overrides.json | OMS operator | OMS runtime / continuity / cancel-replace | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\manual_overrides.json | JSON | operator-facing OMS intervention file for intent-level, symbol-level, and session-level overrides; distinct from trade-clock safety overrides |
+| manual_override_history.jsonl | OMS runtime | operator / audit | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\history\manual_override_history.jsonl | JSONL | append-only history of OMS override payload hashes and applied intervention summaries |
+| oms_validation_report.json | OMS validation harness | operator / Codex regression checks | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\validation\oms_validation_report.json | JSON | bounded synthetic/replay validation report over reconciliation, continuity, lifecycle, and recovery scenarios |
+| oms_validation_summary.md | OMS validation harness | operator / Codex regression checks | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\validation\oms_validation_summary.md | Markdown | short human-readable pass/fail summary for the OMS validation harness |
 | `clock_state.json` | trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\clock_state.json` | JSON | heartbeat, gate status, active window, and last dispatch state |
 | `system_safety_state.json` | safety guard | operator / execution gate / trade clock | `F:\quant_data\Ashare\data\trade_clock\system_safety_state.json` | JSON | current execution safety truth including system mode, market regime, manual overrides, release validation, and freshness markers |
 | `incident_log.jsonl` | safety guard | operator / debugging / postmortem | `F:\quant_data\Ashare\data\trade_clock\incident_log.jsonl` | JSONL | append-only abnormal-event log with before/after safety modes and action taken |
@@ -504,6 +659,7 @@
 | `latest_account_health.json` | gmtrade health probe sidecar | safety guard / operator | `F:\quant_data\Ashare\data\trade_clock\latest_account_health.json` | JSON | latest fresh or cached account/position/order health snapshot fetched via `gmtrade39` |
 | `latest_execution_dispatch.json` | execution gate / trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\latest_execution_dispatch.json` | JSON | latest release-triggered execution dispatch outcome |
 | `execution_report_*.json` | Gmtrade execution bridge | operator / supervisor feedback | `F:\quant_data\Ashare\data\live_execution_bridge\execution_report_*.json` | JSON | execution summary per run |
+| `latest_account_state.json` | live execution compatibility writer | operator / legacy downstream readers | `F:\quant_data\Ashare\data\live_execution_bridge\latest_account_state.json` | JSON | compatibility-only latest account snapshot; OMS ledgers and `latest_actual_portfolio_state.json` are now authoritative |
 | `position_state_before.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\position_state_before.json` | JSON | planned-trade ledger snapshot before controls are applied |
 | `position_state_after_plan.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\position_state_after_plan.json` | JSON | target vs actual vs pending plan after drift/budget controls |
 | `position_state_after_execution.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\position_state_after_execution.json` | JSON | actual vs target vs unfinished-order pending effect after execution |
@@ -520,6 +676,17 @@
 | `OVERNIGHT_V5_GPU_MAX_CYCLES_PER_TICK` | `hub_v6/local_settings.py` | `8` | controls overnight runtime and research depth |
 | `QUICK_TEST_V5_GPU_MAX_CYCLES_PER_TICK` | `hub_v6/local_settings.py` | `1` | controls quick_test runtime and debugging speed |
 | `ENABLE_EXECUTION_BRIDGE` | `hub_v6/local_settings.py` | `True` | determines whether simulated execution runs after portfolio generation |
+| `PORTFOLIO_ENABLE_POST_FILTER_REWEIGHT` | `hub_v6/local_settings.py` | `True` | allows filtered target weights to be re-expanded toward a meaningful exposure floor when regime capacity still exists |
+| `PORTFOLIO_MIN_EXPOSURE_FILL_RATIO` | `hub_v6/local_settings.py` | `0.75` | target fraction of the current total-exposure cap used by post-filter reweighting when the filtered book is too sparse |
+| `ENABLE_PORTFOLIO_V2A` | `hub_v6/local_settings.py` | `True` | enables the deterministic V2A posture/lifecycle/admission engine inside portfolio recommendation |
+| `PORTFOLIO_ENABLE_LIFECYCLE_STATE_MACHINE` | `hub_v6/local_settings.py` | `True` | enables lifecycle-state assignment before final target-book publication |
+| `PORTFOLIO_ENABLE_ADMISSION_REPLACEMENT` | `hub_v6/local_settings.py` | `True` | enables new-entry admission and weak-incumbent replacement logic when slots are constrained |
+| `PORTFOLIO_ENABLE_SOFT_CROWDING_PENALTY` | `hub_v6/local_settings.py` | `True` | enables soft crowding penalties as a ranking/weight modifier instead of hard blocking |
+| `PORTFOLIO_ENABLE_RICH_PORTFOLIO_AUDIT` | `hub_v6/local_settings.py` | `True` | enables richer V2A sidecars and release/audit metadata |
+| `PORTFOLIO_V2A_PILOT_MAX_WEIGHT` | `hub_v6/local_settings.py` | `0.04` | maximum default size for `pilot` positions before post-filter reweight and single-name caps are applied |
+| `PORTFOLIO_V2A_BUILD_SPEED` / `PORTFOLIO_V2A_TRIM_SPEED` | `hub_v6/local_settings.py` | `1.25 / 0.72` | controls how quickly V2A expands strong incumbents and trims weakening names |
+| `PORTFOLIO_V2A_REPLACEMENT_IMPROVEMENT_THRESHOLD` | `hub_v6/local_settings.py` | `0.08` | minimum admission-vs-retention improvement needed before replacing a weaker incumbent |
+| `PORTFOLIO_V2A_SOFT_CROWDING_PENALTY_STRENGTH` | `hub_v6/local_settings.py` | `0.08` | strength of soft crowding penalties inside V2A admission/retention scoring |
 | `ENABLE_PORTFOLIO_CONTROL` | `hub_v6/local_settings.py` | `True` | enables the low-risk portfolio control audit and constraint layer inside execution |
 | `PORTFOLIO_CONTROL_DRIFT_THRESHOLD` | `hub_v6/local_settings.py` | `0.005` | small weight gaps below this threshold are skipped instead of traded |
 | `PORTFOLIO_CONTROL_MAX_DAILY_TURNOVER_RATIO` | `hub_v6/local_settings.py` | `0.25` | caps planned daily turnover and truncates lower-priority orders when exceeded |
@@ -527,6 +694,13 @@
 | `PORTFOLIO_CONTROL_ENABLE_DEV_LOG_SNAPSHOT` | `hub_v6/local_settings.py` | `True` | refreshes the live portfolio snapshot block inside `CODEX_DEV_LOG.md` after execution |
 | `PORTFOLIO_CONTROL_DEV_LOG_TOP_HOLDINGS` | `hub_v6/local_settings.py` | `8` | controls how many top holdings are written into the dev-log snapshot |
 | `PORTFOLIO_CONTROL_ALLOW_ODD_LOT_EXIT` | `hub_v6/local_settings.py` | `True` | allows cleanup of residual odd-lot sell quantities in the control layer |
+| `ENABLE_OMS` | `hub_v6/local_settings.py` | `True` | turns the broker-truth-first OMS layer on beneath `execution_only` and the gmtrade bridge |
+| `OMS_OUTPUT_ROOT` | `hub_v6/local_settings.py` | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1` | authoritative OMS ledger/artifact root |
+| `OMS_USE_BROKER_TRUTH_FOR_V2A_CONTINUITY` | `hub_v6/local_settings.py` | `True` | makes V2A prefer OMS actual-state truth over previous target/lifecycle sidecars when continuity is available |
+| `OMS_INTENT_EXPIRY_DAYS` | `hub_v6/local_settings.py` | `3` | default expiry window for OMS intents before they should be treated as stale |
+| `OMS_CONTROL_FEEDBACK_LOOKBACK_RUNS` / `OMS_RESEARCH_META_LOOKBACK_RUNS` | `hub_v6/local_settings.py` | `20 / 60` | lookback windows for Bucket B control feedback and Bucket C research meta feedback aggregation |
+| `OMS_COMPAT_WRITE_LATEST_ACCOUNT_STATE` | `hub_v6/local_settings.py` | `True` | keeps writing `latest_account_state.json` for legacy consumers even though OMS artifacts are authoritative |
+| OMS_ENABLE_BROKER_CANCEL | hub_v6/local_settings.py | True | allows OMS cancel/replace logic to request broker-side order_cancel when unresolved open orders are superseded or operator-cancelled |
 | `EXECUTION_ACCOUNT_MODE` | `hub_v6/local_settings.py` | `precision` | selects which gmtrade account profile is active by default: `simulation` or `precision` |
 | `PRECISION_TRADE_ENABLED` | `hub_v6/local_settings.py` | `False` | when `False`, precision mode still refreshes heartbeat/gate logs but refuses to call the execution bridge |
 | `ALLOW_INTEGRATED_PRECISION_EXECUTION` | `hub_v6/local_settings.py` | `False` | keeps `integrated_supervisor` and `resume_downstream` from directly executing against the precision account unless explicitly allowed |
@@ -552,6 +726,15 @@
 | `INDUSTRY_ROUTER_ENABLE_BACKTEST` | `hub_v6/local_settings.py` | `True` | enables the split mechanism backtest skeleton after signal generation |
 | `INDUSTRY_ROUTER_BACKTEST_HORIZONS` / `INDUSTRY_ROUTER_BACKTEST_TOP_K` | `hub_v6/local_settings.py` | `[1, 2] / 3` | controls the minimal forward-return horizons and per-day top-k used by the split backtest |
 | `INDUSTRY_ROUTER_ENABLE_CONTEXT_PACK` | `hub_v6/local_settings.py` | `True` | allows the router summary to be injected into `research_context_pack.json` |
+| `ENABLE_MARKET_STATE_ENGINE` | `hub_v6/local_settings.py` | `True` | turns the formal market-state regime layer on inside V6 planning and downstream portfolio/release/execution consumers |
+| `MARKET_STATE_USE_ROUTER_BIAS` | `hub_v6/local_settings.py` | `True` | allows mechanism leadership from the industry-router output to influence market-state mechanism bias |
+| `MARKET_STATE_ROOT` | `hub_v6/local_settings.py` | `F:\quant_data\Ashare\data\market_state_v6` | controls where market-state artifacts are written and read |
+| `MARKET_STATE_CONFIG_PATH` | `hub_v6/local_settings.py` | `...\configs\market_state\default.json` | policy thresholds and regime-band definitions for the market-state engine |
+| `ENABLE_TECHNICAL_CONFIRMATION` | `hub_v6/local_settings.py` | `True` | turns the formal candidate-level technical gate on during portfolio recommendation |
+| `PORTFOLIO_MARKET_STATE_AWARE_SIZING` | `hub_v6/local_settings.py` | `True` | allows market-state truth to tighten portfolio exposure, name count, and single-name caps |
+| `PORTFOLIO_TECHNICAL_CONFIRMATION_GATE` | `hub_v6/local_settings.py` | `True` | allows technical confirmation to reject or down-weight new candidates before target positions are written |
+| `TECHNICAL_CONFIRMATION_ROOT` | `hub_v6/local_settings.py` | `F:\quant_data\Ashare\data\event_lake_v6\research\technical_confirmation` | controls where technical-confirmation artifacts are written and read |
+| `TECHNICAL_CONFIRMATION_CONFIG_PATH` | `hub_v6/local_settings.py` | `...\configs\technical_confirmation\default.json` | scoring thresholds and gating rules for the technical-confirmation layer |
 | `ENABLE_DAILY_STRATEGY_FEEDBACK` | `hub_v6/local_settings.py` | `True` | determines whether prior-day performance changes route and portfolio posture |
 | `ENABLE_TUSHARE_NEWS` / `ENABLE_TUSHARE_MAJOR_NEWS` | `hub_v6/local_settings.py` | `True / True` | enables Tushare message-layer inputs |
 | `TUSHARE_NEWS_MAX_SOURCES_PER_RUN` | `hub_v6/local_settings.py` | `1` | affects short-news breadth vs quota safety |
@@ -576,8 +759,10 @@
 - Attribution output now preserves zero-trade candidate buckets, but when the latest signal dates are at the end of the available enriched-daily history the realized-trade rows can still be empty even though candidate rows exist.
 - The official-source layer currently relies on curated fixed article/index URLs in `source_contracts.json`, not a rolling agency-discovery crawler; freshness is partially mitigated by decay weights.
 - The source fetcher now falls back to an unverified SSL context for a subset of official China government sites because this environment rejects some certificate chains; keep the source list restricted to explicit official domains and do not broaden it casually.
+- `main_research_runner.py` should be launched with the canonical research Python. If it is invoked with a bare shell `python` from the wrong interpreter, imports such as `requests` can fail even though the code is fine.
 - `research_only` in `quick_test` can still exceed a 15-20 minute terminal window because V5 codegen / workspace validation dominates runtime; if new files keep appearing under `data\research_hub_v5_1_gpu_integrated\cycles\<cycle_id>\`, treat it as slow-progress rather than an immediate hang.
-- Portfolio control V1 is still intentionally narrow: no industry/theme exposure cap, no staged entry/exit state machine, and no full OMS lifecycle.
+- Shared generated runtime config paths can still be touched by other live processes. Atomic writes now reduce truncation risk, but a concurrent holder on `hub_config.v6.runtime.<profile>.json` can still produce `PermissionError` during replacement if another run or editor keeps the file open.
+- Portfolio control V1 still exists as a compatibility dispatch/audit utility, but it is no longer the authoritative truth owner for actual state or ledgers; OMS now owns those truths.
 - The dev-log live portfolio snapshot is refreshed only by execution runs; if execution is disabled or skipped, that section can lag behind the latest research-side target portfolio.
 - `trade_clock_service.py` is implemented as a user-session process plus a Windows logon task, not a native Windows service.
 - The trading-day check depends on the cached `trading_calendar_a_share.csv` file plus Tushare refresh; if both are unavailable, the clock gate will block rather than guess a holiday schedule.
@@ -588,6 +773,15 @@
 - `hub_v6/local_settings.py` still contains legacy V5 naming such as `V5_PROJECT_ROOT`, which can mislead readers into thinking a root-level package is launched directly.
 - The actual V5 launcher path is package-local `...\v5_gpu_runtime\run_research_hub_v5_1_local.py`; treat `project_root` inside V5 JSON as required config metadata, not launch-path truth.
 - `deepseek-r1:14b` is currently configured only as a local research fallback model, not as the default title-extraction worker; strict event JSON extraction still stays on `qwen2.5:7b` until dedicated validation proves otherwise.
+- Market-state and technical-confirmation defaults are now less defensive than the first rollout, but they are still posture controls, not a finished alpha model.
+- The new `pilot` entry path and post-filter reweight can restore opportunity set and exposure, but they also make the system more sensitive to upstream candidate-quality errors; do not mistake higher capital usage for validated edge.
+- Portfolio V2A now prefers OMS `latest_actual_portfolio_state.json` for continuity, but it still falls back to the previous target book plus previous lifecycle sidecar when OMS truth is absent or stale.
+- `hub_v6/oms/runtime.py` is execution-environment code and imports the gmtrade stack through the broker adapter; use the lightweight OMS state-reader interfaces or `oms_validate` from the research Python, and keep full OMS runtime execution in `gmtrade39`.
+- Portfolio V2A currently uses lightweight admission/replacement logic and soft crowding, not a full exposure/risk model; it is intentionally more capable than V1 but still not a production-grade optimizer or OMS.
+- OMS now has deterministic cross-session intent continuity, formal manual intervention layering, first-pass broker-aware cancel/replace, and a bounded synthetic/replay validation harness; it is still not a full broker-agnostic intraday EMS.
+- There are now two override files with different powers: data\trade_clock\manual_overrides.json owns global kill-switch behavior, while data\live_execution_bridge\oms_v1\manual_overrides.json owns OMS-local continuity/cancel/repair behavior; do not mix them.
+- oms_validate proves OMS state transitions and replay continuity, not live broker connectivity or market-session correctness.
+- In strongly defensive posture, V2A can still legitimately produce `new_entry_count = 0` if market-state is weak and the candidate set is poor. That is not automatically a bug; it must be judged against the candidate universe quality.
 - `runtime_stage_notes.json` only covers selected long stages by default (`v6_planning`, `v5_gpu`, `portfolio_recommendation`, `execution_bridge`), not every short stage.
 
 ## Deferred Work
@@ -632,7 +826,19 @@
   - Reason: the integrated chain is too heavy and too timing-sensitive to be the formal precise-trading path.
   - Alternatives considered: keep one giant integrated supervisor as both research engine and time-gated execution manager.
   - Consequence: future precise trading should treat portfolio releases as the contract boundary between research and execution.
-  - Decision: execution-side abnormal handling is now fail-closed and centered on one safety truth file plus one incident log.
+- Decision: OMS, not portfolio control or release, now owns `actual_state` and desired-vs-actual truth.
+  - Reason: broker/account/order/fill truth must come from the execution-side reconciliation layer, not from research-side sidecars or release snapshots.
+  - Alternatives considered: keep extending `portfolio_control.py` into a hidden pseudo-OMS, or continue letting V2A continuity infer actual state from prior target books.
+  - Consequence: `hub_v6/oms/*` is now the canonical truth owner for actual holdings, intent/order/fill lifecycle, and actual-state artifacts.
+- Decision: feedback is explicitly bucketed by authority level instead of flowing as one undifferentiated execution blob.
+  - Reason: raw broker/account outcomes should not directly rewrite research logic, while portfolio pacing still needs operational feedback.
+  - Alternatives considered: keep sending only `performance_feedback.json`, or let execution-side artifacts be consumed ad hoc by whichever module wants them.
+  - Consequence: OMS now emits:
+    - Bucket A truth feedback in ledgers/artifacts only
+    - Bucket B control feedback for V2A posture pacing
+    - Bucket C research meta feedback for aggregated research-side consumption
+    - Bucket D narrative feedback for human reading only
+- Decision: execution-side abnormal handling is now fail-closed and centered on one safety truth file plus one incident log.
     - Reason: scattered heartbeat/gate prints were not enough to answer whether the system should still trade after broker, file, or market anomalies.
     - Alternatives considered: keep only `clock_state.json`, or add multiple extra daemons for separate health checking.
     - Consequence: `execution_only` and `trade_clock_service.py` now read/write `system_safety_state.json`, `incident_log.jsonl`, and `manual_overrides.json`; one lightweight clock process remains the main resident service.
@@ -644,6 +850,14 @@
   - Reason: the project needed to stop growing compatibility sludge around a single router file while still avoiding three separate backtest runtimes.
   - Alternatives considered: keep generic scoring and only add more thresholds, or fork three separate end-to-end routers.
   - Consequence: future mechanism refinement should happen inside `mechanisms\<name>\*` or static contracts, while `core\runtime_engine.py` and `core\backtest_engine.py` should remain mechanism-agnostic.
+- Decision: market-state and technical-confirmation are now formal shared contracts, not optional post-hoc execution filters.
+  - Reason: regime posture and entry confirmation need to influence research context, portfolio sizing, release truth, and execution behavior consistently instead of being recomputed ad hoc at one downstream point.
+  - Alternatives considered: keep market-state only inside safety/clock logic, or add technical confirmation only as a local scoring sidecar that does not affect target positions.
+  - Consequence: `market_state` and `technical_confirmation` artifacts are now first-class runtime outputs consumed by `context_pack`, `portfolio_recommendation`, `portfolio_release`, and `execution_manager`.
+- Decision: Portfolio V2A is implemented as a deterministic sublayer inside portfolio recommendation, not as a parallel portfolio system and not as a heavy optimizer.
+  - Reason: the system needed posture, lifecycle, staged sizing, and admission/replacement behavior without breaking the current research/release/execution law or introducing another source of truth.
+  - Alternatives considered: keep only flat market-aware weights plus technical gate, or jump straight to a full optimizer / OMS rewrite.
+  - Consequence: `hub_v6\portfolio_v2a` now owns research-side posture/state/admission logic, while `target_positions.csv`, release manifests, and execution audit remain the canonical downstream carriers.
 
 ## What To Inspect After A Run
 - Supervisor state:
@@ -2031,3 +2245,475 @@ All timestamps below are local file write times in the current workspace and sho
 - Rollback:
   - Revert the `hub_v6\industry_router` subtree to the previous skeleton if the deeper module split needs to be backed out.
   - If a partial rollback is needed, first restore `core\runtime_engine.py`, `core\backtest_engine.py`, and `core\event_pipeline.py`, then remove the new mechanism-owned files.
+
+### 2026-03-22 21:09
+- Type:
+  - `feature`
+  - `runtime`
+  - `ops`
+- Scope:
+  - `research`
+  - `portfolio`
+  - `execution`
+  - `infra`
+- Files:
+  - `F:\quant_data\Ashare\main_research_runner.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\context_pack.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\orchestrator_v6.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_release.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_manager.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\supervisor.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\market_state\*`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\technical_confirmation\*`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\market_state\default.json`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\technical_confirmation\default.json`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added a formal `market_state` layer with contract, feature builder, scorer, policy, and runtime entrypoint.
+  - Added a formal `technical_confirmation` layer with contract, feature builder, scorer, policy, and runtime entrypoint.
+  - Inserted market-state generation into the V6 chain after `industry_router` and before downstream planning consumers.
+  - Extended `research_context_pack.json` so research planning now sees market regime, style bias, mechanism bias, and sizing posture.
+  - Reworked portfolio recommendation so it now:
+    - loads latest market-state truth
+    - applies market-aware exposure and name-cap tightening
+    - runs candidate-level technical confirmation
+    - gates or downweights weak entries before writing `target_positions.csv`
+  - Enriched release publishing so `release_manifest.json` now snapshots:
+    - market-state truth
+    - technical-confirmation summary
+    - copied sidecar artifacts for later inspection
+  - Enriched `execution_only` so it now reads market-state posture from the release first, then:
+    - scales `portfolio_control.max_daily_turnover_ratio`
+    - forces `reduce_only` when the release posture forbids new positions
+    - returns market-state truth in gate-only and skipped outputs
+  - Added new config surface for:
+    - `ENABLE_MARKET_STATE_ENGINE`
+    - `ENABLE_TECHNICAL_CONFIRMATION`
+    - `MARKET_STATE_USE_ROUTER_BIAS`
+    - `PORTFOLIO_MARKET_STATE_AWARE_SIZING`
+    - `PORTFOLIO_TECHNICAL_CONFIRMATION_GATE`
+    - `MARKET_STATE_CONFIG_PATH`
+    - `TECHNICAL_CONFIRMATION_CONFIG_PATH`
+  - Fixed a real config bug during rollout where `configs\market_state\default.json` was missing its outer closing brace and silently forced policy defaults.
+- Impact:
+  - The system now has a formal “market-state / capital-flow total gate” and a formal “technical confirmation gate” instead of routing everything through one stock signal table.
+  - Research planning, portfolio sizing, release truth, and execution posture now share one consistent market-state contract.
+  - The release layer is now richer and closer to a real producer-consumer boundary between research and execution.
+  - Current local posture is conservative and can materially shrink the book on weak tape; this is expected.
+- Validation:
+  - `python -m py_compile main_research_runner.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\config_builder.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\context_pack.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\orchestrator_v6.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\portfolio_recommendation.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\portfolio_release.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\execution_manager.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\supervisor.py`
+  - `python -m py_compile` over the new `hub_v6\market_state` and `hub_v6\technical_confirmation` trees
+  - `python tools\preflight_check.py --profile quick_test --mode plan_only`
+  - targeted market-state build probe using the canonical research Python
+  - targeted portfolio-recommendation build probe using the canonical research Python
+  - `main_research_runner.py --mode release_only --profile quick_test --config ...\hub_config.v6.runtime.quick_test.json`
+  - `main_research_runner.py --mode execution_only --profile quick_test --gate-only --config ...\hub_config.v6.runtime.quick_test.json`
+  - Confirmed current validated truth:
+    - `market_regime = risk_off`
+    - `style_bias = defensive`
+    - `mechanism_bias = macro_style`
+    - `risk_budget_multiplier = 0.58`
+    - `turnover_multiplier = 0.55`
+    - `entry_strictness = 0.68`
+    - `technical_confirmation.allow_count = 1`
+    - latest release id = `release_20260322_210622_0dea6fd4`
+  - No full integrated pipeline or real execution dispatch was run.
+- Compatibility:
+  - Backward compatible at the operator-entry level.
+  - Output schemas are richer:
+    - `research_context_pack.json` now carries market-state truth
+    - `target_positions.csv` now carries technical-confirmation and market-aware fields
+    - `release_manifest.json` now carries market-state and technical-confirmation blocks
+  - Existing modes still exist; the main change is that more downstream consumers now read the new shared truth layers.
+- Rollback:
+  - Set these to `False` in `hub_v6/local_settings.py` to neutralize most of this rollout without deleting code:
+    - `ENABLE_MARKET_STATE_ENGINE`
+    - `ENABLE_TECHNICAL_CONFIRMATION`
+    - `PORTFOLIO_MARKET_STATE_AWARE_SIZING`
+    - `PORTFOLIO_TECHNICAL_CONFIRMATION_GATE`
+  - Restore `configs\market_state\default.json` and `configs\technical_confirmation\default.json` if policy thresholds need a hard reset.
+  - Revert the `hub_v6\market_state\*`, `hub_v6\technical_confirmation\*`, and touched consumer modules if a full rollback is needed.
+
+### 2026-03-22 21:16
+- Type:
+  - `ops`
+  - `governance`
+- Scope:
+  - `dev_log`
+  - `engineering_policy`
+- Files:
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added a new stable `Engineering Bias` section near the top of the handoff log.
+  - Recorded the current operator preference that future Codex sessions should be somewhat more aggressive and more willing to innovate on research-side architecture instead of piling up transitional compatibility sludge.
+  - Explicitly preserved the guardrails that formal entry, release contracts, safety boundaries, and the dedicated gmtrade environment should still be treated conservatively unless the user says otherwise.
+- Impact:
+  - Future sessions now have a written mandate to prefer cleaner unified research-side redesigns when the user is explicitly pushing the system forward.
+  - This should reduce half-unified internal layering and unnecessary historical baggage during the next strategy-side build-out.
+- Validation:
+  - Markdown-only dev-log update; no code-path validation needed.
+- Compatibility:
+  - No code or runtime behavior changed.
+  - This is a handoff-policy change for future Codex sessions.
+- Rollback:
+  - Remove or revise the `Engineering Bias` section if the operator later wants a more conservative change policy again.
+
+### 2026-03-22 21:40
+- Type:
+  - `feature`
+  - `runtime`
+- Scope:
+  - `portfolio`
+  - `market_state`
+  - `technical_confirmation`
+- Files:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\market_state\default.json`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\technical_confirmation\default.json`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\technical_confirmation\core\scorer.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Softened the first market-state rollout so `risk_off` is no longer treated like near-freeze posture:
+    - `risk_budget_multiplier` raised from `0.58` to `0.72`
+    - `turnover_multiplier` raised from `0.55` to `0.70`
+    - `entry_strictness` lowered from `0.68` to `0.54`
+    - `new_position_policy` changed from `tight` to `selective`
+  - Softened technical-confirmation thresholds and added two new behaviors:
+    - `pilot_entry_thresholds` for borderline new entries
+    - `existing_position_policy` for graded `reduce_watch` instead of a flat weak-hold penalty
+  - `technical_confirmation/core/scorer.py` now distinguishes:
+    - hard reject
+    - pilot small entry
+    - wait
+    - graded weak-hold reduction
+  - Added post-filter reweighting in `portfolio_recommendation.py` so when filtering leaves the book far below the current regime exposure budget, remaining names are re-expanded up to a configurable exposure floor instead of staying trapped in accidental low exposure.
+  - Added new local settings:
+    - `PORTFOLIO_ENABLE_POST_FILTER_REWEIGHT`
+    - `PORTFOLIO_MIN_EXPOSURE_FILL_RATIO`
+- Impact:
+  - The portfolio layer is now materially more aggressive than the first market-state/tech rollout.
+  - In the latest targeted validation, final target exposure increased from `0.1415` to `0.5400` while preserving:
+    - `12` names
+    - single-name cap `<= 0.10`
+    - market-state total-exposure cap `<= 0.72`
+  - Existing weak holdings are no longer all crushed to the same `0.45` multiplier; several now retain materially larger weights when their hold-health is weak but not catastrophic.
+  - The system still blocks obviously poor fresh entries; this pass was meant to remove over-suppression, not to remove discipline entirely.
+- Validation:
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\config_builder.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\portfolio_recommendation.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\technical_confirmation\\core\\scorer.py`
+  - Targeted module-level rebuild using the canonical research Python:
+    - rebuilt market-state artifacts
+    - rebuilt portfolio recommendation
+    - published a fresh release
+    - checked execution gate
+  - Confirmed latest targeted outputs:
+    - `risk_budget_multiplier = 0.72`
+    - `turnover_multiplier = 0.70`
+    - `entry_strictness = 0.54`
+    - `new_position_policy = selective`
+    - `portfolio_weight_totals.reweight_before = 0.141524`
+    - `portfolio_weight_totals.reweight_after = 0.54`
+    - latest release id = `release_20260322_213813_c410597a`
+  - No full integrated run or real execution dispatch was performed.
+- Compatibility:
+  - Operator entrypoints and mode semantics are unchanged.
+  - Release manifests are richer because portfolio summary now also carries post-filter reweight totals.
+  - This change is intentionally behavior-changing at the portfolio-construction layer.
+- Rollback:
+  - Revert `configs\market_state\default.json` and `configs\technical_confirmation\default.json` to the prior stricter values if the new posture is deemed too loose.
+  - Set `PORTFOLIO_ENABLE_POST_FILTER_REWEIGHT = False` to keep the softer market/tech posture but disable exposure re-expansion.
+  - Revert `technical_confirmation\core\scorer.py` and `portfolio_recommendation.py` if you want to return to the first hard-gating implementation.
+
+### 2026-03-22 22:18
+- Type:
+  - `feature`
+  - `runtime`
+  - `refactor`
+- Scope:
+  - `portfolio`
+  - `release`
+  - `execution_audit`
+- Files:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_v2a\*`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_release.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\portfolio_control.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\runtime.py`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added a formal `hub_v6\portfolio_v2a` submodule with deterministic:
+    - portfolio posture engine
+    - lifecycle state machine
+    - admission/replacement engine
+    - sidecar writer
+  - Portfolio recommendation now runs V2A after market-state/technical-confirmation enrichment and before final target-book persistence.
+  - V2A now emits formal sidecars under `data\portfolio_recommendation_v6\portfolio_v2a`:
+    - `latest_portfolio_posture.json`
+    - `latest_position_lifecycle.csv`
+    - `position_lifecycle_daily.csv`
+    - `admission_replacement_audit.json`
+    - `portfolio_control_summary.json`
+  - `target_positions.csv` is now enriched with V2A fields such as:
+    - `previous_state`
+    - `current_state`
+    - `recommended_action`
+    - `position_action_intent`
+    - `size_confidence`
+    - `target_weight_cap_v2a`
+    - `proposal_target_weight`
+  - Release publishing now snapshots the new V2A sidecars into the release directory and manifest.
+  - Execution-side portfolio-control audit now carries through V2A metadata from `target_positions.csv` into `position_state_before/after_*`.
+  - Added new V2A config surface:
+    - `ENABLE_PORTFOLIO_V2A`
+    - `PORTFOLIO_ENABLE_LIFECYCLE_STATE_MACHINE`
+    - `PORTFOLIO_ENABLE_ADMISSION_REPLACEMENT`
+    - `PORTFOLIO_ENABLE_SOFT_CROWDING_PENALTY`
+    - `PORTFOLIO_ENABLE_RICH_PORTFOLIO_AUDIT`
+    - `PORTFOLIO_V2A_PILOT_MAX_WEIGHT`
+    - `PORTFOLIO_V2A_BUILD_SPEED`
+    - `PORTFOLIO_V2A_TRIM_SPEED`
+    - `PORTFOLIO_V2A_REPLACEMENT_IMPROVEMENT_THRESHOLD`
+    - `PORTFOLIO_V2A_SOFT_CROWDING_PENALTY_STRENGTH`
+  - Corrected an important boundary issue during rollout:
+    - research-side V2A no longer inherits execution-side `HALT` as unconditional `reduce_only`
+    - only manual halt/reduce-only or `panic` regime force hard research-side no-new-entry posture
+- Impact:
+  - The portfolio layer is no longer a flat rank-and-cap allocator. It now has explicit posture, per-name state, staged sizing intent, and replacement audit.
+  - Research/release/execution remain on the same canonical path; V2A is an upgrade of the existing chain, not a parallel system.
+  - Current validated V2A posture on the latest quick-test book is:
+    - `rebalance_mode = defend`
+    - `new_entry_budget = 0.05616`
+    - `add_budget = 0.1584`
+    - `state_counts = trim:9, hold:3, watch:3`
+  - The current candidate universe is still weak, so V2A legitimately produced `new_entry_count = 0` under this posture; that is current-truth behavior, not a silent failure.
+- Validation:
+  - `python -m py_compile` over:
+    - full `hub_v6\portfolio_v2a` tree
+    - `hub_v6\portfolio_recommendation.py`
+    - `hub_v6\portfolio_release.py`
+    - `hub_v6\config_builder.py`
+    - `live_execution_bridge\portfolio_control.py`
+    - `live_execution_bridge\runtime.py`
+  - Targeted module-level rebuild using the canonical research Python:
+    - rebuilt market-state artifacts
+    - rebuilt portfolio recommendation with V2A
+    - published fresh releases
+    - ran `assess_execution_gate(...)`
+  - Targeted execution-side compatibility probe:
+    - `load_target_positions(...)` from `target_positions.csv`
+    - `plan_portfolio_control(...)` against `latest_account_state.json`
+    - confirmed V2A metadata is present in execution-side position-state rows
+  - Confirmed latest formal compatibility release:
+    - `release_20260322_221756_f9b45604`
+  - No full integrated pipeline and no real broker execution dispatch were run.
+- Compatibility:
+  - Operator entrypoints and split modes are unchanged.
+  - `execution_only` remains release-driven and does not need to understand the full V2A internals to keep working.
+  - `target_positions.csv` and release manifests are intentionally richer; downstream readers that ignore unknown columns remain compatible.
+- Rollback:
+  - Set `ENABLE_PORTFOLIO_V2A = False` to bypass the new research-side state/admission layer while keeping the softer market-state / technical-confirmation posture.
+  - Set `PORTFOLIO_ENABLE_POST_FILTER_REWEIGHT = False` if exposure re-expansion needs to be disabled independently.
+  - Revert the `hub_v6\portfolio_v2a` subtree plus the touched portfolio/release/execution-audit files for a full rollback.
+
+### 2026-03-22 23:32
+- Type:
+  - `architecture`
+  - `execution`
+  - `oms`
+- Scope:
+  - `authority_refactor`
+  - `broker_truth`
+  - `feedback_governance`
+- Files:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\oms\*`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_bridge_runner.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\context_pack.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\orchestrator_v6.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_v2a\contracts.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_v2a\exposure_engine.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_v2a\lifecycle_engine.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_v2a\runtime.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\brokers\gmtrade_sim_broker.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\portfolio_control.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\runtime.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Introduced a formal narrow-but-complete OMS package under `hub_v6\oms` with:
+    - contract schemas
+    - path/config ownership
+    - broker/account snapshot loading
+    - desired-vs-actual reconciliation
+    - deterministic actual-state derivation
+    - intent/order/fill ledgers
+    - feedback-bucket artifact emission
+  - Reassigned execution-side truth ownership:
+    - research/V2A now define `desired_state`
+    - release freezes the contract
+    - OMS defines `actual_state`
+    - execution bridge is now an OMS-governed dispatch arm rather than the hidden source of lifecycle truth
+  - `live_execution_bridge\runtime.py` now delegates into OMS runtime instead of maintaining a competing execution truth path.
+  - `gmtrade_sim_broker.py` now exposes standardized fill rows so OMS can keep a fill ledger from broker truth.
+  - Added authoritative OMS artifacts under `data\live_execution_bridge\oms_v1`:
+    - `latest_actual_portfolio_state.json`
+    - `desired_vs_actual_gap.csv`
+    - `oms_summary.json`
+    - `intent_ledger_latest.csv`
+    - `order_ledger_latest.csv`
+    - `fill_ledger_latest.csv`
+    - `actual_state_daily.csv`
+    - `control_feedback_latest.json`
+    - `research_meta_feedback_latest.json`
+    - `narrative_feedback_latest.json`
+  - V2A continuity now prefers OMS broker-truth artifacts over previous target/lifecycle sidecars.
+  - Bucket B control feedback now feeds back into V2A posture pacing.
+  - Bucket C research meta feedback is now injected into `research_context_pack.json` as aggregated execution-realism context.
+  - Added manual OMS overrides scaffold for:
+    - frozen symbols
+    - force-close intents
+    - expire orders
+    - force resync
+- Impact:
+  - The system now has a formal constitutional separation between:
+    - desired research state
+    - frozen release contract
+    - safety/gate permission
+    - OMS actual-state truth
+    - broker dispatch
+  - Execution-side truth is no longer implicitly buried in `portfolio_control_runs` and ad hoc account snapshots.
+  - V2A can now converge toward real holdings/open intents instead of only replaying the last target book.
+  - `latest_account_state.json` remains available for compatibility, but OMS artifacts are now authoritative.
+- Validation:
+  - `python -m py_compile` over:
+    - full `hub_v6\oms` tree
+    - touched `portfolio_v2a` files
+    - `execution_bridge_runner.py`
+    - `context_pack.py`
+    - `orchestrator_v6.py`
+    - `live_execution_bridge\brokers\gmtrade_sim_broker.py`
+    - `live_execution_bridge\portfolio_control.py`
+    - `live_execution_bridge\runtime.py`
+  - Research-Python import probe confirmed:
+    - `hub_v6.oms` lightweight reader path no longer pulls in `gmtrade`
+    - `hub_v6.portfolio_v2a.runtime` can import with OMS reader active
+  - GMTrade39 stubbed OMS probe confirmed artifact emission without placing live orders:
+    - `latest_actual_portfolio_state.json`
+    - `desired_vs_actual_gap.csv`
+    - `oms_summary.json`
+    - `intent_ledger_latest.csv`
+  - `python launch_canonical.py --profile quick_test --mode execution_only --gate-only`
+    - still works after the OMS refactor
+    - confirmed split-path compatibility remained intact
+  - No full integrated pipeline and no real broker execution dispatch were run in this session.
+- Compatibility:
+  - Operator entrypoints remain unchanged:
+    - `launch_canonical.py`
+    - `main_research_runner.py`
+    - `trade_clock_service.py`
+  - Split modes remain unchanged:
+    - `research_only`
+    - `release_only`
+    - `execution_only`
+  - Existing `portfolio_control_runs` artifacts still exist as compatibility audit outputs, but OMS artifacts now win on truth ownership.
+- Rollback:
+  - Revert the new `hub_v6\oms` package and restore `live_execution_bridge\runtime.py` to the prior direct bridge flow if the OMS layer is not wanted.
+  - Set `ENABLE_OMS = False` and remove the `oms` runtime-config section if a partial rollback is needed while keeping other execution features.
+  - If V2A continuity must stop using OMS truth, set `OMS_USE_BROKER_TRUTH_FOR_V2A_CONTINUITY = False`.
+
+### 2026-03-23 00:24
+- Type:
+  - `feature`
+  - `bugfix`
+- Scope:
+  - `execution`
+  - `infra`
+- Files:
+  - `F:\quant_data\Ashare\main_research_runner.py`
+  - `F:\quant_data\Ashare\RUN_PROFILES.yaml`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\oms\runtime.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\oms\audit.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\oms\core\continuity_engine.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\oms\core\exception_policy.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\oms\core\intent_manager.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\oms\validation\runner.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\brokers\gmtrade_sim_broker.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\dev_log_snapshot.py`
+- Change:
+  - Hardened OMS Stage2/3 around three deterministic layers: cross-session intent continuity, formal OMS manual intervention, and bounded synthetic/replay validation.
+  - Added OMS operator artifacts for `latest_open_intents.json`, `latest_intent_continuity_report.json`, `session_resume_audit.json`, `cancel_replace_audit.json`, `latest_manual_intervention_state.json`, `manual_override_history.jsonl`, `gap_control_metrics_daily.csv`, `mechanism_realism_rollup.csv`, and validation outputs.
+  - Added broker-aware cancel requests through gmtrade `order_cancel` plumbing, first-pass replace lineage (`old_intent_id -> new_intent_id`), and richer Bucket B / Bucket C aggregation.
+  - Added `oms_validate` mode to `main_research_runner.py` and `RUN_PROFILES.yaml` so OMS hardening checks can run without touching the long research chain.
+  - Fixed two execution-adjacent bugs exposed during hardening: Windows path backslashes breaking dev-log snapshot regex replacement, and OMS validation importing the gmtrade stack through the old eager `snapshot_loader` path.
+- Impact:
+  - OMS can now resume unresolved intents across sessions, keep operator interventions auditable, emit cancel/replace lineage, and expose more actionable aggregated control/research feedback without giving up truth ownership.
+  - V2A posture now consumes richer OMS control metrics, but OMS still remains the only owner of broker/account/order/fill truth.
+  - Operators now have two distinct override planes: trade-clock safety overrides and OMS-local continuity/repair overrides.
+- Validation:
+  - `python -m py_compile` on touched OMS/runtime/broker/dev-log files.
+  - `python main_research_runner.py --mode oms_validate --profile quick_test` -> `9/9` synthetic scenarios passed.
+  - `python launch_canonical.py --mode oms_validate --profile quick_test --preflight-only` passed.
+  - Bounded fake-broker OMS runtime probe executed under `gmtrade39` and wrote latest OMS artifacts without placing live orders.
+  - No long integrated pipeline or full-cycle run was executed.
+- Compatibility:
+  - Backward compatible with existing `execution_only` / release split.
+  - `OMS` artifact schema expanded; downstream readers that only consume prior OMS summary/actual-state files remain usable, but new fields/sidecars now exist.
+  - `data\trade_clock\manual_overrides.json` remains the global safety override file; the new OMS operator file is `data\live_execution_bridge\oms_v1\manual_overrides.json`.
+- Rollback:
+  - Revert the touched OMS/runtime/broker/dev-log files and remove `oms_validate` from `main_research_runner.py` / `RUN_PROFILES.yaml`.
+  - To disable broker-side cancel requests without rollback, set `OMS_ENABLE_BROKER_CANCEL = False`.
+
+### 2026-03-23 00:58
+- Type:
+  - `docs`
+- Scope:
+  - `operator`
+  - `handoff`
+- Files:
+  - `F:\quant_data\Ashare\SYSTEM_DAILY_USAGE_GUIDE_CN.txt`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added a root-level plain-text operator guide that explains the system in everyday language instead of code-first language.
+  - The guide now explains:
+    - what the four-layer system is
+    - which entrypoints matter
+    - which mode/profile to use for daily work
+    - where to edit defaults and account settings
+    - where to inspect release / clock / safety / OMS truth
+    - how to distinguish trade-clock overrides from OMS overrides
+  - Added a stable pointer in `Latest Stable Snapshot` so future operators and Codex sessions can find the guide quickly.
+- Impact:
+  - Daily operation no longer depends on reverse-reading code or reconstructing mode meaning from scattered logs.
+  - New collaborators can now start from one plain-text guide before reading deeper governance or runtime files.
+- Validation:
+  - Cross-checked guide content against:
+    - `launch_canonical.py`
+    - `main_research_runner.py`
+    - `hub_v6\local_settings.py`
+    - current `CODEX_DEV_LOG.md` stable truth
+  - No runtime code path changed.
+- Compatibility:
+  - Documentation-only change.
+  - No effect on runtime behavior, release contracts, OMS truth ownership, or execution safety.
+- Rollback:
+  - Remove `SYSTEM_DAILY_USAGE_GUIDE_CN.txt` and the new pointer/log entry if the guide is no longer wanted.
+

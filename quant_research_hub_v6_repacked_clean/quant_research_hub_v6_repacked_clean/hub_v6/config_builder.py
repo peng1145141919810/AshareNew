@@ -61,6 +61,8 @@ def build_runtime_config() -> Dict[str, Any]:
             "trade_clock_root": str(getattr(LS, "TRADE_CLOCK_ROOT", Path(LS.LIVE_EXECUTION_ROOT).parents[0] / "trade_clock")),
             "trading_calendar_cache_path": str(getattr(LS, "TRADING_CALENDAR_CACHE_PATH", Path(LS.MARKET_STATE_ROOT) / "trading_calendar_a_share.csv")),
             "industry_router_output_root": str(getattr(LS, "INDUSTRY_ROUTER_OUTPUT_ROOT", Path(LS.RESEARCH_ROOT) / "industry_router")),
+            "technical_confirmation_root": str(getattr(LS, "TECHNICAL_CONFIRMATION_ROOT", Path(LS.RESEARCH_ROOT) / "technical_confirmation")),
+            "oms_output_root": str(getattr(LS, "OMS_OUTPUT_ROOT", Path(LS.LIVE_EXECUTION_ROOT) / "oms_v1")),
         },
         "providers": {
             "tushare": {
@@ -152,6 +154,11 @@ def build_runtime_config() -> Dict[str, Any]:
         },
         "data_gap_engine": {"enabled": True, "stale_hours_hard_refresh": 36, "missing_ratio_warn": 0.05, "missing_ratio_hard": 0.15, "event_trigger_recompute": True, "max_new_feature_candidates_per_day": 8},
         "research_context_pack": {"recent_event_days": 7, "max_priority_events": LS.MAX_PRIORITY_EVENTS, "include_market_state": True, "include_family_state": True, "include_data_gap_report": True},
+        "market_state": {
+            "enabled": bool(getattr(LS, "ENABLE_MARKET_STATE_ENGINE", True)),
+            "config_path": str(getattr(LS, "MARKET_STATE_CONFIG_PATH", Path(LS.PROJECT_ROOT) / "configs" / "market_state" / "default.json")),
+            "use_router_bias": bool(getattr(LS, "MARKET_STATE_USE_ROUTER_BIAS", True)),
+        },
         "industry_router": {
             "enabled": bool(getattr(LS, "ENABLE_INDUSTRY_ROUTER", True)),
             "contract_root": str(getattr(LS, "INDUSTRY_ROUTER_CONTRACT_ROOT", Path(LS.PROJECT_ROOT) / "configs" / "industry_router")),
@@ -200,6 +207,27 @@ def build_runtime_config() -> Dict[str, Any]:
             "single_name_cap": LS.PORTFOLIO_SINGLE_NAME_CAP,
             "total_exposure_cap": LS.PORTFOLIO_TOTAL_EXPOSURE_CAP,
             "simulation_ready_need_gate": LS.PORTFOLIO_SIMULATION_READY_NEED_GATE,
+            "market_state_aware_sizing": bool(getattr(LS, "PORTFOLIO_MARKET_STATE_AWARE_SIZING", True)),
+            "technical_confirmation_gate": bool(getattr(LS, "PORTFOLIO_TECHNICAL_CONFIRMATION_GATE", True)),
+            "enable_post_filter_reweight": bool(getattr(LS, "PORTFOLIO_ENABLE_POST_FILTER_REWEIGHT", True)),
+            "min_exposure_fill_ratio": float(getattr(LS, "PORTFOLIO_MIN_EXPOSURE_FILL_RATIO", 0.75) or 0.75),
+        },
+        "portfolio_v2a": {
+            "enabled": bool(getattr(LS, "ENABLE_PORTFOLIO_V2A", True)),
+            "lifecycle_state_machine_enabled": bool(getattr(LS, "PORTFOLIO_ENABLE_LIFECYCLE_STATE_MACHINE", True)),
+            "admission_replacement_enabled": bool(getattr(LS, "PORTFOLIO_ENABLE_ADMISSION_REPLACEMENT", True)),
+            "soft_crowding_penalty_enabled": bool(getattr(LS, "PORTFOLIO_ENABLE_SOFT_CROWDING_PENALTY", True)),
+            "rich_audit_enabled": bool(getattr(LS, "PORTFOLIO_ENABLE_RICH_PORTFOLIO_AUDIT", True)),
+            "output_root": str(Path(LS.PORTFOLIO_OUTPUT_ROOT) / "portfolio_v2a"),
+            "pilot_max_weight": float(getattr(LS, "PORTFOLIO_V2A_PILOT_MAX_WEIGHT", 0.04) or 0.04),
+            "build_speed": float(getattr(LS, "PORTFOLIO_V2A_BUILD_SPEED", 1.25) or 1.25),
+            "trim_speed": float(getattr(LS, "PORTFOLIO_V2A_TRIM_SPEED", 0.72) or 0.72),
+            "replacement_improvement_threshold": float(getattr(LS, "PORTFOLIO_V2A_REPLACEMENT_IMPROVEMENT_THRESHOLD", 0.08) or 0.08),
+            "soft_crowding_penalty_strength": float(getattr(LS, "PORTFOLIO_V2A_SOFT_CROWDING_PENALTY_STRENGTH", 0.08) or 0.08),
+        },
+        "technical_confirmation": {
+            "enabled": bool(getattr(LS, "ENABLE_TECHNICAL_CONFIRMATION", True)),
+            "config_path": str(getattr(LS, "TECHNICAL_CONFIRMATION_CONFIG_PATH", Path(LS.PROJECT_ROOT) / "configs" / "technical_confirmation" / "default.json")),
         },
         "portfolio_control": {
             "enabled": bool(getattr(LS, "ENABLE_PORTFOLIO_CONTROL", True)),
@@ -210,6 +238,16 @@ def build_runtime_config() -> Dict[str, Any]:
             "dev_log_top_holdings": int(getattr(LS, "PORTFOLIO_CONTROL_DEV_LOG_TOP_HOLDINGS", 8) or 8),
             "allow_odd_lot_exit": bool(getattr(LS, "PORTFOLIO_CONTROL_ALLOW_ODD_LOT_EXIT", True)),
             "reduce_only": False,
+        },
+        "oms": {
+            "enabled": bool(getattr(LS, "ENABLE_OMS", True)),
+            "output_root": str(getattr(LS, "OMS_OUTPUT_ROOT", Path(LS.LIVE_EXECUTION_ROOT) / "oms_v1")),
+            "use_broker_truth_for_v2a_continuity": bool(getattr(LS, "OMS_USE_BROKER_TRUTH_FOR_V2A_CONTINUITY", True)),
+            "intent_expiry_days": int(getattr(LS, "OMS_INTENT_EXPIRY_DAYS", 3) or 3),
+            "control_feedback_lookback_runs": int(getattr(LS, "OMS_CONTROL_FEEDBACK_LOOKBACK_RUNS", 20) or 20),
+            "research_meta_lookback_runs": int(getattr(LS, "OMS_RESEARCH_META_LOOKBACK_RUNS", 60) or 60),
+            "compat_write_latest_account_state": bool(getattr(LS, "OMS_COMPAT_WRITE_LATEST_ACCOUNT_STATE", True)),
+            "enable_broker_cancel": bool(getattr(LS, "OMS_ENABLE_BROKER_CANCEL", True)),
         },
         "safety": {
             "enabled": bool(getattr(LS, "ENABLE_SAFETY_LAYER", True)),
