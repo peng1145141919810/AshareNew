@@ -8,6 +8,13 @@ from typing import Any, Dict
 from .config_utils import ensure_dir, load_config
 from .execution_bridge_runner import execution_policy, run_execution_bridge
 from .portfolio_release import load_latest_release, load_release_by_id, record_release_execution
+from .safety_guard import (
+    apply_execution_safety_overrides,
+    assess_system_safety,
+    load_system_safety_state,
+    record_incident,
+    save_system_safety_state,
+)
 from .trading_clock import clock_now, current_execution_window, is_trading_day, market_stage
 
 
@@ -133,11 +140,34 @@ def run_execution_only(
     config = load_config(config_path)
     project_root = config_path.resolve().parent.parent
     gate = assess_execution_gate(config=config, release_id=release_id, ignore_window=ignore_window)
-    if gate_only or not bool(gate.get("should_execute", False)):
+    safety = assess_system_safety(
+        config=config,
+        gate=gate,
+        project_root=project_root,
+        service_name="execution_only",
+        current_mode="execution_only",
+        force_account_refresh=bool(not gate_only),
+    )
+    if gate_only:
         return {
             "ok": bool(gate.get("ok", False)),
-            "status": "gate_only" if gate_only else "skipped",
+            "status": "gate_only",
             "gate": gate,
+            "safety": safety,
+        }
+    if not bool(gate.get("should_execute", False)):
+        return {
+            "ok": bool(gate.get("ok", False)),
+            "status": "skipped",
+            "gate": gate,
+            "safety": safety,
+        }
+    if not bool(safety.get("allow_execution", False)):
+        return {
+            "ok": False,
+            "status": "safety_blocked",
+            "gate": gate,
+            "safety": safety,
         }
 
     release_doc = _load_release(config=config, release_id=release_id)
@@ -149,13 +179,48 @@ def run_execution_only(
         "manifest_path": str(release_doc.get("artifacts", {}).get("manifest_path", "") or ""),
         "trigger_label": str(trigger_label or "manual"),
         "trigger_source": str(trigger_source or "manual"),
+        "system_mode": str(safety.get("system_mode", "") or ""),
+        "market_safety_regime": str(safety.get("market_safety_regime", "") or ""),
+        "effective_reduce_only": bool(safety.get("effective_reduce_only", False)),
+        "effective_turnover_multiplier": float(safety.get("effective_turnover_multiplier", 1.0) or 1.0),
     }
-    report = run_execution_bridge(
-        config=config,
-        project_root=project_root,
-        explicit_portfolio_path=str(release_doc.get("artifacts", {}).get("target_positions_path", "") or ""),
-        release_context=release_context,
-    )
+    execution_config = apply_execution_safety_overrides(config=config, safety_report=safety)
+    try:
+        report = run_execution_bridge(
+            config=execution_config,
+            project_root=project_root,
+            explicit_portfolio_path=str(release_doc.get("artifacts", {}).get("target_positions_path", "") or ""),
+            release_context=release_context,
+        )
+    except Exception as exc:
+        state = load_system_safety_state(config)
+        state["updated_at"] = datetime.now().isoformat(timespec="seconds")
+        state["system_mode"] = "HALT"
+        state["halt_reason"] = "execution_bridge_error"
+        state["last_incident_level"] = "error"
+        state["last_incident_type"] = "execution_bridge_error"
+        save_system_safety_state(config=config, state=state)
+        record_incident(
+            config=config,
+            incident_type="execution_bridge_error",
+            severity="error",
+            component="execution_manager",
+            reason=str(exc),
+            action_taken="execution_stopped",
+            requires_human_action=True,
+            before_system_mode=str(safety.get("system_mode", "") or ""),
+            after_system_mode="HALT",
+            before_market_regime=str(safety.get("market_safety_regime", "") or ""),
+            after_market_regime=str(safety.get("market_safety_regime", "") or ""),
+            context_snapshot_ref=str(_trade_clock_root(config) / "system_safety_state.json"),
+        )
+        return {
+            "ok": False,
+            "status": "execution_error",
+            "gate": gate,
+            "safety": safety,
+            "error": str(exc),
+        }
     dispatch_root = ensure_dir(_trade_clock_root(config) / "dispatches" / datetime.now().strftime("%Y%m%d_%H%M%S"))
     dispatch_path = dispatch_root / "execution_dispatch.json"
     dispatch_doc = {
@@ -163,6 +228,7 @@ def run_execution_only(
         "trigger_label": str(trigger_label or "manual"),
         "trigger_source": str(trigger_source or "manual"),
         "gate": gate,
+        "safety": safety,
         "release": release_context,
         "execution_report": report,
     }
@@ -185,6 +251,7 @@ def run_execution_only(
         "ok": True,
         "status": "executed",
         "gate": gate,
+        "safety": safety,
         "release": release_context,
         "dispatch_path": str(dispatch_path),
         "latest_dispatch_path": str(latest_path),

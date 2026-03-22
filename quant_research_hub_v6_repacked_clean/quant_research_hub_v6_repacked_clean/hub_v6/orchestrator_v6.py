@@ -11,6 +11,7 @@ from .context_pack import build_research_context_pack, save_research_context_pac
 from .data_gap_engine import build_data_gap_report, save_data_gap_report
 from .data_inventory import build_inventory_real, save_inventory
 from .event_extract import extract_events_with_worker, save_event_store
+from .industry_router import build_industry_router_artifacts
 from .event_ingest import ingest_events_real, refresh_market_basics
 from .local_augmentations import build_announcement_evidence_cards, build_manual_review_queue
 from .logging_utils import log_line
@@ -24,6 +25,8 @@ def _v6_stage_labels(mode: str) -> list[str]:
         labels.append("基础表刷新与事件抓取")
     if mode in {"extract_only", "gap_only", "plan_only", "bridge_only", "full_cycle"}:
         labels.append("事件抽取")
+    if mode in {"industry_router_only", "plan_only", "bridge_only", "full_cycle"}:
+        labels.append("分行业研究骨架")
     if mode in {"gap_only", "plan_only", "bridge_only", "full_cycle"}:
         labels.append("数据清单与缺口分析")
     if mode in {"plan_only", "bridge_only", "full_cycle"}:
@@ -44,11 +47,13 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
     raw_items = []
     structured_events = []
     evidence_cards = []
+    industry_router_result = {}
     inventory = {}
     data_gap_report = {}
     context_pack = {}
     research_brief = {}
     stage_idx = 0
+    industry_router_payload = {}
 
     if mode in {"ingest_only", "extract_only", "gap_only", "plan_only", "bridge_only", "full_cycle"}:
         stage_idx += 1
@@ -83,6 +88,21 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
         )
         log_line(config, f"V6: [{stage_idx}/{len(stage_labels)}] 事件抽取完成 structured_events={len(structured_events)} elapsed={perf_counter() - t0:.1f}s")
 
+    if mode in {"industry_router_only", "plan_only", "bridge_only", "full_cycle"}:
+        stage_idx += 1
+        t0 = perf_counter()
+        log_line(config, f"V6: [{stage_idx}/{len(stage_labels)}] 分行业研究骨架开始")
+        industry_router_result = build_industry_router_artifacts(config=config, structured_events=structured_events)
+        if bool(config.get("industry_router", {}).get("enable_context_pack", True)):
+            industry_router_payload = dict(industry_router_result.get("context_payload", {}) or {})
+        log_line(
+            config,
+            f"V6: [{stage_idx}/{len(stage_labels)}] 分行业研究骨架完成 "
+            f"event_instances={industry_router_result.get('summary', {}).get('event_instances', 0)} "
+            f"signal_rows={industry_router_result.get('summary', {}).get('signal_rows', 0)} "
+            f"summary={industry_router_result.get('summary_path', '')} elapsed={perf_counter() - t0:.1f}s",
+        )
+
     if mode in {"gap_only", "plan_only", "bridge_only", "full_cycle"}:
         stage_idx += 1
         t0 = perf_counter()
@@ -111,6 +131,7 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
             structured_events=structured_events,
             data_gap_report=data_gap_report,
             evidence_cards=evidence_cards,
+            industry_router_payload=industry_router_payload,
         )
         save_research_context_pack(config=config, pack=context_pack)
         log_line(config, f"V6: 研究证据包已合并公告证据卡 evidence_cards={len(list(context_pack.get('evidence_cards', []) or []))}")

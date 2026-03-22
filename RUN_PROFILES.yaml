@@ -26,6 +26,7 @@
     "ingest_only",
     "extract_only",
     "gap_only",
+    "industry_router_only",
     "plan_only",
     "bridge_only"
   ]

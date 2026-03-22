@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict
 from . import local_settings as LS
@@ -13,6 +14,14 @@ def _dedupe_nonempty(items: list[Any]) -> list[str]:
         if text and text not in out:
             out.append(text)
     return out
+
+
+def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp_path.write_text(text, encoding=encoding)
+    os.replace(tmp_path, path)
+    return path
 
 def build_runtime_config() -> Dict[str, Any]:
     enabled_sources = []
@@ -51,6 +60,7 @@ def build_runtime_config() -> Dict[str, Any]:
             "trade_release_root": str(getattr(LS, "TRADE_RELEASE_ROOT", Path(LS.LIVE_EXECUTION_ROOT).parents[0] / "trade_release_v1")),
             "trade_clock_root": str(getattr(LS, "TRADE_CLOCK_ROOT", Path(LS.LIVE_EXECUTION_ROOT).parents[0] / "trade_clock")),
             "trading_calendar_cache_path": str(getattr(LS, "TRADING_CALENDAR_CACHE_PATH", Path(LS.MARKET_STATE_ROOT) / "trading_calendar_a_share.csv")),
+            "industry_router_output_root": str(getattr(LS, "INDUSTRY_ROUTER_OUTPUT_ROOT", Path(LS.RESEARCH_ROOT) / "industry_router")),
         },
         "providers": {
             "tushare": {
@@ -142,6 +152,24 @@ def build_runtime_config() -> Dict[str, Any]:
         },
         "data_gap_engine": {"enabled": True, "stale_hours_hard_refresh": 36, "missing_ratio_warn": 0.05, "missing_ratio_hard": 0.15, "event_trigger_recompute": True, "max_new_feature_candidates_per_day": 8},
         "research_context_pack": {"recent_event_days": 7, "max_priority_events": LS.MAX_PRIORITY_EVENTS, "include_market_state": True, "include_family_state": True, "include_data_gap_report": True},
+        "industry_router": {
+            "enabled": bool(getattr(LS, "ENABLE_INDUSTRY_ROUTER", True)),
+            "contract_root": str(getattr(LS, "INDUSTRY_ROUTER_CONTRACT_ROOT", Path(LS.PROJECT_ROOT) / "configs" / "industry_router")),
+            "output_root": str(getattr(LS, "INDUSTRY_ROUTER_OUTPUT_ROOT", Path(LS.RESEARCH_ROOT) / "industry_router")),
+            "history_lookback_days": int(getattr(LS, "INDUSTRY_ROUTER_HISTORY_LOOKBACK_DAYS", 14) or 14),
+            "enable_context_pack": bool(getattr(LS, "INDUSTRY_ROUTER_ENABLE_CONTEXT_PACK", True)),
+            "enable_backtest": bool(getattr(LS, "INDUSTRY_ROUTER_ENABLE_BACKTEST", True)),
+            "source_fetch": {
+                "enabled": bool(getattr(LS, "INDUSTRY_ROUTER_ENABLE_SOURCE_FETCH", True)),
+                "timeout_seconds": int(getattr(LS, "INDUSTRY_ROUTER_SOURCE_FETCH_TIMEOUT_SECONDS", 8) or 8),
+                "cache_hours": int(getattr(LS, "INDUSTRY_ROUTER_SOURCE_FETCH_CACHE_HOURS", 12) or 12),
+                "max_sources_per_run": int(getattr(LS, "INDUSTRY_ROUTER_SOURCE_FETCH_MAX_SOURCES_PER_RUN", 9) or 9),
+            },
+            "backtest": {
+                "horizons": list(getattr(LS, "INDUSTRY_ROUTER_BACKTEST_HORIZONS", [1, 2]) or [1, 2]),
+                "top_k": int(getattr(LS, "INDUSTRY_ROUTER_BACKTEST_TOP_K", 3) or 3),
+            },
+        },
         "research_brain": {"enabled": True, "planning_model": "openai_research", "worker_model": "deepseek_worker"},
         "supervisor": {"token_plan_min_interval_hours": LS.TOKEN_PLAN_MIN_INTERVAL_HOURS, "run_forever": LS.SUPERVISOR_RUN_FOREVER, "max_ticks": LS.SUPERVISOR_MAX_TICKS, "sleep_seconds": LS.SUPERVISOR_SLEEP_SECONDS, "v5_gpu_max_cycles_per_tick": LS.V5_GPU_MAX_CYCLES_PER_TICK, "v5_gpu_dry_run": LS.V5_GPU_DRY_RUN, "require_gpu": LS.REQUIRE_GPU},
         "dynamic_strategy": {
@@ -181,6 +209,27 @@ def build_runtime_config() -> Dict[str, Any]:
             "enable_dev_log_snapshot": bool(getattr(LS, "PORTFOLIO_CONTROL_ENABLE_DEV_LOG_SNAPSHOT", True)),
             "dev_log_top_holdings": int(getattr(LS, "PORTFOLIO_CONTROL_DEV_LOG_TOP_HOLDINGS", 8) or 8),
             "allow_odd_lot_exit": bool(getattr(LS, "PORTFOLIO_CONTROL_ALLOW_ODD_LOT_EXIT", True)),
+            "reduce_only": False,
+        },
+        "safety": {
+            "enabled": bool(getattr(LS, "ENABLE_SAFETY_LAYER", True)),
+            "health_probe_interval_seconds": int(getattr(LS, "SAFETY_HEALTH_PROBE_INTERVAL_SECONDS", 300) or 300),
+            "account_state_max_age_seconds": int(getattr(LS, "SAFETY_ACCOUNT_STATE_MAX_AGE_SECONDS", 900) or 900),
+            "position_sync_max_age_seconds": int(getattr(LS, "SAFETY_POSITION_SYNC_MAX_AGE_SECONDS", 900) or 900),
+            "release_max_age_seconds": int(getattr(LS, "SAFETY_RELEASE_MAX_AGE_SECONDS", 172800) or 172800),
+            "fail_on_unfinished_orders": bool(getattr(LS, "SAFETY_FAIL_ON_UNFINISHED_ORDERS", True)),
+            "fail_on_unknown_order_status": bool(getattr(LS, "SAFETY_FAIL_ON_UNKNOWN_ORDER_STATUS", True)),
+            "degraded_reduce_only": bool(getattr(LS, "SAFETY_DEGRADED_REDUCE_ONLY", True)),
+            "caution_turnover_multiplier": float(getattr(LS, "SAFETY_CAUTION_TURNOVER_MULTIPLIER", 0.5) or 0.5),
+            "market_caution_mean_pct_chg": float(getattr(LS, "SAFETY_CAUTION_MARKET_MEAN_PCT_CHG", -1.0) or -1.0),
+            "market_panic_mean_pct_chg": float(getattr(LS, "SAFETY_PANIC_MARKET_MEAN_PCT_CHG", -2.2) or -2.2),
+            "market_caution_hs300_return_pct": float(getattr(LS, "SAFETY_CAUTION_HS300_RETURN_PCT", -1.5) or -1.5),
+            "market_panic_hs300_return_pct": float(getattr(LS, "SAFETY_PANIC_HS300_RETURN_PCT", -3.0) or -3.0),
+            "market_caution_limit_down_ratio": float(getattr(LS, "SAFETY_CAUTION_LIMIT_DOWN_RATIO", 0.05) or 0.05),
+            "market_panic_limit_down_ratio": float(getattr(LS, "SAFETY_PANIC_LIMIT_DOWN_RATIO", 0.12) or 0.12),
+            "execution_fail_ratio_degraded": float(getattr(LS, "SAFETY_EXECUTION_FAIL_RATIO_DEGRADED", 0.35) or 0.35),
+            "execution_fail_ratio_halt": float(getattr(LS, "SAFETY_EXECUTION_FAIL_RATIO_HALT", 0.75) or 0.75),
+            "execution_fail_min_orders": int(getattr(LS, "SAFETY_EXECUTION_FAIL_MIN_ORDERS", 3) or 3),
         },
         "execution_policy": {
             "account_mode": str(getattr(LS, "EXECUTION_ACCOUNT_MODE", "simulation") or "simulation").strip().lower(),
@@ -214,10 +263,13 @@ def build_runtime_config() -> Dict[str, Any]:
             "config_template_path": LS.GMTRADE_RUNTIME_CONFIG_TEMPLATE,
             "autogen_config_path": LS.GMTRADE_RUNTIME_AUTOGEN_PATH,
             "script_path": LS.GMTRADE_BRIDGE_SCRIPT_PATH,
+            "health_probe_script_path": LS.GMTRADE_HEALTH_PROBE_SCRIPT_PATH,
         },
     }
 
 def save_runtime_config(config_path: Path) -> Path:
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(build_runtime_config(), ensure_ascii=False, indent=2), encoding='utf-8')
-    return config_path
+    return _atomic_write_text(
+        config_path,
+        json.dumps(build_runtime_config(), ensure_ascii=False, indent=2),
+        encoding='utf-8',
+    )

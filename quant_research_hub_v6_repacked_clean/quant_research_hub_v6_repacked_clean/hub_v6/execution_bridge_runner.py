@@ -3,10 +3,20 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
+from uuid import uuid4
 
 VALID_ACCOUNT_MODES = {"simulation", "precision"}
+
+
+def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp_path.write_text(text, encoding=encoding)
+    os.replace(tmp_path, path)
+    return path
 
 
 def execution_policy(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -55,9 +65,13 @@ def build_execution_runtime_config(
         payload["release"] = release_context
     payload = _apply_account_profile(payload=payload, policy=policy)
     out_path = Path(str(exec_cfg["autogen_config_path"]))
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    return out_path
+    runtime_root = out_path.parent / "generated_runtime"
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    runtime_path = runtime_root / f"{out_path.stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}.json"
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    _atomic_write_text(out_path, text, encoding="utf-8")
+    _atomic_write_text(runtime_path, text, encoding="utf-8")
+    return runtime_path
 
 
 def run_execution_bridge(
@@ -91,4 +105,30 @@ def run_execution_bridge(
     report.setdefault("runtime_config_path", str(runtime_config_path))
     if release_context:
         report.setdefault("release", release_context)
+    return report
+
+
+def run_execution_health_probe(
+    config: Dict[str, Any],
+    project_root: Path,
+) -> Dict[str, Any]:
+    exec_cfg = dict(config.get("execution_bridge", {}) or {})
+    runtime_config_path = build_execution_runtime_config(config=config)
+    pyexe = str(exec_cfg["python_executable"])
+    script = Path(str(exec_cfg["health_probe_script_path"]))
+    env = os.environ.copy()
+    proc = subprocess.run(
+        [pyexe, str(script), "--config", str(runtime_config_path)],
+        cwd=str(project_root),
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    stdout = (proc.stdout or "").strip()
+    try:
+        report = json.loads(stdout) if stdout else {"ok": False, "stdout": ""}
+    except Exception:
+        report = {"ok": False, "stdout": stdout}
+    report.setdefault("runtime_config_path", str(runtime_config_path))
     return report

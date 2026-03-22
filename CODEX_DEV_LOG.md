@@ -66,16 +66,25 @@
   - clock state root: `F:\quant_data\Ashare\data\trade_clock`
   - latest release pointer: `F:\quant_data\Ashare\data\trade_release_v1\latest_release.json`
   - latest clock heartbeat: `F:\quant_data\Ashare\data\trade_clock\clock_state.json`
+  - latest safety truth: `F:\quant_data\Ashare\data\trade_clock\system_safety_state.json`
+  - incident log: `F:\quant_data\Ashare\data\trade_clock\incident_log.jsonl`
+  - manual overrides: `F:\quant_data\Ashare\data\trade_clock\manual_overrides.json`
+  - latest account health probe: `F:\quant_data\Ashare\data\trade_clock\latest_account_health.json`
   - autostart task name: `Ashare Trade Clock`
   - autostart scripts:
     - install: `F:\quant_data\Ashare\scripts\install_trade_clock_autostart.ps1`
     - remove: `F:\quant_data\Ashare\scripts\remove_trade_clock_autostart.ps1`
     - start now: `F:\quant_data\Ashare\scripts\start_trade_clock.ps1`
     - stop now: `F:\quant_data\Ashare\scripts\stop_trade_clock.ps1`
+  - heartbeat/safety split:
+    - `clock_state.json` is now the lightweight heartbeat
+    - `system_safety_state.json` is the current safety truth
+    - `incident_log.jsonl` is the append-only abnormal-event ledger
 - Current recommended commands:
   - `python F:\quant_data\Ashare\launch_canonical.py`
   - `python F:\quant_data\Ashare\launch_canonical.py --profile overnight`
   - `python F:\quant_data\Ashare\launch_canonical.py --profile quick_test`
+  - `python F:\quant_data\Ashare\launch_canonical.py --mode industry_router_only --profile quick_test`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode resume_downstream --profile quick_test`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode research_only --profile quick_test`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode release_only --profile quick_test`
@@ -84,15 +93,18 @@
   - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile quick_test --execution-mode precision --precision-trade off --gate-only`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile quick_test --execution-mode precision --precision-trade on`
   - `python F:\quant_data\Ashare\trade_clock_service.py --profile quick_test --once`
+  - `notepad F:\quant_data\Ashare\data\trade_clock\manual_overrides.json`
 - Runtime transparency:
   - `main_research_runner.py` now prints a stage preview before dispatch.
   - `supervisor_state.json` is updated incrementally during integrated runs instead of only at the end.
   - `supervisor_state.json` now carries `current_stage`, `stages`, and `stage_history` for operator inspection.
   - `supervisor_state.json` now also carries recent `runtime_notes` for selected long stages.
   - V6 now emits additive sidecar artifacts for `announcement_evidence_cards.json` and `manual_review_queue.json`.
+  - V6 now also emits a formal `industry_router` research skeleton with stock-level signals, mechanism-state tables, and split backtest reports.
   - V5 completion can now emit `latest_v5_cycle_review.json` as a local post-cycle review.
   - execution runs now emit a portfolio-control audit layer with `position_state_before/after_plan/after_execution`, `rebalance_audit.json`, and `execution_feedback.json`.
   - the execution layer can now refresh a dedicated `Latest Live Portfolio Snapshot` block inside this dev log after successful bridge runs.
+  - the trade clock now also emits a separate safety truth file, incident log, and lightweight gmtrade account-health probe.
 - Local Ollama split:
   - strict local event extraction stays on `qwen2.5:7b`
   - local research fallback chain is now `deepseek-r1:14b -> qwen2.5:7b`
@@ -101,11 +113,36 @@
 - Portfolio control V1:
   - current low-risk scope is `ledger + drift threshold + daily turnover budget + execution feedback + dev-log portfolio snapshot`
   - industry/theme exposure and staged build/reduce are intentionally deferred for now
+- Industry router Deepened Three-Mechanism Architecture:
+  - static contracts now live under `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\industry_router`
+  - runtime code is now split into `contracts\`, `core\`, and `mechanisms\`
+  - top-level `hub_v6\industry_router\runtime.py` and `backtest.py` are orchestration wrappers only
+  - `contracts\stock_profile_schema.py`, `mechanism_state_schema.py`, `signal_schema.py`, and `backtest_schema.py` now define the formal research-side schema
+  - runtime artifacts now live under `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router`
+  - current mechanism groups are fixed to:
+    - `trend_capex`
+    - `price_inventory`
+    - `macro_style`
+  - each mechanism now owns its own `profile_view.py`, `source_ingest.py`, `state_builder.py`, `mapping_rules.py`, `signal_builder.py`, `risk_rules.py`, `policy.py`, and `config.json`
+  - formal runtime contracts now include:
+    - `stock_profile.csv`
+    - `mechanism_state_daily.csv`
+    - `core_variable_daily.csv`
+    - `stock_signal_daily.csv`
+  - mechanism sidecar outputs now also include `<mechanism>_profile.csv`, `<mechanism>_state.csv`, `<mechanism>_core_variable.csv`, and `<mechanism>_signal.csv`
+  - `source_contracts.json` is now a structured contract with `mode / url / keywords / weight`, not just a name list
+  - official source fetch is wired into runtime and emits `source_state_daily.csv`, `source_snapshot_index.json`, and `source_snapshot_items.json`
+  - split backtest attribution now preserves zero-trade candidate buckets so all three mechanisms remain visible in attribution outputs even when the latest dates lack future bars
+  - stale legacy `industry_state_daily.csv` is actively removed during rebuild so the output directory does not keep dual truths
+  - current phase still uses a seed pool, not a full-market classification engine
 - Latest confirmed milestone:
   - V6 research plan generation confirmed on `2026-03-21 14:09:34`
   - quick_test V5 cycle observed generating new candidates on `2026-03-21 14:39:15`
   - downstream recovery plus fresh portfolio output confirmed on `2026-03-21 15:32`
   - execution bridge connectivity confirmed on `2026-03-21 15:39:49`
+  - `industry_router_only` formal skeleton run confirmed on `2026-03-22 04:18:14`
+  - deepened three-mechanism `industry_router_only` run confirmed on `2026-03-22 19:49:01`
+  - `plan_only` integration with deepened industry-router context confirmed on `2026-03-22 19:47:22`
 - Current truth:
   - old V6 readmes pointing to `run_v6_full_cycle_real.py` are stale
   - this log is the current source of truth
@@ -149,6 +186,133 @@
 | `overnight` | full nightly research | `24h` | `8` | sleep-time full research pass | heavy nightly mode; highest runtime cost |
 | `quick_test` | minimal full-chain debug | `24h` | `1` | faster debugging of the integrated chain | current code default; not a smoke test |
 
+## Runtime Mode Matrix
+- Current mode axes:
+  - `profile`: runtime weight selector
+  - `mode`: which chain segment to run
+  - `execution_mode`: which gmtrade account profile to bind
+  - `precision_trade`: whether precision mode is allowed to actually submit the execution bridge
+- Current code defaults:
+  - profile: `quick_test`
+  - mode: `integrated_supervisor`
+  - execution_mode: `precision`
+  - precision_trade: `False`
+
+| Mode | What It Runs | Typical Use | Direct Execution Behavior |
+| --- | --- | --- | --- |
+| `integrated_supervisor` | market pipeline -> strategy feedback -> V6 plan -> V5.1 -> portfolio recommendation -> optional execution bridge | integration debug and old one-shot chain | simulation can still execute; precision is blocked by default unless `ALLOW_INTEGRATED_PRECISION_EXECUTION=True` |
+| `research_only` | market pipeline -> strategy feedback -> V6 plan -> V5.1 -> portfolio recommendation -> release publish | formal research-side nightly production | does not directly execute |
+| `release_only` | republishes latest portfolio artifacts into `trade_release_v1` | refresh release after portfolio files changed or after recovery | does not directly execute |
+| `execution_only` | reads latest release -> checks trade gate/window -> dispatches execution bridge if allowed | formal execution-side entry | simulation is release-driven; precision is time-gated and obeys `precision_trade` |
+| `resume_downstream` | restart from portfolio recommendation and optionally rerun execution | downstream recovery after V5 finished but later stages failed | precision direct execution is blocked by default |
+| `full_cycle` | ingest -> extract -> industry router -> gap -> plan -> bridge artifacts | V6 subchain inspection | no execution bridge |
+| `ingest_only` | market/base-table refresh and raw event ingest | upstream source debugging | no execution bridge |
+| `extract_only` | ingest + structured event extraction | event extraction debugging | no execution bridge |
+| `gap_only` | ingest + extract + data-gap analysis | data-gap debugging | no execution bridge |
+| `industry_router_only` | rebuild stock profile, mechanism state, core variables, signal table, and unified split backtests from existing event history | targeted validation of the three-mechanism unified research architecture | no execution bridge |
+| `plan_only` | ingest + extract + industry router + gap + research plan generation | V6 planning debugging with mechanism-aware context | no execution bridge |
+| `bridge_only` | ingest + extract + industry router + gap + plan + bridge artifacts | bridge payload debugging with mechanism-aware context | no execution bridge |
+
+## Mode And Config Control Surface
+- Formal operator entry:
+  - `F:\quant_data\Ashare\launch_canonical.py`
+- Wrapped business root:
+  - `F:\quant_data\Ashare\main_research_runner.py`
+- Long-term defaults are hand-edited in:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+- Teammate-safe template lives in:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+- Gmtrade account binding and broker parameters are hand-edited in:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\gmtrade_runtime_config.local.json`
+- Do not hand-edit generated runtime files:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\hub_config.v6.runtime.<profile>.json`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\gmtrade_runtime_config.autogen.json`
+
+| What You Want To Change | Where To Change It | Current Truth |
+| --- | --- | --- |
+| default run mode | `hub_v6/local_settings.py` -> `RUN_MODE` | `integrated_supervisor` |
+| default profile | `hub_v6/local_settings.py` -> `DEFAULT_RUN_PROFILE` | `quick_test` |
+| one-off run mode override | `launch_canonical.py --mode ...` or `main_research_runner.py --mode ...` | operator override only; does not rewrite defaults |
+| one-off profile override | `launch_canonical.py --profile overnight|quick_test` | operator override only |
+| default account mode | `hub_v6/local_settings.py` -> `EXECUTION_ACCOUNT_MODE` | `precision` |
+| one-off account mode override | `--execution-mode simulation|precision` | operator override only |
+| precision live-trade master switch | `hub_v6/local_settings.py` -> `PRECISION_TRADE_ENABLED` | `False` |
+| one-off precision-trade override | `--precision-trade on|off` | operator override only |
+| whether integrated modes may directly execute precision | `hub_v6/local_settings.py` -> `ALLOW_INTEGRATED_PRECISION_EXECUTION` | `False` |
+| simulation / precision account ids | `configs/gmtrade_runtime_config.local.json` -> `broker.account_profiles` | simulation=`4d74746e-243c-11f1-a169-00163e022aa6`; precision=`e18905e4-254f-11f1-b37d-00163e022aa6` |
+| broker endpoint / buy-sell ratios / lot size / min trade value / cash reserve | `configs/gmtrade_runtime_config.local.json` | current live local template |
+| trade release validity time | `hub_v6/local_settings.py` -> `TRADE_RELEASE_VALID_AFTER_TIME`, `TRADE_RELEASE_EXPIRES_AT_TIME` | `09:30:30` / `15:00:00` |
+| clock polling interval | `hub_v6/local_settings.py` -> `TRADE_CLOCK_POLL_SECONDS` | `30` |
+| automatic execution windows | `hub_v6/local_settings.py` -> `TRADE_CLOCK_EXECUTION_WINDOWS` | `09:30:30-10:00:00` |
+| industry-router master switch | `hub_v6/local_settings.py` -> `ENABLE_INDUSTRY_ROUTER` | `True` |
+| industry-router contract root | `hub_v6/local_settings.py` -> `INDUSTRY_ROUTER_CONTRACT_ROOT` | `...\configs\industry_router` |
+| industry-router artifact root | `hub_v6/local_settings.py` -> `INDUSTRY_ROUTER_OUTPUT_ROOT` | `data\event_lake_v6\research\industry_router` |
+| industry-router history window | `hub_v6/local_settings.py` -> `INDUSTRY_ROUTER_HISTORY_LOOKBACK_DAYS` | `14` |
+| industry-router split backtest config | `hub_v6/local_settings.py` -> `INDUSTRY_ROUTER_ENABLE_BACKTEST`, `INDUSTRY_ROUTER_BACKTEST_HORIZONS`, `INDUSTRY_ROUTER_BACKTEST_TOP_K` | `True / [1, 2] / 3` |
+
+- Practical operator rule:
+  - for formal precise-style operation, prefer `research_only -> release_only if needed -> execution_only`
+  - treat `integrated_supervisor` as an integration/debug mode, not the primary precision-trading production path
+
+## Industry Router Snapshot
+- Formal module root:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router`
+- Formal internal layout:
+  - `contracts\records.py`, `contracts\interfaces.py`, and the schema files define the unified contracts and policy interface
+  - `core\` holds loaders, event normalization, source fetch, runtime engine, calendar alignment, metrics, signal loading, and backtest engine
+  - `mechanisms\trend_capex|price_inventory|macro_style` each now own:
+    - `config.json`
+    - `profile_view.py`
+    - `source_ingest.py`
+    - `state_builder.py`
+    - `mapping_rules.py`
+    - `signal_builder.py`
+    - `risk_rules.py`
+    - `policy.py`
+  - top-level `runtime.py` and `backtest.py` are thin orchestration entrypoints only
+- Static contracts:
+  - `stock_master.seed.csv`
+  - `mechanism_map.seed.csv`
+  - `event_taxonomy.json`
+  - `source_contracts.json`
+- Runtime outputs:
+  - `stock_master.csv`
+  - `mechanism_map.csv`
+  - `stock_profile.csv`
+  - `event_instances.csv`
+  - `event_stock_mapping.csv`
+  - `mechanism_state_daily.csv`
+  - `source_state_daily.csv`
+  - `core_variable_daily.csv`
+  - `stock_signal_daily.csv`
+  - `latest_stock_signal.csv`
+  - `source_snapshots\source_snapshot_index.json`
+  - `source_snapshots\source_snapshot_items.json`
+  - `backtests\backtest_<mechanism>_*.json/csv`
+  - `<mechanism>_profile.csv`
+  - `<mechanism>_state.csv`
+  - `<mechanism>_core_variable.csv`
+  - `<mechanism>_signal.csv`
+- Current Three-Mechanism Deepened truth:
+  - the core subject is explicitly `stock`, not `industry` and not `event`
+  - event records are treated as triggers and normalized before entering mechanism-specific mapping rules
+  - the formal signal-production chain is now:
+    - `stock_profile -> mechanism_state_daily -> core_variable_daily -> stock_signal_daily`
+  - each mechanism now has its own:
+    - stock-profile enrichment logic
+    - source summarization logic
+    - state builder
+    - event-to-stock mapping rules
+    - signal builder
+    - risk / confirmation layer
+    - policy / attribution rules
+  - the unified backtest engine no longer hardcodes mechanism logic; it only aligns time, loads signals, evaluates policy hooks, and writes attribution
+  - company-event sources bind to the existing announcement/news ingest chain through `existing_event_ingest` contracts
+  - official industry/macro sources bind to a dedicated `source_fetch` sidecar and feed `source_state_daily.csv`
+  - `trend_capex`, `price_inventory`, and `macro_style` all now have runnable source coverage, runtime outputs, and unified-backtest attribution rows
+  - the rebuild path removes stale legacy `industry_state_daily.csv` and stale empty backtest detail files so output directories do not keep mixed schemas
+  - the source layer still uses curated official page URLs, so freshness is controlled by decay weights rather than a rolling agency crawler
+
 ## Known Dangerous Operations
 - Do not run the full integrated pipeline just to validate a small code edit.
 - Do not bypass `launch_canonical.py` for a formal operator run unless the user explicitly asks to use the wrapped business root directly.
@@ -174,12 +338,13 @@
   1. Market data update and train-table append
   2. Raw event ingest from announcements plus Tushare news
   3. Structured event extraction
-  4. Data-gap analysis
-  5. V6 research brief generation
-  6. V5.1 GPU iterative research
-  7. Portfolio recommendation generation
-  8. Gmtrade simulation execution
-  9. Daily performance feedback back into the next run
+  4. Industry-router stock/mechanism skeleton and split backtest sidecar
+  5. Data-gap analysis
+  6. V6 research brief generation
+  7. V5.1 GPU iterative research
+  8. Portfolio recommendation generation
+  9. Gmtrade simulation execution
+  10. Daily performance feedback back into the next run
 
 ## Active Runtime vs Archived Roots
 - Active root entry:
@@ -221,8 +386,11 @@
   - `hub_v6/market_pipeline.py` updates HS300, enriched daily files, price snapshots, and the training table.
   - `hub_v6/event_ingest.py` collects raw announcements and Tushare news into the event lake.
   - `hub_v6/event_extract.py` converts raw event text into structured event objects with quality and anti-overfit metadata.
-  - `hub_v6/data_gap.py` identifies missing derived features or refresh actions.
-  - `hub_v6/context_pack.py` merges extracted events, gap findings, and bridge context into `research_context_pack.json`.
+  - `hub_v6/industry_router/` now sits between extracted events and the higher research context as the formal stock/mechanism skeleton.
+  - `hub_v6/industry_router/runtime.py` builds `stock_master`, `event_instances`, `event_stock_mapping`, `industry_state_daily`, and `stock_signal_daily`.
+  - `hub_v6/industry_router/backtest.py` runs the split mechanism backtest skeleton over the generated signal table.
+  - `hub_v6/data_gap_engine.py` identifies missing derived features or refresh actions.
+  - `hub_v6/context_pack.py` now merges extracted events, industry-router summary, gap findings, and bridge context into `research_context_pack.json`.
 - V6 planning layer:
   - `hub_v6/research_brief_engine.py` reads the context pack and produces `research_brief.json`.
   - `hub_v6/llm_router.py` is the provider abstraction for OpenAI / DeepSeek / local Ollama.
@@ -299,6 +467,28 @@
 | `research_brief.json` | V6 research planner | V5 bridge / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\briefs\research_brief.json` | JSON | core planning artifact |
 | `manual_review_queue.json` | event-extract local review-router sidecar | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\extract_summary\manual_review_queue.json` | JSON | compact queue of events worth manual review; additive only |
 | `run_manifest.json` | formal governance wrapper | operator / debugging | `F:\quant_data\Ashare\outputs\canonical_runs\<run_id>\run_manifest.json` | JSON | run id, operator entry, runtime root, mode/profile, and trace metadata |
+| `industry_router_summary.json` | industry-router runtime | context pack / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\industry_router_summary.json` | JSON | high-level summary over mechanism groups, latest active signals, and split-backtest status |
+| `stock_master.csv` | industry-router runtime | event mapper / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\stock_master.csv` | CSV | resolved stock master with mechanism and subchain tags |
+| `mechanism_map.csv` | industry-router runtime | event mapper / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\mechanism_map.csv` | CSV | symbol-to-mechanism mapping contract used by the router |
+| `stock_profile.csv` | industry-router runtime | mechanism policies / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\stock_profile.csv` | CSV | resolved stock profile contract after merging stock master and mechanism map |
+| `<mechanism>_profile.csv` | industry-router runtime | mechanism debugging / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\<mechanism>_profile.csv` | CSV | mechanism-sliced profile view after profile enrichment |
+| `event_instances.csv` | industry-router runtime | mapper / backtest / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\event_instances.csv` | CSV | normalized event instances with resolved mechanism group and direction |
+| `event_stock_mapping.csv` | industry-router runtime | scorer / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\event_stock_mapping.csv` | CSV | event-to-stock mapping with score, reason, and exposure level |
+| `mechanism_state_daily.csv` | industry-router runtime | scorer / context pack / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\mechanism_state_daily.csv` | CSV | unified mechanism-state contract with `scope_type`, state score, source score, heat, and regime label |
+| `<mechanism>_state.csv` | industry-router runtime | mechanism debugging / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\<mechanism>_state.csv` | CSV | mechanism-sliced state output with sub-state columns and drivers |
+| `source_state_daily.csv` | industry-router source sidecar | scorer / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\source_state_daily.csv` | CSV | mechanism-level official-source state rows derived from structured source contracts |
+| `core_variable_daily.csv` | industry-router runtime | signal policy / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\core_variable_daily.csv` | CSV | per-stock per-date core variables before policy scoring and risk filtering |
+| `<mechanism>_core_variable.csv` | industry-router runtime | mechanism debugging / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\<mechanism>_core_variable.csv` | CSV | mechanism-sliced core-variable table before signal generation |
+| `source_snapshot_index.json` | industry-router source sidecar | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\source_snapshots\source_snapshot_index.json` | JSON | compact fetch index with ok/error counts and `as_of_date` |
+| `source_snapshot_items.json` | industry-router source sidecar | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\source_snapshots\source_snapshot_items.json` | JSON | per-source fetch results, extracted publish dates, keyword hits, and signal scores |
+| `stock_signal_daily.csv` | industry-router runtime | backtest / context pack / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\stock_signal_daily.csv` | CSV | unified stock-level policy output with `pre_risk_score`, `final_score`, `signal_state`, `allow_entry`, and attribution bucket |
+| `<mechanism>_signal.csv` | industry-router runtime | mechanism debugging / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\<mechanism>_signal.csv` | CSV | mechanism-sliced signal table with penalty / confirmation / attribution columns |
+| `latest_stock_signal.csv` | industry-router runtime | context pack / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\latest_stock_signal.csv` | CSV | latest-date slice of stock signals, useful for quick inspection |
+| `backtest_trend_capex_*` | industry-router backtest skeleton | operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\backtests\backtest_trend_capex_*` | JSON/CSV | split backtest outputs for trend-capex seeds |
+| `backtest_price_inventory_*` | industry-router backtest skeleton | operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\backtests\backtest_price_inventory_*` | JSON/CSV | split backtest outputs for price/inventory seeds |
+| `backtest_macro_style_*` | industry-router backtest skeleton | operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\backtests\backtest_macro_style_*` | JSON/CSV | split backtest outputs for macro/style seeds |
+| `backtest_combined_*` | industry-router backtest skeleton | operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\backtests\backtest_combined_*` | JSON/CSV | combined equal-weight summary over the split mechanism picks |
+| `backtest_attribution_*` | industry-router backtest skeleton | operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\backtests\backtest_attribution_*` | JSON/CSV | component-level attribution summary by mechanism; zero-trade candidate buckets are preserved when future bars are unavailable |
 | `candidate_override.json` | V5 bridge | V5.1 runtime | `F:\quant_data\Ashare\data\event_lake_v6\bridge\candidate_override.json` | JSON | tells V5 what routes, models, labels to favor |
 | `latest_v5_cycle_review.json` | supervisor local V5 review sidecar | operator / debugging | `F:\quant_data\Ashare\data\research_hub_v5_1_gpu_integrated\reviews\latest_v5_cycle_review.json` | JSON | concise local review over latest completed V5 cycle; additive only |
 | `portfolio_recommendation.json` | portfolio recommendation layer | operator / execution bridge | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_recommendation.json` | JSON | summary of selected strategy and portfolio state |
@@ -307,6 +497,11 @@
 | `latest_release.json` | portfolio release layer | execution gate / trade clock / operator | `F:\quant_data\Ashare\data\trade_release_v1\latest_release.json` | JSON | pointer to the current formal release |
 | `release_manifest.json` | portfolio release layer | execution gate / operator | `F:\quant_data\Ashare\data\trade_release_v1\releases\<release_id>\release_manifest.json` | JSON | versioned trade-date-scoped release contract between research and execution |
 | `clock_state.json` | trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\clock_state.json` | JSON | heartbeat, gate status, active window, and last dispatch state |
+| `system_safety_state.json` | safety guard | operator / execution gate / trade clock | `F:\quant_data\Ashare\data\trade_clock\system_safety_state.json` | JSON | current execution safety truth including system mode, market regime, manual overrides, release validation, and freshness markers |
+| `incident_log.jsonl` | safety guard | operator / debugging / postmortem | `F:\quant_data\Ashare\data\trade_clock\incident_log.jsonl` | JSONL | append-only abnormal-event log with before/after safety modes and action taken |
+| `manual_overrides.json` | operator + safety guard | trade clock / execution gate | `F:\quant_data\Ashare\data\trade_clock\manual_overrides.json` | JSON | operator-editable `manual_halt` / `manual_reduce_only` kill-switch file |
+| `manual_override_history.jsonl` | safety guard | operator / postmortem | `F:\quant_data\Ashare\data\trade_clock\manual_override_history.jsonl` | JSONL | audit trail when manual override values change |
+| `latest_account_health.json` | gmtrade health probe sidecar | safety guard / operator | `F:\quant_data\Ashare\data\trade_clock\latest_account_health.json` | JSON | latest fresh or cached account/position/order health snapshot fetched via `gmtrade39` |
 | `latest_execution_dispatch.json` | execution gate / trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\latest_execution_dispatch.json` | JSON | latest release-triggered execution dispatch outcome |
 | `execution_report_*.json` | Gmtrade execution bridge | operator / supervisor feedback | `F:\quant_data\Ashare\data\live_execution_bridge\execution_report_*.json` | JSON | execution summary per run |
 | `position_state_before.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\position_state_before.json` | JSON | planned-trade ledger snapshot before controls are applied |
@@ -338,8 +533,25 @@
 | `ENABLE_TRADE_RELEASE` | `hub_v6/local_settings.py` | `True` | turns the middle release layer on after research-side portfolio generation |
 | `TRADE_RELEASE_VALID_AFTER_TIME` / `TRADE_RELEASE_EXPIRES_AT_TIME` | `hub_v6/local_settings.py` | `09:30:30 / 15:00:00` | defines the default release validity window consumed by `execution_only` |
 | `ENABLE_TRADE_CLOCK` | `hub_v6/local_settings.py` | `True` | enables the lightweight always-on clock-service path |
+| `ENABLE_SAFETY_LAYER` | `hub_v6/local_settings.py` | `True` | enables fail-closed safety evaluation, manual overrides, incident logging, and gmtrade health probes on the execution side |
+| `SAFETY_HEALTH_PROBE_INTERVAL_SECONDS` | `hub_v6/local_settings.py` | `300` | controls how often the clock may refresh the broker/account health snapshot via the dedicated `gmtrade39` probe |
+| `SAFETY_ACCOUNT_STATE_MAX_AGE_SECONDS` / `SAFETY_POSITION_SYNC_MAX_AGE_SECONDS` | `hub_v6/local_settings.py` | `900 / 900` | if account/position truth is older than this, execution flips to `HALT` instead of guessing |
+| `SAFETY_FAIL_ON_UNFINISHED_ORDERS` / `SAFETY_FAIL_ON_UNKNOWN_ORDER_STATUS` | `hub_v6/local_settings.py` | `True / True` | blocks new execution when broker order truth is incomplete or not understood |
+| `SAFETY_CAUTION_*` / `SAFETY_PANIC_*` | `hub_v6/local_settings.py` | current local values | market-safety thresholds for broad-selloff detection from daily snapshot + HS300 |
+| `SAFETY_EXECUTION_FAIL_RATIO_DEGRADED` / `SAFETY_EXECUTION_FAIL_RATIO_HALT` | `hub_v6/local_settings.py` | `0.35 / 0.75` | recent execution failure ratios above these thresholds degrade or halt execution-side behavior |
+| `INDUSTRY_ROUTER_ENABLE_SOURCE_FETCH` | `hub_v6/local_settings.py` | `True` | turns the official-source sidecar on for the industry router |
+| `INDUSTRY_ROUTER_SOURCE_FETCH_TIMEOUT_SECONDS` | `hub_v6/local_settings.py` | `8` | caps per-source official-page fetch time so the sidecar stays lightweight |
+| `INDUSTRY_ROUTER_SOURCE_FETCH_CACHE_HOURS` | `hub_v6/local_settings.py` | `12` | controls reuse of cached official-source snapshots under `source_snapshots` |
+| `INDUSTRY_ROUTER_SOURCE_FETCH_MAX_SOURCES_PER_RUN` | `hub_v6/local_settings.py` | `9` | caps the number of official sources fetched in a single `industry_router` run |
 | `TRADE_CLOCK_POLL_SECONDS` | `hub_v6/local_settings.py` | `30` | controls the sleeping heartbeat interval of the clock supervisor |
 | `TRADE_CLOCK_EXECUTION_WINDOWS` | `hub_v6/local_settings.py` | `[{label=morning_primary,start=09:30:30,end=10:00:00}]` | defines the only windows in which `execution_only` may auto-dispatch |
+| `manual_halt` / `manual_reduce_only` | `data\\trade_clock\\manual_overrides.json` | `False / False` | operator-facing runtime kill switches; `manual_halt` blocks all new orders, `manual_reduce_only` keeps the bridge sell-only |
+| `ENABLE_INDUSTRY_ROUTER` | `hub_v6/local_settings.py` | `True` | turns the stock/mechanism skeleton and split-backtest sidecar on inside V6 |
+| `INDUSTRY_ROUTER_CONTRACT_ROOT` / `INDUSTRY_ROUTER_OUTPUT_ROOT` | `hub_v6/local_settings.py` | `...\configs\industry_router / data\event_lake_v6\research\industry_router` | separates static contracts from runtime artifacts |
+| `INDUSTRY_ROUTER_HISTORY_LOOKBACK_DAYS` | `hub_v6/local_settings.py` | `14` | controls how much event-store history is pulled into the router |
+| `INDUSTRY_ROUTER_ENABLE_BACKTEST` | `hub_v6/local_settings.py` | `True` | enables the split mechanism backtest skeleton after signal generation |
+| `INDUSTRY_ROUTER_BACKTEST_HORIZONS` / `INDUSTRY_ROUTER_BACKTEST_TOP_K` | `hub_v6/local_settings.py` | `[1, 2] / 3` | controls the minimal forward-return horizons and per-day top-k used by the split backtest |
+| `INDUSTRY_ROUTER_ENABLE_CONTEXT_PACK` | `hub_v6/local_settings.py` | `True` | allows the router summary to be injected into `research_context_pack.json` |
 | `ENABLE_DAILY_STRATEGY_FEEDBACK` | `hub_v6/local_settings.py` | `True` | determines whether prior-day performance changes route and portfolio posture |
 | `ENABLE_TUSHARE_NEWS` / `ENABLE_TUSHARE_MAJOR_NEWS` | `hub_v6/local_settings.py` | `True / True` | enables Tushare message-layer inputs |
 | `TUSHARE_NEWS_MAX_SOURCES_PER_RUN` | `hub_v6/local_settings.py` | `1` | affects short-news breadth vs quota safety |
@@ -357,11 +569,21 @@
 - Tushare news can still return zero rows when upstream quota is exhausted even after local quota guarding.
 - V5.1 runtime exposes sparse heartbeat artifacts while a cycle is running; operators often need to infer progress from candidate file timestamps.
 - The new local evidence-card, review-router, runtime-explainer, and V5-review layers are additive sidecars; if local Ollama is unavailable, they now fail fast and their artifacts can be empty or stale without blocking the main chain.
+- The deepened three-mechanism router still uses a hand-curated seed pool, not a full-market automatic stock master.
+- The current event taxonomy and mapping rules are intentionally conservative and still vulnerable to routing edge cases; the new three-mechanism modules are structurally complete but not yet production-grade in coverage.
+- `industry_router_only` currently rebuilds from `event_store.jsonl` history; if that history is too short or too noisy, split-backtest results will be sparse or unstable.
+- The unified split backtest engine now respects mechanism policy hooks, but it still enters on the first trading close on or after the signal date and remains a research explainer, not a production execution simulation.
+- Attribution output now preserves zero-trade candidate buckets, but when the latest signal dates are at the end of the available enriched-daily history the realized-trade rows can still be empty even though candidate rows exist.
+- The official-source layer currently relies on curated fixed article/index URLs in `source_contracts.json`, not a rolling agency-discovery crawler; freshness is partially mitigated by decay weights.
+- The source fetcher now falls back to an unverified SSL context for a subset of official China government sites because this environment rejects some certificate chains; keep the source list restricted to explicit official domains and do not broaden it casually.
+- `research_only` in `quick_test` can still exceed a 15-20 minute terminal window because V5 codegen / workspace validation dominates runtime; if new files keep appearing under `data\research_hub_v5_1_gpu_integrated\cycles\<cycle_id>\`, treat it as slow-progress rather than an immediate hang.
 - Portfolio control V1 is still intentionally narrow: no industry/theme exposure cap, no staged entry/exit state machine, and no full OMS lifecycle.
 - The dev-log live portfolio snapshot is refreshed only by execution runs; if execution is disabled or skipped, that section can lag behind the latest research-side target portfolio.
 - `trade_clock_service.py` is implemented as a user-session process plus a Windows logon task, not a native Windows service.
 - The trading-day check depends on the cached `trading_calendar_a_share.csv` file plus Tushare refresh; if both are unavailable, the clock gate will block rather than guess a holiday schedule.
 - There is no code-level guarantee against third-party security software terminating the clock process; the current mitigation is low resource usage plus scheduled-task restart on next logon/failure.
+- The safety layer is intentionally fail-closed. Recent execution failures, stale account truth, unfinished broker orders, or release validation failures can push `system_safety_state.json` to `HALT` and block new execution until the operator intervenes.
+- The initial market-safety thresholds are deliberately conservative and can classify a broad market selloff day as `PANIC`; treat them as operational guardrails, not a final market-timing model.
 - The active precision/simulation account mapping currently lives in `configs\gmtrade_runtime_config.local.json`; if that file is changed manually, make sure the `account_profiles` block stays aligned with `EXECUTION_ACCOUNT_MODE`.
 - `hub_v6/local_settings.py` still contains legacy V5 naming such as `V5_PROJECT_ROOT`, which can mislead readers into thinking a root-level package is launched directly.
 - The actual V5 launcher path is package-local `...\v5_gpu_runtime\run_research_hub_v5_1_local.py`; treat `project_root` inside V5 JSON as required config metadata, not launch-path truth.
@@ -410,6 +632,18 @@
   - Reason: the integrated chain is too heavy and too timing-sensitive to be the formal precise-trading path.
   - Alternatives considered: keep one giant integrated supervisor as both research engine and time-gated execution manager.
   - Consequence: future precise trading should treat portfolio releases as the contract boundary between research and execution.
+  - Decision: execution-side abnormal handling is now fail-closed and centered on one safety truth file plus one incident log.
+    - Reason: scattered heartbeat/gate prints were not enough to answer whether the system should still trade after broker, file, or market anomalies.
+    - Alternatives considered: keep only `clock_state.json`, or add multiple extra daemons for separate health checking.
+    - Consequence: `execution_only` and `trade_clock_service.py` now read/write `system_safety_state.json`, `incident_log.jsonl`, and `manual_overrides.json`; one lightweight clock process remains the main resident service.
+  - Decision: `industry_router` now uses one unified engine plus three mechanism policy modules instead of one monolithic runtime script.
+    - Reason: the project needed a clean contract boundary between normalized inputs, mechanism state, stock profile, core variables, and signal policy so later mechanism refinement does not keep growing one file.
+    - Alternatives considered: continue patching the old `runtime.py`, or bolt on extra sidecars while keeping the old runtime as the real engine.
+    - Consequence: `contracts\`, `core\`, and `mechanisms\` are now the only formal implementation path; legacy top-level `contracts.py` and `source_ingest.py` were removed.
+- Decision: the deepened three-mechanism architecture keeps one shared runtime/backtest engine, but pushes profile/state/mapping/signal/risk/policy logic fully down into mechanism packages.
+  - Reason: the project needed to stop growing compatibility sludge around a single router file while still avoiding three separate backtest runtimes.
+  - Alternatives considered: keep generic scoring and only add more thresholds, or fork three separate end-to-end routers.
+  - Consequence: future mechanism refinement should happen inside `mechanisms\<name>\*` or static contracts, while `core\runtime_engine.py` and `core\backtest_engine.py` should remain mechanism-agnostic.
 
 ## What To Inspect After A Run
 - Supervisor state:
@@ -499,6 +733,45 @@
 
 ## Change Log
 All timestamps below are local file write times in the current workspace and should be read as Asia/Shanghai local time.
+
+### 2026-03-22 18:47
+- Type:
+  - `refactor`
+- Scope:
+  - `research`
+  - `infra`
+- Files:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\runtime.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\backtest.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\contracts\*`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\core\*`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\mechanisms\*`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\industry_router\event_taxonomy.json`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\industry_router\source_contracts.json`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Rebuilt `industry_router` into a unified three-mechanism architecture.
+  - Added formal contract modules, shared runtime/backtest engines, and separate policy modules for `trend_capex`, `price_inventory`, and `macro_style`.
+  - Collapsed the old monolithic runtime into orchestration-only wrappers and removed legacy top-level `contracts.py` / `source_ingest.py`.
+  - Promoted `stock_profile.csv`, `mechanism_state_daily.csv`, and `core_variable_daily.csv` to formal runtime artifacts.
+  - Added stale-artifact cleanup so legacy `industry_state_daily.csv` and obsolete backtest detail files do not remain in the output directory after a rebuild.
+- Impact:
+  - `industry_router_only` now runs through one shared engine with mechanism-specific policies instead of ad hoc branching inside one file.
+  - Context-pack consumers keep the same high-level payload shape, but the underlying research artifacts are now contract-driven and easier to extend by mechanism.
+  - Output schema changed on the research side: `mechanism_state_daily.csv` replaces the old `industry_state_daily.csv` as the formal state table.
+- Validation:
+  - Ran `python -m py_compile` on the new `industry_router` subtree.
+  - Ran `python F:\quant_data\Ashare\tools\preflight_check.py --profile quick_test --mode industry_router_only`.
+  - Ran `python F:\quant_data\Ashare\launch_canonical.py --profile quick_test --mode industry_router_only --skip-preflight` twice; the first run exposed and fixed a `pandas.Series` truthiness bug in `resolve_mechanism`, the second run completed successfully.
+  - Verified generated artifacts and backtest outputs under `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router`.
+  - No full integrated pipeline run was executed.
+- Compatibility:
+  - Not backward compatible at the internal module-layout level inside `hub_v6\industry_router`.
+  - Upstream orchestration remains compatible because `build_industry_router_artifacts(...)` stayed the formal entrypoint.
+  - Research output truth changed: `industry_state_daily.csv` is now treated as legacy and removed on rebuild.
+- Rollback:
+  - Restore the deleted legacy files and revert the new `contracts\`, `core\`, and `mechanisms\` subtree if the unified architecture must be abandoned.
+  - If only the new schema is a problem, pin downstream consumers to the previous commit before `2026-03-22 18:47`.
 
 ### 2026-03-21 18:06
 - Type:
@@ -1376,3 +1649,385 @@ All timestamps below are local file write times in the current workspace and sho
   - Additive only.
 - Rollback:
   - Delete the `SCRIPT-20260322-R002` folder and remove its catalog row if the snapshot should not be kept.
+
+### 2026-03-22 02:45
+- Type:
+  - `docs`
+- Scope:
+  - `mode_matrix`
+  - `config_surface_clarification`
+- Files:
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added a dedicated stable section documenting the full runtime mode matrix.
+  - Split the explanation into:
+    - profile layer
+    - run-mode layer
+    - execution-account layer
+    - precision-trade switch layer
+  - Added a dedicated control-surface section showing exactly where each operator-facing default is changed:
+    - `hub_v6/local_settings.py`
+    - `hub_v6/local_settings.example.py`
+    - `configs/gmtrade_runtime_config.local.json`
+    - CLI override flags on `launch_canonical.py` / `main_research_runner.py`
+  - Marked the generated runtime JSON files as non-hand-edit targets.
+- Impact:
+  - Future Codex sessions and collaborators now have one fixed section to understand:
+    - what each mode does
+    - which mode is formal vs debug-oriented
+    - which file controls long-term defaults
+    - which switches are safe for one-off runtime overrides
+- Validation:
+  - Re-read current mode definitions from `main_research_runner.py`.
+  - Re-read current default values from `hub_v6/local_settings.py`.
+  - Re-read current account mapping from `configs/gmtrade_runtime_config.local.json`.
+- Compatibility:
+  - Documentation only; no runtime behavior changed.
+- Rollback:
+  - Remove the new stable sections and this change-log entry if a different documentation structure is preferred.
+
+### 2026-03-22 04:25
+- Type:
+  - `feature`
+- Scope:
+  - `industry_router_phase1`
+  - `cross_layer_research_contracts`
+- Files:
+  - `F:\quant_data\Ashare\main_research_runner.py`
+  - `F:\quant_data\Ashare\RUN_PROFILES.yaml`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\orchestrator_v6.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\context_pack.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\research_brief_engine.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\__init__.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\contracts.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\runtime.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\backtest.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\industry_router\stock_master.seed.csv`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\industry_router\mechanism_map.seed.csv`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\industry_router\event_taxonomy.json`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\industry_router\source_contracts.json`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added a formal `hub_v6/industry_router/` module as the Phase 1 stock/mechanism skeleton.
+  - Locked the three initial mechanism groups to:
+    - `trend_capex`
+    - `price_inventory`
+    - `macro_style`
+  - Landed the required static contracts:
+    - `stock_master.seed.csv`
+    - `mechanism_map.seed.csv`
+    - `event_taxonomy.json`
+    - `source_contracts.json`
+  - Added a new targeted runtime mode:
+    - `industry_router_only`
+  - Hooked the router into V6 so that `plan_only`, `bridge_only`, and `full_cycle` now pass through industry-router generation before higher-layer research context packaging.
+  - Extended `research_context_pack.json` and the LLM compact context with `industry_router` summary fields.
+  - Added split mechanism backtest outputs and attribution reports under `data\event_lake_v6\research\industry_router\backtests`.
+- Why cross-layer change was necessary:
+  - the old structure treated messages mainly as one shared evidence pool with unified priority scoring
+  - that structure could not express:
+    - stock as the final scoring subject
+    - mechanism as interpretation context
+    - event-to-stock mapping as an explicit contract
+    - split mechanism backtests as first-class outputs
+  - keeping the old contract would have forced future mechanism work into sidecar patches and made later integration harder
+- Impact:
+  - The main system now has a formal, durable place for stock/mechanism research contracts instead of only unified message scoring.
+  - V6 planning can now consume a mechanism-aware summary without rewriting the V5 runtime or execution bridge.
+  - Operators now have a lightweight way to rebuild only the industry-router artifacts and split backtests from existing event history.
+- Validation:
+  - `python -m py_compile` on all touched wrappers/runtime modules and the new `industry_router` package.
+  - `python tools\preflight_check.py --profile quick_test --mode industry_router_only`
+  - `python launch_canonical.py --preflight-only --profile quick_test --mode industry_router_only`
+  - `python launch_canonical.py --profile quick_test --mode industry_router_only --skip-preflight`
+  - Confirmed runtime outputs:
+    - `industry_router_summary.json`
+    - `stock_signal_daily.csv`
+    - `latest_stock_signal.csv`
+    - `backtest_trend_capex_*`
+    - `backtest_price_inventory_*`
+    - `backtest_macro_style_*`
+    - `backtest_combined_*`
+    - `backtest_attribution_*`
+  - Confirmed the latest successful `industry_router_only` run at `2026-03-22 04:18:14`.
+- Compatibility:
+  - baseline execution / release / trade-clock behavior remains unchanged
+  - the router is additive to execution behavior in Phase 1 and currently changes research-side context and artifacts only
+  - `integrated_supervisor`, `research_only`, `release_only`, and `execution_only` remain available
+- Rollback:
+  - remove `hub_v6/industry_router/` and `configs/industry_router/`
+  - remove `industry_router_only` from `main_research_runner.py` and `RUN_PROFILES.yaml`
+  - remove the `industry_router` config block from `config_builder.py` and the related flags from `local_settings.py`
+  - remove the router injection from `orchestrator_v6.py`, `context_pack.py`, and `research_brief_engine.py`
+
+### 2026-03-22 04:47
+- Type:
+  - `feature`
+  - `bugfix`
+- Scope:
+  - `industry_router_source_fetch`
+  - `research_data_contracts`
+- Files:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\context_pack.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\source_ingest.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\runtime.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\industry_router\source_contracts.json`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Upgraded `source_contracts.json` from simple source-name lists into structured contracts with `mode`, `url`, keyword lists, and weights.
+  - Added `industry_router.source_fetch` runtime config and local settings controls:
+    - `INDUSTRY_ROUTER_ENABLE_SOURCE_FETCH`
+    - `INDUSTRY_ROUTER_SOURCE_FETCH_TIMEOUT_SECONDS`
+    - `INDUSTRY_ROUTER_SOURCE_FETCH_CACHE_HOURS`
+    - `INDUSTRY_ROUTER_SOURCE_FETCH_MAX_SOURCES_PER_RUN`
+  - Wired a dedicated official-source sidecar into `industry_router` so formal runs now fetch mechanism-specific official pages and emit:
+    - `source_state_daily.csv`
+    - `source_snapshots\source_snapshot_index.json`
+    - `source_snapshots\source_snapshot_items.json`
+  - Merged source-side state into stock scoring as a separate `source_state_score` channel while keeping event impact primarily on event mapping / industry-event rows.
+  - Extended context payload and summary output so operators can see per-mechanism source coverage, source counts, and top contributing official pages.
+  - Fixed two runtime bugs during integration:
+    - added a certificate-verification fallback for a subset of official China government sites rejected by this environment
+    - tightened publish-date extraction so PBC pages no longer pick the wrong date from unrelated page text
+- Impact:
+  - All three mechanism groups now have actual official-source coverage inside the runnable Phase 1 path, not just placeholder source names.
+  - `industry_router_only` and upstream planning modes now expose source-aware mechanism state to operators and to the research context pack.
+  - Source influence is additive and bounded; it does not replace event scoring or the existing event-stock mapping contract.
+- Validation:
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\industry_router\\source_ingest.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\industry_router\\runtime.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\config_builder.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\context_pack.py`
+  - `python tools\\preflight_check.py --profile quick_test --mode industry_router_only`
+  - `python launch_canonical.py --preflight-only --profile quick_test --mode industry_router_only`
+  - `python launch_canonical.py --profile quick_test --mode industry_router_only --skip-preflight`
+  - Confirmed latest successful source-aware run at `2026-03-22 04:47:04`.
+  - Confirmed current source-fetch result:
+    - `source_snapshot_ok_count = 9`
+    - `source_snapshot_error_count = 0`
+    - `source_state_rows = 3`
+  - No full integrated pipeline or full-cycle validation was executed.
+- Compatibility:
+  - Backward compatible at the operator-entry level.
+  - Old Phase 1 artifacts remain, but `source_contracts.json` schema is now materially richer and should be treated as the new source-of-truth contract.
+  - Existing event ingestion, V5 runtime, release layer, and execution layer were not rewritten.
+- Rollback:
+  - Set `INDUSTRY_ROUTER_ENABLE_SOURCE_FETCH = False` to disable the official-source sidecar without removing the rest of the industry router.
+  - Restore the old simpler `source_contracts.json` if only name-level placeholders are desired again.
+  - Remove `source_ingest.py` integration from `industry_router/runtime.py` if source-state scoring needs to be fully backed out.
+
+### 2026-03-22 14:03
+- Type:
+  - `bugfix`
+  - `runtime`
+- Scope:
+  - `validation_pass`
+  - `config_write_race`
+  - `research_only_label_truth`
+- Files:
+  - `F:\quant_data\Ashare\main_research_runner.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\supervisor.py`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Performed a segmented validation sweep across the current runtime modes instead of a single hours-long full integrated run.
+  - Confirmed all key modes pass `preflight_check.py` under `quick_test`:
+    - `integrated_supervisor`
+    - `research_only`
+    - `release_only`
+    - `execution_only`
+    - `resume_downstream`
+    - `ingest_only`
+    - `extract_only`
+    - `industry_router_only`
+    - `gap_only`
+    - `plan_only`
+    - `bridge_only`
+    - `full_cycle`
+  - Fixed a real runtime race where concurrent launcher invocations could truncate `hub_config.v6.runtime.<profile>.json` mid-read.
+    - root cause: direct `write_text(...)` on the shared runtime config path
+    - fix: switched to temp-file + `os.replace(...)` atomic writes in both `main_research_runner.py` and `hub_v6/config_builder.py`
+  - Fixed a truth-label bug where `research_only` internally reused `run_integrated_supervisor(...)` and therefore wrote:
+    - `supervisor_state.json.run_mode = integrated_supervisor`
+    - release `source_mode = integrated_supervisor`
+    even though the operator entry was `research_only`
+  - `run_integrated_supervisor(...)` now accepts explicit mode/source labels so `research_only` can preserve correct operator truth.
+- Impact:
+  - Manual operator runs and the always-on clock path are less likely to collide on a half-written runtime config file.
+  - Downstream state files and release manifests are now more trustworthy for future AI handoff and operator debugging when the entry mode is `research_only`.
+  - This change does not alter strategy logic, model logic, or execution rules.
+- Validation:
+  - `python -m py_compile main_research_runner.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\config_builder.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\supervisor.py`
+  - Actual segmented runs completed:
+    - `python launch_canonical.py --profile quick_test --mode full_cycle --skip-preflight`
+    - `python launch_canonical.py --profile quick_test --mode release_only --skip-preflight`
+    - `python launch_canonical.py --profile quick_test --mode execution_only --gate-only --skip-preflight`
+    - `python launch_canonical.py --profile quick_test --mode execution_only --execution-mode simulation --gate-only --skip-preflight`
+    - `python launch_canonical.py --profile quick_test --mode resume_downstream --skip-preflight`
+  - `full_cycle` completed in logs and reached bridge artifact generation; the terminal wrapper itself hit the Codex tool timeout before it could print the final epilogue, so log inspection was used to verify completion.
+  - `research_only` was allowed to run until V5 candidate workspaces were actively updating under `data\research_hub_v5_1_gpu_integrated\cycles\cycle_001_20260322_134321\`; it was then manually stopped to avoid an unbounded long validation run.
+  - No single full end-to-end integrated run was left running to completion in this session.
+- Compatibility:
+  - Backward compatible for normal single-operator usage.
+  - The new atomic write behavior changes only how runtime configs hit disk, not their schema.
+  - `research_only` now records truer mode labels; any downstream tooling that previously assumed `research_only` would masquerade as `integrated_supervisor` should be considered stale.
+- Rollback:
+  - Revert the atomic write helpers in `main_research_runner.py` and `hub_v6/config_builder.py` if direct writes are ever intentionally preferred again.
+  - Revert the `run_integrated_supervisor(...)` signature change and the `run_research_only(...)` call-site labels if you intentionally want the older `integrated_supervisor` labels back.
+
+### 2026-03-22 14:36
+- Type:
+  - `feature`
+  - `runtime`
+  - `ops`
+- Scope:
+  - `execution`
+  - `infra`
+- Files:
+  - `F:\quant_data\Ashare\trade_clock_service.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_bridge_runner.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_manager.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\safety_guard.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\run_gmtrade_health_probe.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\health_probe.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\brokers\gmtrade_sim_broker.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\portfolio_control.py`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Added an execution-side safety layer centered on:
+    - `data\trade_clock\system_safety_state.json`
+    - `data\trade_clock\incident_log.jsonl`
+    - `data\trade_clock\manual_overrides.json`
+    - `data\trade_clock\latest_account_health.json`
+  - Added a dedicated lightweight gmtrade health probe executed through the required `gmtrade39` Python:
+    - new script `run_gmtrade_health_probe.py`
+    - new module `live_execution_bridge\health_probe.py`
+    - broker now exposes `load_order_health()` for normalized day-order / unfinished-order / unknown-status snapshots
+  - `execution_only` now performs a formal safety preflight before any real bridge dispatch:
+    - validates release artifacts and checksums
+    - refreshes or reuses account/position/order health
+    - reads manual overrides
+    - evaluates market regime (`NORMAL / CAUTION / PANIC`)
+    - enforces fail-closed behavior on stale account truth, unfinished orders, unknown order states, release problems, and recent high execution-failure ratios
+  - `trade_clock_service.py` remains the only resident daemon-like process, but its heartbeat is now explicitly separated from the safety truth:
+    - `clock_state.json` is the lightweight heartbeat
+    - `system_safety_state.json` is the execution-safety truth
+    - `incident_log.jsonl` is the abnormal-event ledger
+  - Added `reduce_only` support into the portfolio-control layer so:
+    - `manual_reduce_only=true`
+    - `market_safety_regime=PANIC`
+    - `system_mode=DEGRADED` with degraded-reduce-only enabled
+    can force sell-only execution without rewriting the order-planning chain
+  - Hardened execution runtime config generation to use per-invocation generated files instead of one shared autogen path, reducing config collisions between execution runs and health probes.
+- Impact:
+  - The execution side now has a single, inspectable answer for “can the system still trade right now?” instead of relying on scattered gate prints.
+  - Operators can freeze all new trades or force sell-only behavior by editing one file: `data\trade_clock\manual_overrides.json`.
+  - The clock process stays lightweight and low-process-count while still maintaining broker freshness and incident traces.
+  - Existing research, release, and strategy logic were not rewritten; the safety layer is an execution-side control envelope.
+- Validation:
+  - `python -m py_compile trade_clock_service.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\run_gmtrade_health_probe.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\safety_guard.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\execution_manager.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\clock_supervisor.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\execution_bridge_runner.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\config_builder.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\live_execution_bridge\\health_probe.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\live_execution_bridge\\brokers\\gmtrade_sim_broker.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\live_execution_bridge\\portfolio_control.py`
+  - `python trade_clock_service.py --profile quick_test --once --skip-preflight`
+  - `python launch_canonical.py --profile quick_test --mode execution_only --gate-only --skip-preflight`
+  - Confirmed new artifacts are created and updated:
+    - `clock_state.json`
+    - `system_safety_state.json`
+    - `incident_log.jsonl`
+    - `manual_overrides.json`
+    - `latest_account_health.json`
+  - No long full integrated pipeline or real execution dispatch was run.
+- Compatibility:
+  - Backward compatible at the operator-entry level.
+  - `execution_only` now returns an additional `safety` block in its JSON output.
+  - `clock_state.json` is intentionally lighter than before and should no longer be treated as the full safety truth.
+  - The initial market-regime and execution-failure thresholds are conservative and may halt trading until the operator acknowledges the condition.
+- Rollback:
+  - Set `ENABLE_SAFETY_LAYER = False` in `hub_v6/local_settings.py` to bypass the new safety guard while keeping the old gate/time logic.
+  - Remove `run_gmtrade_health_probe.py`, `live_execution_bridge\health_probe.py`, and `hub_v6\safety_guard.py` if the safety layer needs to be fully backed out.
+  - Revert `portfolio_control.py` `reduce_only` handling if sell-only execution is no longer desired.
+
+### 2026-03-22 19:50
+- Type:
+  - `feature`
+  - `refactor`
+  - `runtime`
+- Scope:
+  - `research`
+  - `event`
+  - `infra`
+- Files:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\contracts\records.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\contracts\interfaces.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\mechanisms\base.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\mechanisms\trend_capex\*`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\mechanisms\price_inventory\*`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\mechanisms\macro_style\*`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\core\event_pipeline.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\core\runtime_engine.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\core\backtest_engine.py`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Completed the first full deepening pass for the three-mechanism industry-router architecture instead of leaving it as a Phase-1 skeleton.
+  - Added mechanism-owned module sets for all three groups:
+    - `config.json`
+    - `profile_view.py`
+    - `source_ingest.py`
+    - `state_builder.py`
+    - `mapping_rules.py`
+    - `signal_builder.py`
+    - `risk_rules.py`
+    - `policy.py`
+  - Replaced the old generic `BaseMechanismPolicy` with a delegating policy shell that only wires shared engine calls to mechanism-specific modules.
+  - Expanded `PolicyTuning` and the mechanism interface so unified runtime/backtest code can call mechanism-owned source summarization, mapping, risk, and attribution hooks.
+  - Rewired `event_pipeline.build_event_stock_mapping(...)` so event-to-stock routing is now produced by mechanism mapping rules rather than one shared spillover heuristic.
+  - Rewrote `core\runtime_engine.py` so the formal chain is now:
+    - `stock_profile -> mechanism_state_daily -> core_variable_daily -> stock_signal_daily`
+    - plus per-mechanism sidecars:
+      - `<mechanism>_profile.csv`
+      - `<mechanism>_state.csv`
+      - `<mechanism>_core_variable.csv`
+      - `<mechanism>_signal.csv`
+  - Rewrote `core\backtest_engine.py` around the policy hooks and the newer calendar/signal helper modules.
+  - Added attribution persistence for zero-trade candidate buckets so all three mechanisms remain visible in attribution outputs even when the latest signal date sits at the end of the available price history.
+  - Fixed a real runtime bug during rollout where `signal_builder.py` used `if not event` on pandas `Series`, which raised the ambiguous truth-value error during live `industry_router_only` runs.
+  - Re-tuned `price_inventory` and `macro_style` entry thresholds so both mechanisms now produce valid backtest candidates under the current seed pool instead of always stopping at `no_entry_candidates`.
+- Impact:
+  - The industry router is no longer a thin skeleton around one generic scoring path; each mechanism now owns its own profile/state/signal/risk/policy logic while still feeding one shared runtime and one shared backtest engine.
+  - `context_pack` and `research_brief` continue to consume the same `industry_router` payload shape, so upstream planning stays compatible while the internal mechanism logic is now much richer.
+  - Operators now get mechanism-sliced runtime CSVs and fuller attribution outputs, which makes debugging and later parameter refinement materially easier.
+- Validation:
+  - `python -m py_compile` over the full `hub_v6\industry_router` tree
+  - `python tools\preflight_check.py --profile quick_test --mode industry_router_only`
+  - `python launch_canonical.py --profile quick_test --mode industry_router_only --skip-preflight`
+  - `python launch_canonical.py --profile quick_test --mode plan_only --skip-preflight`
+  - Re-ran `industry_router_only` after threshold and attribution fixes to confirm:
+    - `industry_router_summary.json.backtest.mechanism_status` is now `ok` for all three mechanisms
+    - `backtest_attribution_summary.json` contains rows for `trend_capex`, `price_inventory`, and `macro_style`
+  - No full integrated supervisor run or execution run was performed.
+- Compatibility:
+  - Backward compatible at the `context_pack` / `research_brief` consumption layer because the high-level `industry_router` payload keys remain stable.
+  - Output schema is intentionally richer inside the `industry_router` artifact directory; old readers that assumed only the earlier minimal files exist may be stale.
+  - The router still uses a seed pool and curated source contracts, so structural completion here should not be mistaken for full-market production readiness.
+- Rollback:
+  - Revert the `hub_v6\industry_router` subtree to the previous skeleton if the deeper module split needs to be backed out.
+  - If a partial rollback is needed, first restore `core\runtime_engine.py`, `core\backtest_engine.py`, and `core\event_pipeline.py`, then remove the new mechanism-owned files.

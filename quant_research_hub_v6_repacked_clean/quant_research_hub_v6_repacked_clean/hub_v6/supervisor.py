@@ -472,10 +472,15 @@ def run_resume_downstream(config_path: Path, include_execution: bool = False) ->
             _stage_skip(config, state, 'execution_bridge', '断点续跑执行桥', stage_total, stage_total, summary='resume_without_execution')
     _write_supervisor_state(config, state)
 
-def run_integrated_supervisor(config_path: Path) -> None:
+def run_integrated_supervisor(
+    config_path: Path,
+    run_mode_label: str = 'integrated_supervisor',
+    release_source_mode: str = '',
+) -> None:
     config = load_config(config_path)
     project_root = config_path.resolve().parent.parent
     _check_gpu_requirement(config)
+    effective_release_source_mode = str(release_source_mode or run_mode_label or 'integrated_supervisor')
     sup = dict(config.get('supervisor', {}))
     max_ticks = int(sup.get('max_ticks', 1) or 1)
     run_forever = bool(sup.get('run_forever', False))
@@ -496,7 +501,7 @@ def run_integrated_supervisor(config_path: Path) -> None:
     tick = 0
     while True:
         tick += 1
-        state: Dict[str, Any] = {'tick': tick, 'started_at': _now_text(), 'run_mode': 'integrated_supervisor'}
+        state: Dict[str, Any] = {'tick': tick, 'started_at': _now_text(), 'run_mode': str(run_mode_label or 'integrated_supervisor')}
         portfolio_ready = not bool(config.get('portfolio_recommendation', {}).get('enabled', False))
         if bool(config.get('market_pipeline', {}).get('enabled', False)):
             _stage_start(config, state, 'market_pipeline', stage_label_map['market_pipeline'], stage_order_map['market_pipeline'], stage_total)
@@ -617,7 +622,7 @@ def run_integrated_supervisor(config_path: Path) -> None:
                 rec = build_portfolio_recommendation(config=config, bridge_root=Path(str(config['paths']['bridge_root'])))
                 state['portfolio_recommendation'] = rec
                 portfolio_ready = True
-                _maybe_publish_release(config=config, state=state, source_mode='integrated_supervisor')
+                _maybe_publish_release(config=config, state=state, source_mode=effective_release_source_mode)
                 _stage_finish(
                     config,
                     state,
@@ -737,7 +742,11 @@ def run_research_only(config_path: Path) -> None:
     temp_path = Path(config_path).with_name(f"{Path(config_path).stem}.research_only.runtime.json")
     temp_path.write_text(json.dumps(shadow, ensure_ascii=False, indent=2), encoding='utf-8')
     try:
-        run_integrated_supervisor(temp_path)
+        run_integrated_supervisor(
+            temp_path,
+            run_mode_label='research_only',
+            release_source_mode='research_only',
+        )
     finally:
         try:
             temp_path.unlink()

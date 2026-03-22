@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -37,6 +38,7 @@ def parse_args() -> argparse.Namespace:
             "ingest_only",
             "extract_only",
             "gap_only",
+            "industry_router_only",
             "plan_only",
             "bridge_only",
         ],
@@ -122,6 +124,14 @@ def _apply_execution_runtime_overrides(config: Dict[str, Any], execution_mode: s
     return config
 
 
+def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp_path.write_text(text, encoding=encoding)
+    os.replace(tmp_path, path)
+    return path
+
+
 def _write_runtime_config(profile: str, execution_mode: str = "", precision_trade: str = "default") -> Path:
     config = build_runtime_config()
     config = _deep_update(config, _profile_overrides(profile))
@@ -133,9 +143,11 @@ def _write_runtime_config(profile: str, execution_mode: str = "", precision_trad
         "precision_trade_enabled": bool(config.get("execution_policy", {}).get("precision_trade_enabled", False)),
     }
     config_path = PACKAGE_ROOT / "configs" / f"hub_config.v6.runtime.{profile}.json"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
-    return config_path
+    return _atomic_write_text(
+        config_path,
+        json.dumps(config, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def _effective_config_path(explicit_path: str, profile: str, execution_mode: str = "", precision_trade: str = "default") -> Path:
@@ -165,12 +177,13 @@ def _mode_stage_preview(mode: str, config: Dict[str, Any]) -> list[str]:
         "research_only": ["市场数据流水线", "策略反馈刷新", "V6 研究计划", "V5.1 GPU 研究", "持仓建议生成", "组合 release 发布"],
         "release_only": ["发布最新持仓建议为组合 release"],
         "execution_only": ["读取最新 release", "交易时钟门禁检查", "执行桥"],
-        "full_cycle": ["基础表刷新与事件抓取", "事件抽取", "数据缺口分析", "研究计划生成", "桥接产物生成"],
+        "full_cycle": ["基础表刷新与事件抓取", "事件抽取", "分行业/分机制路由", "数据缺口分析", "研究计划生成", "桥接产物生成"],
         "ingest_only": ["基础表刷新与事件抓取"],
         "extract_only": ["基础表刷新与事件抓取", "事件抽取"],
         "gap_only": ["基础表刷新与事件抓取", "事件抽取", "数据缺口分析"],
-        "plan_only": ["基础表刷新与事件抓取", "事件抽取", "数据缺口分析", "研究计划生成"],
-        "bridge_only": ["基础表刷新与事件抓取", "事件抽取", "数据缺口分析", "研究计划生成", "桥接产物生成"],
+        "industry_router_only": ["分行业/分机制路由", "stock_signal_daily 生成", "分机制回测骨架"],
+        "plan_only": ["基础表刷新与事件抓取", "事件抽取", "分行业/分机制路由", "数据缺口分析", "研究计划生成"],
+        "bridge_only": ["基础表刷新与事件抓取", "事件抽取", "分行业/分机制路由", "数据缺口分析", "研究计划生成", "桥接产物生成"],
     }
     return mapping.get(mode, ["未知阶段"])
 

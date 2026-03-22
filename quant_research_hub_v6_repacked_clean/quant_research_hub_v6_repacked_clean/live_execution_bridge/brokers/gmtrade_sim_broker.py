@@ -248,6 +248,36 @@ class GMTradeSimBroker(BaseBroker):
             if (str(row.get("cl_ord_id", "")), str(row.get("order_id", ""))) in id_set
         ]
 
+    def load_order_health(self) -> Dict[str, Any]:
+        """读取当日委托与未完成委托的轻量健康快照。"""
+        self._login()
+        day_orders = [self._normalize_order_row(item) for item in self._get_orders_raw()]
+        unfinished_orders = [self._normalize_order_row(item) for item in self._get_unfinished_orders_raw()]
+        known_status_names = {
+            "New",
+            "PartiallyFilled",
+            "Filled",
+            "Canceled",
+            "Rejected",
+            "Expired",
+            "PendingNew",
+            "PendingCancel",
+        }
+        unknown_status_orders = [
+            row for row in day_orders + unfinished_orders
+            if str(row.get("status_name", "") or "") not in known_status_names
+        ]
+        return {
+            "day_orders": day_orders,
+            "unfinished_orders": unfinished_orders,
+            "unknown_status_orders": unknown_status_orders,
+            "summary": {
+                "n_day_orders": len(day_orders),
+                "n_unfinished_orders": len(unfinished_orders),
+                "n_unknown_status_orders": len(unknown_status_orders),
+            },
+        }
+
     def execute_orders(
         self,
         order_intents: List[OrderIntent],

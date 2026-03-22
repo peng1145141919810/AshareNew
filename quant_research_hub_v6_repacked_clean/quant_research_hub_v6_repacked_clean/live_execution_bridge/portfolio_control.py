@@ -27,6 +27,7 @@ def load_control_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "enable_dev_log_snapshot": bool(raw.get("enable_dev_log_snapshot", True)),
         "dev_log_top_holdings": max(3, safe_int(raw.get("dev_log_top_holdings", 8), 8)),
         "allow_odd_lot_exit": bool(raw.get("allow_odd_lot_exit", True)),
+        "reduce_only": bool(raw.get("reduce_only", False)),
         "codex_dev_log_path": str(raw.get("codex_dev_log_path", "") or "").strip(),
     }
 
@@ -482,6 +483,21 @@ def plan_portfolio_control(
         allow_odd_lot_exit=bool(control_cfg.get("allow_odd_lot_exit", True)),
     )
     final_orders: List[OrderIntent] = list(budget_result["selected_orders"])
+    reduce_only_blocked_orders: List[Dict[str, Any]] = []
+    if bool(control_cfg.get("reduce_only", False)):
+        for order in final_orders:
+            if order.side == "BUY":
+                reduce_only_blocked_orders.append(
+                    {
+                        "symbol": order.symbol,
+                        "side": order.side,
+                        "control_action": "skip_reduce_only",
+                        "planned_shares": int(order.delta_shares),
+                        "final_shares": 0,
+                        "reason": "reduce_only_mode",
+                    }
+                )
+        final_orders = [order for order in final_orders if order.side != "BUY"]
     pending_buy_map: Dict[str, int] = {}
     pending_sell_map: Dict[str, int] = {}
     for order in final_orders:
@@ -519,18 +535,19 @@ def plan_portfolio_control(
             "drift_threshold": float(control_cfg.get("drift_threshold", 0.0)),
             "max_daily_turnover_ratio": float(control_cfg.get("max_daily_turnover_ratio", 0.0)),
             "allow_odd_lot_exit": bool(control_cfg.get("allow_odd_lot_exit", True)),
+            "reduce_only": bool(control_cfg.get("reduce_only", False)),
         },
         "account_nav": float(account_state.nav()),
         "raw_turnover_value": float(budget_result["raw_turnover_value"]),
         "raw_turnover_ratio": float(budget_result["raw_turnover_ratio"]),
         "turnover_budget_value": float(budget_result["budget_value"]),
-        "final_turnover_value": float(budget_result["final_turnover_value"]),
-        "final_turnover_ratio": float(budget_result["final_turnover_ratio"]),
+        "final_turnover_value": float(sum(order.notional() for order in final_orders)),
+        "final_turnover_ratio": float(sum(order.notional() for order in final_orders) / max(account_state.nav(), 1e-9)),
         "n_raw_orders": len(raw_orders),
         "n_final_orders": len(final_orders),
         "n_drift_skipped_symbols": drift_skipped,
-        "n_turnover_adjustments": len(list(budget_result.get("truncated_orders", []) or [])),
-        "turnover_adjustments": list(budget_result.get("truncated_orders", []) or []),
+        "n_turnover_adjustments": len(list(budget_result.get("truncated_orders", []) or [])) + len(reduce_only_blocked_orders),
+        "turnover_adjustments": list(budget_result.get("truncated_orders", []) or []) + reduce_only_blocked_orders,
         "symbol_controls": before_state["positions"],
     }
     return {
@@ -546,8 +563,9 @@ def plan_portfolio_control(
         "summary": {
             "n_drift_skipped_symbols": drift_skipped,
             "raw_turnover_ratio": float(budget_result["raw_turnover_ratio"]),
-            "final_turnover_ratio": float(budget_result["final_turnover_ratio"]),
-            "n_turnover_adjustments": len(list(budget_result.get("truncated_orders", []) or [])),
+            "final_turnover_ratio": float(sum(order.notional() for order in final_orders) / max(account_state.nav(), 1e-9)),
+            "n_turnover_adjustments": len(list(budget_result.get("truncated_orders", []) or [])) + len(reduce_only_blocked_orders),
+            "n_reduce_only_blocked_orders": len(reduce_only_blocked_orders),
         },
     }
 
@@ -706,4 +724,3 @@ def write_portfolio_control_artifacts(
         "rebalance_audit": str(audit_path),
         "execution_feedback": str(feedback_path),
     }
-

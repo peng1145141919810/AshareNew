@@ -88,12 +88,14 @@ def build_research_context_pack(
     structured_events: List[Dict[str, Any]],
     data_gap_report: Dict[str, Any],
     evidence_cards: List[Dict[str, Any]] | None = None,
+    industry_router_payload: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """构建研究证据包。"""
     max_priority_events = int(config.get("research_context_pack", {}).get("max_priority_events", 30) or 30)
     priority_events = sorted(structured_events, key=_event_sort_key, reverse=True)[:max_priority_events]
     compact_priority_events = [_compact_event(x) for x in priority_events]
     compact_evidence_cards = [_compact_evidence_card(x) for x in list(evidence_cards or [])[:4] if isinstance(x, dict)]
+    industry_router_payload = dict(industry_router_payload or {})
 
     source_type_counter = Counter(_safe_text(x.get("source_type")) or "unknown" for x in structured_events)
     event_type_counter = Counter(_safe_text(x.get("event_type")) or "其他" for x in structured_events)
@@ -168,6 +170,12 @@ def build_research_context_pack(
             "model_families": ["xgboost_gpu", "ridge_ranker"],
             "label_horizons": [5, 10, 20],
         },
+        "industry_router": {
+            "latest_date": _safe_text(industry_router_payload.get("latest_date")),
+            "mechanism_overview": list(industry_router_payload.get("mechanism_overview", []) or []),
+            "top_stock_signals": list(industry_router_payload.get("top_stock_signals", []) or [])[:8],
+            "source_overview": list(industry_router_payload.get("source_overview", []) or [])[:6],
+        },
     }
 
 
@@ -186,6 +194,7 @@ def save_research_context_pack(config: Dict[str, Any], pack: Dict[str, Any]) -> 
         "evidence_cards": pack.get("evidence_cards", []),
         "data_gap_report": pack.get("data_gap_report", {}),
         "market_state": pack.get("market_state", {}),
+        "industry_router": pack.get("industry_router", {}),
         "research_space": pack.get("research_space", {}),
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     return out_path

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -78,6 +79,14 @@ def _apply_execution_runtime_overrides(config: Dict[str, Any], execution_mode: s
     return config
 
 
+def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp_path.write_text(text, encoding=encoding)
+    os.replace(tmp_path, path)
+    return path
+
+
 def _write_runtime_config(profile: str, execution_mode: str = "", precision_trade: str = "default") -> Path:
     config = build_runtime_config()
     config = _deep_update(config, _profile_overrides(profile))
@@ -89,8 +98,7 @@ def _write_runtime_config(profile: str, execution_mode: str = "", precision_trad
         "precision_trade_enabled": bool(config.get("execution_policy", {}).get("precision_trade_enabled", False)),
     }
     config_path = PACKAGE_ROOT / "configs" / f"hub_config.v6.runtime.{profile}.json"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    _atomic_write_text(config_path, json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
     return config_path
 
 
