@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-03-24T00:40:49.5690334\u002B08:00",
+  "has_desired_state": true,
+  "has_actual_state": true,
+  "can_compare": true,
+  "desired_symbol_count": 14,
+  "actual_symbol_count": 1,
+  "overlap_symbol_count": 0,
+  "symbol_missing_in_actual": [
+    "000731.SZ",
+    "000833.SZ",
+    "002040.SZ",
+    "300303.SZ",
+    "300328.SZ",
+    "300677.SZ",
+    "301057.SZ",
+    "600078.SH",
+    "600157.SH",
+    "600875.SH",
+    "688176.SH",
+    "688179.SH",
+    "688186.SH",
+    "688295.SH"
+  ],
+  "symbol_extra_in_actual": [
+    "600010.SH"
+  ],
+  "weight_mismatch_symbols": [],
+  "shares_mismatch_symbols": [],
+  "weight_mismatch_count": 0,
+  "shares_mismatch_count": 0,
+  "compare_capabilities": {
+    "symbol_presence": true,
+    "weight_compare": false,
+    "shares_compare": false
+  },
+  "weight_compare_available": false,
+  "shares_compare_available": false,
+  "threshold_policy": {
+    "WeightMismatchWarningThreshold": 0.01,
+    "WeightMismatchBlockingThreshold": 0.03,
+    "SharesMismatchWarningThreshold": 100,
+    "SharesMismatchBlockingThreshold": 1000
+  },
+  "blocking_reasons": [],
+  "warning_reasons": [
+    "symbol_missing_in_actual",
+    "symbol_extra_in_actual",
+    "weight_compare_unavailable",
+    "shares_compare_unavailable"
+  ],
+  "mismatch_summary": "symbol_missing=14, symbol_extra=1, weight_mismatch=0, shares_mismatch=0, overlap=0",
+  "severity": "Warning",
+  "reasons": [
+    "symbol_missing_in_actual",
+    "symbol_extra_in_actual",
+    "weight_compare_unavailable",
+    "shares_compare_unavailable"
+  ],
+  "summary_text": "symbol_missing=14, symbol_extra=1, weight_mismatch=0, shares_mismatch=0, overlap=0"
+}

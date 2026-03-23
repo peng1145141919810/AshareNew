@@ -1,0 +1,79 @@
+﻿{
+    "copied_at":  "2026-03-23T23:51:11.3552894+08:00",
+    "source_root":  "F:\\quant_data\\Ashare\\data",
+    "target_root":  "F:\\quant_data\\AshareC#\\data",
+    "entries":  [
+                    {
+                        "source_path":  "F:\\quant_data\\Ashare\\data\\trade_clock",
+                        "target_path":  "F:\\quant_data\\AshareC#\\data\\trade_clock",
+                        "category":  "clock_safety_runtime",
+                        "copied_at":  "2026-03-23T23:51:11.3552894+08:00",
+                        "exists_after_copy":  true,
+                        "notes":  "trade clock heartbeat, safety, runtime",
+                        "copied":  true
+                    },
+                    {
+                        "source_path":  "F:\\quant_data\\Ashare\\data\\trade_release_v1",
+                        "target_path":  "F:\\quant_data\\AshareC#\\data\\trade_release_v1",
+                        "category":  "release_contract",
+                        "copied_at":  "2026-03-23T23:51:11.3552894+08:00",
+                        "exists_after_copy":  true,
+                        "notes":  "release pointer/manifests/targets",
+                        "copied":  true
+                    },
+                    {
+                        "source_path":  "F:\\quant_data\\Ashare\\data\\live_execution_bridge\\oms_v1",
+                        "target_path":  "F:\\quant_data\\AshareC#\\data\\live_execution_bridge\\oms_v1",
+                        "category":  "oms_truth",
+                        "copied_at":  "2026-03-23T23:51:11.3552894+08:00",
+                        "exists_after_copy":  true,
+                        "notes":  "OMS summary, actual-state and ledgers",
+                        "copied":  true
+                    },
+                    {
+                        "source_path":  "F:\\quant_data\\Ashare\\data\\live_execution_bridge\\portfolio_control_runs",
+                        "target_path":  "F:\\quant_data\\AshareC#\\data\\live_execution_bridge\\portfolio_control_runs",
+                        "category":  "execution_audit",
+                        "copied_at":  "2026-03-23T23:51:11.3552894+08:00",
+                        "exists_after_copy":  true,
+                        "notes":  "portfolio control audits",
+                        "copied":  true
+                    },
+                    {
+                        "source_path":  "F:\\quant_data\\Ashare\\data\\live_execution_bridge\\execution_reports",
+                        "target_path":  "F:\\quant_data\\AshareC#\\data\\live_execution_bridge\\execution_reports",
+                        "category":  "execution_reports",
+                        "copied_at":  "2026-03-23T23:51:11.3552894+08:00",
+                        "exists_after_copy":  false,
+                        "notes":  "execution report history",
+                        "copied":  false
+                    },
+                    {
+                        "source_path":  "F:\\quant_data\\Ashare\\data\\portfolio_recommendation_v6",
+                        "target_path":  "F:\\quant_data\\AshareC#\\data\\portfolio_recommendation_v6",
+                        "category":  "desired_state_source",
+                        "copied_at":  "2026-03-23T23:51:11.3552894+08:00",
+                        "exists_after_copy":  true,
+                        "notes":  "desired-state source artifacts",
+                        "copied":  true
+                    },
+                    {
+                        "source_path":  "F:\\quant_data\\Ashare\\data\\event_lake_v6\\research\\supervisor",
+                        "target_path":  "F:\\quant_data\\AshareC#\\data\\event_lake_v6\\research\\supervisor",
+                        "category":  "supervisor_state",
+                        "copied_at":  "2026-03-23T23:51:11.3552894+08:00",
+                        "exists_after_copy":  true,
+                        "notes":  "supervisor runtime state",
+                        "copied":  true
+                    },
+                    {
+                        "source_path":  "F:\\quant_data\\Ashare\\data\\daily_cache_v6",
+                        "target_path":  "F:\\quant_data\\AshareC#\\data\\daily_cache_v6",
+                        "category":  "market_cache",
+                        "copied_at":  "2026-03-23T23:51:11.3552894+08:00",
+                        "exists_after_copy":  true,
+                        "notes":  "automation basic market cache",
+                        "copied":  true
+                    }
+                ]
+}

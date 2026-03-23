@@ -1,0 +1,8 @@
+﻿{
+  "archived_at": "2026-03-24T00:45:00+08:00",
+  "archive_root": "F:/quant_data/AshareC#/archive/legacy_python_runtime/20260324",
+  "entries": [],
+  "summary": "No runtime Python files archived in this round.",
+  "reason": "Safety proof failed: candidates still in active runtime path.",
+  "restore_instructions": "No restore action required because no files were moved."
+}

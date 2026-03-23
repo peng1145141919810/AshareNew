@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-03-24T00:40:46.6762975\u002B08:00",
+  "lifecycle_stage": "pre_phase",
+  "desired_snapshot_path": "F:\\quant_data\\Ashare\\data\\trade_release_v1\\releases\\release_20260323_191001_41e960f6\\target_positions.csv",
+  "actual_snapshot_path": "F:\\quant_data\\Ashare\\data\\live_execution_bridge\\oms_v1\\snapshots\\latest_actual_portfolio_state.json",
+  "compare_capability": true,
+  "mismatch_summary": "symbol_missing=14, symbol_extra=1, weight_mismatch=0, shares_mismatch=0, overlap=0",
+  "reconciliation_severity": "Warning",
+  "order_data_available": false,
+  "fill_data_available": false,
+  "account_data_available": true,
+  "reasons": [
+    "intent_lifecycle_unavailable",
+    "order_lifecycle_unavailable",
+    "fill_lifecycle_unavailable",
+    "symbol_missing_in_actual",
+    "symbol_extra_in_actual",
+    "weight_compare_unavailable",
+    "shares_compare_unavailable"
+  ]
+}

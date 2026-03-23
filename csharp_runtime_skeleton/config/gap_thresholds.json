@@ -1,0 +1,6 @@
+{
+  "weight_mismatch_warning_threshold": 0.01,
+  "weight_mismatch_blocking_threshold": 0.03,
+  "shares_mismatch_warning_threshold": 100,
+  "shares_mismatch_blocking_threshold": 1000
+}

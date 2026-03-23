@@ -1,0 +1,18 @@
+﻿{
+  "checked_at": "2026-03-24T00:45:00+08:00",
+  "scope": "F:/quant_data/AshareC# Python runtime files",
+  "checked_paths": [
+    "Program.cs CLI routes",
+    "Execution/Orchestrator/Host services",
+    "scripts/*.ps1 and tool scripts",
+    "PathRegistry and manifest references",
+    "runtime docs active path declarations"
+  ],
+  "active_runtime_python_paths": [
+    "F:/quant_data/AshareC#/launch_canonical.py",
+    "F:/quant_data/AshareC#/main_research_runner.py",
+    "F:/quant_data/AshareC#/trade_clock_service.py"
+  ],
+  "result": "no_runtime_python_file_safe_to_archive",
+  "notes": "All runtime Python candidates are still in active or compatibility-critical execution path."
+}
