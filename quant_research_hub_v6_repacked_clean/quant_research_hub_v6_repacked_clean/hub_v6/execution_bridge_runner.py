@@ -29,6 +29,8 @@ def execution_policy(config: Dict[str, Any]) -> Dict[str, Any]:
         "account_mode": mode,
         "precision_trade_enabled": bool(raw.get("precision_trade_enabled", False)),
         "allow_integrated_precision_execution": bool(raw.get("allow_integrated_precision_execution", False)),
+        "ignore_market_panic_reduce_only": bool(raw.get("ignore_market_panic_reduce_only", False)),
+        "allow_unfinished_orders_reconcile": bool(raw.get("allow_unfinished_orders_reconcile", False)),
         "namespace": namespace,
         "shadow_run": bool(raw.get("shadow_run", False)),
     }

@@ -17,7 +17,17 @@ from .portfolio_release import load_latest_release, load_release_by_id
 from .safety_guard import assess_system_safety
 from .trading_clock import clock_now, is_trading_day, next_trading_day, trading_clock_snapshot
 
-PHASE_SEQUENCE = ("research", "release", "preopen_gate", "simulation", "shadow", "summary")
+PHASE_SEQUENCE = (
+    "research",
+    "release",
+    "preopen_gate",
+    "simulation",
+    "shadow",
+    "midday_review",
+    "afternoon_execution",
+    "afternoon_shadow",
+    "summary",
+)
 FINAL_PHASE_STATUSES = {"success", "failed", "skipped", "timeout"}
 RESULT_START = "===== ASHARE RESULT JSON START ====="
 RESULT_END = "===== ASHARE RESULT JSON END ====="
@@ -118,15 +128,39 @@ def _scheduler_cfg(config: Dict[str, Any]) -> Dict[str, Any]:
     return dict(dict(config.get("trade_clock", {}) or {}).get("scheduler", {}) or {})
 
 
-def _phase_specs(config: Dict[str, Any]) -> Dict[str, PhaseSpec]:
+def _scheduler_phase_cfg(config: Dict[str, Any], phase_name: str) -> Dict[str, Any]:
     scheduler = _scheduler_cfg(config)
+    return dict(dict(scheduler.get("phases", {}) or {}).get(phase_name, {}) or {})
+
+
+def _scheduler_bool(scheduler: Dict[str, Any], primary_key: str, legacy_key: str = "", default: bool = False) -> bool:
+    if primary_key in scheduler:
+        return bool(scheduler.get(primary_key, default))
+    if legacy_key and legacy_key in scheduler:
+        return bool(scheduler.get(legacy_key, default))
+    return bool(default)
+
+
+def _phase_specs(config: Dict[str, Any]) -> Dict[str, PhaseSpec]:
+    research_cfg = _scheduler_phase_cfg(config, "research")
+    release_cfg = _scheduler_phase_cfg(config, "release")
+    preopen_cfg = _scheduler_phase_cfg(config, "preopen_gate")
+    simulation_cfg = _scheduler_phase_cfg(config, "simulation")
+    shadow_cfg = _scheduler_phase_cfg(config, "shadow")
+    midday_cfg = _scheduler_phase_cfg(config, "midday_review")
+    afternoon_exec_cfg = _scheduler_phase_cfg(config, "afternoon_execution")
+    afternoon_shadow_cfg = _scheduler_phase_cfg(config, "afternoon_shadow")
+    summary_cfg = _scheduler_phase_cfg(config, "summary")
     return {
-        "research": PhaseSpec("research", "research", str(scheduler.get("research_time", "15:05:00") or "15:05:00"), int(scheduler.get("research_timeout_minutes", 420) or 420)),
-        "release": PhaseSpec("release", "release", str(scheduler.get("release_time", "15:10:00") or "15:10:00"), int(scheduler.get("release_timeout_minutes", 30) or 30)),
-        "preopen_gate": PhaseSpec("preopen_gate", "execution", str(scheduler.get("preopen_gate_time", "09:20:00") or "09:20:00"), int(scheduler.get("preopen_gate_timeout_minutes", 15) or 15)),
-        "simulation": PhaseSpec("simulation", "simulation", str(scheduler.get("simulation_time", "09:30:35") or "09:30:35"), int(scheduler.get("simulation_timeout_minutes", 45) or 45)),
-        "shadow": PhaseSpec("shadow", "shadow", str(scheduler.get("shadow_time", "09:35:00") or "09:35:00"), int(scheduler.get("shadow_timeout_minutes", 30) or 30)),
-        "summary": PhaseSpec("summary", "summary", str(scheduler.get("summary_time", "15:20:00") or "15:20:00"), int(scheduler.get("summary_timeout_minutes", 20) or 20)),
+        "research": PhaseSpec("research", "research", str(research_cfg.get("time", "15:05:00") or "15:05:00"), int(research_cfg.get("timeout_minutes", 420) or 420)),
+        "release": PhaseSpec("release", "release", str(release_cfg.get("time", "15:10:00") or "15:10:00"), int(release_cfg.get("timeout_minutes", 30) or 30)),
+        "preopen_gate": PhaseSpec("preopen_gate", "execution", str(preopen_cfg.get("time", "09:20:00") or "09:20:00"), int(preopen_cfg.get("timeout_minutes", 15) or 15)),
+        "simulation": PhaseSpec("simulation", "simulation", str(simulation_cfg.get("time", "09:30:35") or "09:30:35"), int(simulation_cfg.get("timeout_minutes", 45) or 45)),
+        "shadow": PhaseSpec("shadow", "shadow", str(shadow_cfg.get("time", "09:35:00") or "09:35:00"), int(shadow_cfg.get("timeout_minutes", 30) or 30)),
+        "midday_review": PhaseSpec("midday_review", "midday_review", str(midday_cfg.get("time", "11:35:00") or "11:35:00"), int(midday_cfg.get("timeout_minutes", 10) or 10)),
+        "afternoon_execution": PhaseSpec("afternoon_execution", "afternoon_execution", str(afternoon_exec_cfg.get("time", "13:05:00") or "13:05:00"), int(afternoon_exec_cfg.get("timeout_minutes", 30) or 30)),
+        "afternoon_shadow": PhaseSpec("afternoon_shadow", "afternoon_shadow", str(afternoon_shadow_cfg.get("time", "13:15:00") or "13:15:00"), int(afternoon_shadow_cfg.get("timeout_minutes", 20) or 20)),
+        "summary": PhaseSpec("summary", "summary", str(summary_cfg.get("time", "15:20:00") or "15:20:00"), int(summary_cfg.get("timeout_minutes", 20) or 20)),
     }
 
 
@@ -449,6 +483,19 @@ def _find_fallback_source(config: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _midday_plan_payload(cycle_state: Dict[str, Any]) -> Dict[str, Any]:
+    return dict(dict(cycle_state.get("phases", {}).get("midday_review", {}) or {}).get("result_payload", {}) or {})
+
+
+def _phase_execution_plan(cycle_state: Dict[str, Any], phase_name: str) -> Dict[str, Any]:
+    midday_plan = _midday_plan_payload(cycle_state)
+    if phase_name == "afternoon_execution":
+        return dict(midday_plan.get("real_execution", {}) or {})
+    if phase_name == "afternoon_shadow":
+        return dict(midday_plan.get("shadow_execution", {}) or {})
+    return {}
+
+
 def _phase_command(
     config: Dict[str, Any],
     phase_name: str,
@@ -487,7 +534,9 @@ def _phase_command(
                 "--execution-mode",
                 str(scheduler.get("simulation_execution_mode", "precision") or "precision"),
                 "--precision-trade",
-                "on" if bool(scheduler.get("simulation_precision_trade_enabled", True)) else "off",
+                "on" if _scheduler_bool(scheduler, "simulation_precision_trade", "simulation_precision_trade_enabled", True) else "off",
+                "--ignore-market-panic-reduce-only",
+                "on" if bool(scheduler.get("simulation_ignore_market_panic_reduce_only", True)) else "off",
                 "--execution-namespace",
                 str(scheduler.get("simulation_namespace", "simulation") or "simulation"),
             ]
@@ -501,7 +550,11 @@ def _phase_command(
             "--execution-mode",
             str(scheduler.get("simulation_execution_mode", "precision") or "precision"),
             "--precision-trade",
-            "on" if bool(scheduler.get("simulation_precision_trade_enabled", True)) else "off",
+            "on" if _scheduler_bool(scheduler, "simulation_precision_trade", "simulation_precision_trade_enabled", True) else "off",
+            "--ignore-market-panic-reduce-only",
+            "on" if bool(scheduler.get("simulation_ignore_market_panic_reduce_only", True)) else "off",
+            "--allow-unfinished-orders-reconcile",
+            "on" if bool(scheduler.get("simulation_allow_unfinished_orders_reconcile", False)) else "off",
             "--execution-namespace",
             str(scheduler.get("simulation_namespace", "simulation") or "simulation"),
         ]
@@ -516,11 +569,48 @@ def _phase_command(
             "--execution-mode",
             str(scheduler.get("shadow_execution_mode", "precision") or "precision"),
             "--precision-trade",
-            "on" if bool(scheduler.get("shadow_precision_trade_enabled", True)) else "off",
+            "on" if _scheduler_bool(scheduler, "shadow_precision_trade", "shadow_precision_trade_enabled", True) else "off",
+            "--ignore-market-panic-reduce-only",
+            "on" if bool(scheduler.get("shadow_ignore_market_panic_reduce_only", True)) else "off",
+            "--allow-unfinished-orders-reconcile",
+            "on" if bool(scheduler.get("shadow_allow_unfinished_orders_reconcile", False)) else "off",
             "--execution-namespace",
             str(scheduler.get("shadow_namespace", "shadow") or "shadow"),
             "--shadow-run",
         ]
+        if release_id:
+            extra.extend(["--release-id", release_id])
+        return command + extra
+    if phase_name == "midday_review":
+        release_id = str(cycle_state.get("release_id", "") or "")
+        extra = ["--mode", "midday_review_only"]
+        if release_id:
+            extra.extend(["--release-id", release_id])
+        return command + extra
+    if phase_name in {"afternoon_execution", "afternoon_shadow"}:
+        plan = _phase_execution_plan(cycle_state, phase_name)
+        release_id = str(plan.get("release_id", "") or cycle_state.get("release_id", "") or "")
+        namespace = str(plan.get("namespace", "") or scheduler.get("simulation_namespace", "simulation") or "simulation")
+        execution_mode = str(plan.get("execution_mode", scheduler.get("simulation_execution_mode", "precision")) or "precision")
+        precision_trade = bool(plan.get("precision_trade_enabled", _scheduler_bool(scheduler, "simulation_precision_trade", "simulation_precision_trade_enabled", True)))
+        ignore_panic_reduce_only = bool(plan.get("ignore_market_panic_reduce_only", scheduler.get("simulation_ignore_market_panic_reduce_only", True)))
+        allow_unfinished_reconcile = bool(plan.get("allow_unfinished_orders_reconcile", False))
+        extra = [
+            "--mode",
+            "execution_only",
+            "--execution-mode",
+            execution_mode,
+            "--precision-trade",
+            "on" if precision_trade else "off",
+            "--ignore-market-panic-reduce-only",
+            "on" if ignore_panic_reduce_only else "off",
+            "--allow-unfinished-orders-reconcile",
+            "on" if allow_unfinished_reconcile else "off",
+            "--execution-namespace",
+            namespace,
+        ]
+        if phase_name == "afternoon_shadow":
+            extra.append("--shadow-run")
         if release_id:
             extra.extend(["--release-id", release_id])
         return command + extra
@@ -559,9 +649,9 @@ def _normalise_phase_result(
     result_payload = dict(raw_result.get("result_payload", {}) or {})
     if bool(raw_result.get("timed_out", False)):
         phase_status = "timeout"
-    elif phase_name in {"research", "release"}:
+    elif phase_name in {"research", "release", "midday_review"}:
         phase_status = "success" if bool(raw_result.get("ok", False)) else "failed"
-    elif phase_name in {"preopen_gate", "simulation", "shadow"}:
+    elif phase_name in {"preopen_gate", "simulation", "shadow", "afternoon_execution", "afternoon_shadow"}:
         phase_status = _phase_outcome_from_execution_payload(phase_name, result_payload)
         if not raw_result.get("ok", False) and phase_status == "success":
             phase_status = "failed"
@@ -574,6 +664,8 @@ def _normalise_phase_result(
         latest_release = _latest_release_safe(config)
         if str(latest_release.get("trade_date", "") or "") == str(trade_date):
             release_id = str(latest_release.get("release_id", "") or "")
+    elif phase_name == "midday_review":
+        release_id = str(result_payload.get("release", {}).get("release_id", "") or "")
     else:
         release_id = str(result_payload.get("release", {}).get("release_id", "") or result_payload.get("gate", {}).get("release", {}).get("release_id", "") or "")
     error_message = str(raw_result.get("error_message", "") or "").strip()
@@ -698,8 +790,9 @@ def _build_daily_pack(
     market_summary = _market_state_summary(release_doc)
     v2a_summary = _portfolio_v2a_summary(release_doc)
     scheduler = _scheduler_cfg(config)
-    simulation_namespace = str(scheduler.get("simulation_namespace", "simulation") or "simulation")
-    shadow_namespace = str(scheduler.get("shadow_namespace", "shadow") or "shadow")
+    midday_plan = _midday_plan_payload(cycle_state)
+    simulation_namespace = str(midday_plan.get("real_execution", {}).get("namespace", "") or scheduler.get("simulation_namespace", "simulation") or "simulation")
+    shadow_namespace = str(midday_plan.get("shadow_execution", {}).get("namespace", "") or scheduler.get("shadow_namespace", "shadow") or "shadow")
     simulation_oms = _oms_summary_for_namespace(config, simulation_namespace)
     shadow_oms = _oms_summary_for_namespace(config, shadow_namespace)
     safety_state = _load_json(_trade_clock_root(config) / "system_safety_state.json", default={})
@@ -762,6 +855,9 @@ def _build_daily_pack(
         f"目标持仓数: {target_count}",
         f"simulation: {phase_overview.get('simulation', '') or 'queued'}",
         f"shadow: {phase_overview.get('shadow', '') or 'queued'}",
+        f"midday_review: {phase_overview.get('midday_review', '') or 'queued'}",
+        f"afternoon_execution: {phase_overview.get('afternoon_execution', '') or 'queued'}",
+        f"afternoon_shadow: {phase_overview.get('afternoon_shadow', '') or 'queued'}",
         f"OMS gap(simulation): {simulation_oms.get('gap', {}).get('n_gap_symbols', 0) if simulation_oms.get('available', False) else 'n/a'}",
         f"OMS gap(shadow): {shadow_oms.get('gap', {}).get('n_gap_symbols', 0) if shadow_oms.get('available', False) else 'n/a'}",
         "Top warnings:",
@@ -899,6 +995,30 @@ def _mark_phase_complete(
     return state
 
 
+def _adopt_external_release_for_trade_date(
+    config: Dict[str, Any],
+    trade_date: str,
+    profile: str,
+) -> Dict[str, Any]:
+    state = _ensure_cycle_state(config, trade_date, profile)
+    latest_release = _latest_release_for_trade_date(config, trade_date)
+    latest_release_id = str(latest_release.get("release_id", "") or "").strip()
+    current_release_id = str(state.get("release_id", "") or "").strip()
+    if not latest_release_id or latest_release_id == current_release_id:
+        return state
+    state["release_id"] = latest_release_id
+    state["external_release_adopted"] = {
+        "active": True,
+        "adopted_at": clock_now().isoformat(timespec="seconds"),
+        "release_id": latest_release_id,
+        "source_mode": str(latest_release.get("source_mode", "") or ""),
+        "generated_at": str(latest_release.get("generated_at", "") or ""),
+        "trade_date": str(latest_release.get("trade_date", "") or ""),
+    }
+    _save_cycle_state(config, state)
+    return state
+
+
 def _candidate_phases(config: Dict[str, Any], profile: str, now: datetime) -> list[Dict[str, Any]]:
     specs = _phase_specs(config)
     current_trade_date = _current_trade_date(config, now)
@@ -912,14 +1032,19 @@ def _candidate_phases(config: Dict[str, Any], profile: str, now: datetime) -> li
             ]
         )
     if current_trade_date:
-        candidates.extend(
-            [
-                {"trade_date": current_trade_date, "phase_name": "preopen_gate", "scheduled_at": _scheduled_wallclock(now, specs["preopen_gate"].scheduled_time)},
-                {"trade_date": current_trade_date, "phase_name": "simulation", "scheduled_at": _scheduled_wallclock(now, specs["simulation"].scheduled_time)},
-                {"trade_date": current_trade_date, "phase_name": "shadow", "scheduled_at": _scheduled_wallclock(now, specs["shadow"].scheduled_time)},
-                {"trade_date": current_trade_date, "phase_name": "summary", "scheduled_at": _scheduled_wallclock(now, specs["summary"].scheduled_time)},
-            ]
-        )
+        current_candidates = [
+            {"trade_date": current_trade_date, "phase_name": "preopen_gate", "scheduled_at": _scheduled_wallclock(now, specs["preopen_gate"].scheduled_time)},
+            {"trade_date": current_trade_date, "phase_name": "simulation", "scheduled_at": _scheduled_wallclock(now, specs["simulation"].scheduled_time)},
+            {"trade_date": current_trade_date, "phase_name": "midday_review", "scheduled_at": _scheduled_wallclock(now, specs["midday_review"].scheduled_time)},
+            {"trade_date": current_trade_date, "phase_name": "afternoon_execution", "scheduled_at": _scheduled_wallclock(now, specs["afternoon_execution"].scheduled_time)},
+            {"trade_date": current_trade_date, "phase_name": "summary", "scheduled_at": _scheduled_wallclock(now, specs["summary"].scheduled_time)},
+        ]
+        scheduler = _scheduler_cfg(config)
+        if bool(scheduler.get("shadow_enabled", False)):
+            current_candidates.append({"trade_date": current_trade_date, "phase_name": "shadow", "scheduled_at": _scheduled_wallclock(now, specs["shadow"].scheduled_time)})
+        if bool(scheduler.get("afternoon_shadow_enabled", False)):
+            current_candidates.append({"trade_date": current_trade_date, "phase_name": "afternoon_shadow", "scheduled_at": _scheduled_wallclock(now, specs["afternoon_shadow"].scheduled_time)})
+        candidates.extend(current_candidates)
     due: list[Dict[str, Any]] = []
     for item in candidates:
         if now < item["scheduled_at"]:
@@ -938,7 +1063,7 @@ def _run_phase(
     phase_name: str,
     scheduled_at: datetime,
 ) -> Dict[str, Any]:
-    cycle_state = _ensure_cycle_state(config, trade_date, profile)
+    cycle_state = _adopt_external_release_for_trade_date(config, trade_date, profile)
     specs = _phase_specs(config)
     _mark_phase_running(config, trade_date, profile, phase_name, scheduled_for=scheduled_at.isoformat(timespec="seconds"))
     if phase_name == "release":
@@ -968,7 +1093,7 @@ def _run_phase(
         else:
             cycle_state["fallback"] = {"active": False}
             _save_cycle_state(config, cycle_state)
-    elif phase_name == "simulation":
+    elif phase_name in {"simulation", "shadow", "midday_review", "afternoon_execution", "afternoon_shadow"}:
         if not str(cycle_state.get("release_id", "") or "").strip():
             result = {
                 "status": "skipped",
@@ -984,32 +1109,40 @@ def _run_phase(
                 "result_payload": {},
             }
             return _mark_phase_complete(config, trade_date, profile, phase_name, result)
-    elif phase_name == "shadow":
-        if not str(cycle_state.get("release_id", "") or "").strip():
-            raw = _subprocess_phase(
-                config=config,
-                trade_date=trade_date,
-                phase_name=phase_name,
-                command=[
-                    sys.executable,
-                    str(_repo_root() / "launch_canonical.py"),
-                    "--profile",
-                    str(profile or ""),
-                    "--skip-preflight",
-                    "--mode",
-                    "execution_only",
-                    "--gate-only",
-                    "--execution-mode",
-                    str(_scheduler_cfg(config).get("shadow_execution_mode", "precision") or "precision"),
-                    "--precision-trade",
-                    "on" if bool(_scheduler_cfg(config).get("shadow_precision_trade_enabled", True)) else "off",
-                    "--execution-namespace",
-                    str(_scheduler_cfg(config).get("shadow_namespace", "shadow") or "shadow"),
-                ],
-                timeout_minutes=specs[phase_name].timeout_minutes,
-            )
-            result = _normalise_phase_result(config, phase_name, trade_date, raw)
-            return _mark_phase_complete(config, trade_date, profile, phase_name, result)
+        if phase_name in {"afternoon_execution", "afternoon_shadow"}:
+            midday_entry = dict(cycle_state.get("phases", {}).get("midday_review", {}) or {})
+            midday_status = str(midday_entry.get("status", "") or "")
+            midday_plan = _phase_execution_plan(cycle_state, phase_name)
+            if midday_status != "success":
+                result = {
+                    "status": "skipped",
+                    "return_code": None,
+                    "release_id": str(cycle_state.get("release_id", "") or ""),
+                    "warning_count": 0,
+                    "error_message": "midday_review_not_ready",
+                    "stdout_log": "",
+                    "stderr_log": "",
+                    "stdout_tail": [],
+                    "stderr_tail": [],
+                    "result_status": "midday_review_not_ready",
+                    "result_payload": {},
+                }
+                return _mark_phase_complete(config, trade_date, profile, phase_name, result)
+            if not bool(midday_plan.get("should_run", False)):
+                result = {
+                    "status": "skipped",
+                    "return_code": None,
+                    "release_id": str(midday_plan.get("release_id", "") or cycle_state.get("release_id", "") or ""),
+                    "warning_count": 0,
+                    "error_message": str(midday_plan.get("reason", "") or "midday_plan_skip"),
+                    "stdout_log": "",
+                    "stderr_log": "",
+                    "stdout_tail": [],
+                    "stderr_tail": [],
+                    "result_status": "midday_plan_skip",
+                    "result_payload": midday_plan,
+                }
+                return _mark_phase_complete(config, trade_date, profile, phase_name, result)
     if phase_name == "summary":
         result = _run_summary_phase(config=config, trade_date=trade_date, profile=profile, cycle_state=cycle_state)
         return _mark_phase_complete(config, trade_date, profile, phase_name, result)

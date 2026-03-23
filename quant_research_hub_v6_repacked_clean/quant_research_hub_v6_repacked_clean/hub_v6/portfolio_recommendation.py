@@ -108,6 +108,35 @@ def _read_positions(run_dir: Path) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def _read_score_candidates(run_dir: Path) -> pd.DataFrame:
+    path = run_dir / 'latest_scores.csv'
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(path)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _bootstrap_score_candidates(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df.copy()
+    out = df.copy()
+    if 'ts_code' not in out.columns and 'code' in out.columns:
+        out['ts_code'] = out['code'].map(_normalize_symbol)
+    elif 'ts_code' in out.columns:
+        out['ts_code'] = out['ts_code'].map(_normalize_symbol)
+    if 'code' not in out.columns and 'ts_code' in out.columns:
+        out['code'] = out['ts_code'].map(_ts_to_code)
+    if 'portfolio_weight' not in out.columns:
+        out['portfolio_weight'] = 0.02
+    if 'target_exposure' not in out.columns:
+        out['target_exposure'] = 0.3
+    if 'cash_buffer' not in out.columns:
+        out['cash_buffer'] = 0.7
+    return out
+
+
 def _diff_positions(prev_df: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame:
     key_col = 'ts_code' if 'ts_code' in new_df.columns else ('code' if 'code' in new_df.columns else new_df.columns[0])
     prev = prev_df[[key_col, 'portfolio_weight']].copy() if (not prev_df.empty and 'portfolio_weight' in prev_df.columns) else pd.DataFrame(columns=[key_col, 'portfolio_weight'])
@@ -141,6 +170,45 @@ def _load_performance_feedback(config: Dict[str, Any], bridge_root: Path | None)
         return json.loads(path.read_text(encoding='utf-8'))
     except Exception:
         return {}
+
+
+def _filter_executable_candidates(df: pd.DataFrame, rec_cfg: Dict[str, Any], source_name: str) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    out = df.copy()
+    if out.empty or not bool(rec_cfg.get('enforce_executable_universe', True)):
+        return out, {
+            'source_name': str(source_name or ''),
+            'enforced': bool(rec_cfg.get('enforce_executable_universe', True)),
+            'kept_rows': int(len(out)),
+            'dropped_rows': 0,
+            'dropped_symbols': [],
+        }
+    allowed_suffixes = [
+        str(item or '').strip().upper()
+        for item in list(rec_cfg.get('executable_allowed_suffixes', ['.SH', '.SZ']) or ['.SH', '.SZ'])
+        if str(item or '').strip()
+    ]
+    allowed_suffix_tuple = tuple(allowed_suffixes)
+    key_col = _symbol_col(out)
+    out['__symbol'] = out[key_col].map(_normalize_symbol)
+    mask = out['__symbol'].astype(str).str.endswith(allowed_suffix_tuple)
+    if bool(rec_cfg.get('require_tradable_basic', True)) and 'is_tradable_basic' in out.columns:
+        mask &= pd.to_numeric(out['is_tradable_basic'], errors='coerce').fillna(0).gt(0)
+    if 'is_st' in out.columns:
+        mask &= pd.to_numeric(out['is_st'], errors='coerce').fillna(0).le(0)
+    if 'is_suspended' in out.columns:
+        mask &= pd.to_numeric(out['is_suspended'], errors='coerce').fillna(0).le(0)
+    dropped = out.loc[~mask, '__symbol'].astype(str).tolist()
+    kept = out.loc[mask].copy()
+    kept = kept.drop(columns=['__symbol'], errors='ignore')
+    return kept, {
+        'source_name': str(source_name or ''),
+        'enforced': True,
+        'allowed_suffixes': allowed_suffixes,
+        'require_tradable_basic': bool(rec_cfg.get('require_tradable_basic', True)),
+        'kept_rows': int(len(kept.index)),
+        'dropped_rows': int(len(dropped)),
+        'dropped_symbols': dropped[:20],
+    }
 
 
 def _portfolio_limits(rec_cfg: Dict[str, Any], feedback: Dict[str, Any]) -> Dict[str, float]:
@@ -498,7 +566,6 @@ def build_portfolio_recommendation(config: Dict[str, Any], bridge_root: Path | N
     hub_root = Path(str(runtime_cfg.get('hub_output_root', '') or '').strip())
     out_root = ensure_dir(Path(str(config['paths'].get('portfolio_output_root', '') or '').strip()))
     row, run_dir = _pick_best_run(hub_root=hub_root)
-    pos_df = _read_positions(run_dir=run_dir)
     prev_path = out_root / 'target_positions_prev.csv'
     prev_df = pd.read_csv(prev_path) if prev_path.exists() else pd.DataFrame()
     market_state = _load_market_state_summary(config=config)
@@ -506,7 +573,18 @@ def build_portfolio_recommendation(config: Dict[str, Any], bridge_root: Path | N
     max_names = int(adjusted_limits['max_names'])
     single_name_cap = float(adjusted_limits['single_name_cap'])
     total_exposure_cap = float(adjusted_limits['total_exposure_cap'])
-    pos_df = pos_df.head(max_names * 2).copy()
+    raw_portfolio_df = _read_positions(run_dir=run_dir).head(max_names * 4).copy()
+    pos_df, execution_filter = _filter_executable_candidates(raw_portfolio_df, rec_cfg=rec_cfg, source_name='latest_portfolio_v1')
+    candidate_source = 'latest_portfolio_v1'
+    if pos_df.empty:
+        score_df = _bootstrap_score_candidates(_read_score_candidates(run_dir=run_dir))
+        score_df = score_df.sort_values('pred_score', ascending=False) if 'pred_score' in score_df.columns else score_df
+        score_df = score_df.head(max_names * 4).copy()
+        score_df, score_execution_filter = _filter_executable_candidates(score_df, rec_cfg=rec_cfg, source_name='latest_scores')
+        if not score_df.empty:
+            pos_df = score_df
+            candidate_source = 'latest_scores_executable_fallback'
+            execution_filter = score_execution_filter
     fallback_candidate_df = pos_df.copy()
     pos_df = _attach_price_context(pos_df=pos_df, config=config)
     control_summary: Dict[str, Any] = {}
@@ -602,6 +680,8 @@ def build_portfolio_recommendation(config: Dict[str, Any], bridge_root: Path | N
         },
         'simulation_ready': bool(not rec_cfg.get('simulation_ready_need_gate', False) or float(row.get('total_score', 0.0) or 0.0) >= 45.0),
         'portfolio_limits': adjusted_limits,
+        'candidate_source': candidate_source,
+        'execution_candidate_filter': execution_filter,
         'portfolio_weight_totals': {
             'final_total_weight': float(total_weight),
             'reweight_before': float(reweight_before),

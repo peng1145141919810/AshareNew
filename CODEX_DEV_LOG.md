@@ -111,16 +111,28 @@
     - `release`
     - `preopen_gate`
     - `simulation`
-    - `shadow`
+    - `midday_review`
+    - `afternoon_execution`
+    - `afternoon_shadow` (phase exists but automatic dispatch currently disabled by default)
     - `summary`
   - current production model:
     - manual PowerShell start
     - long-lived but lightweight scheduler process
     - child subprocesses for all heavy work
     - fallback release path if nightly research fails or times out
+    - if the operator manually publishes a same-day release before the execution window, the scheduler can now adopt that external release into the current `phase_state` and continue with `preopen_gate / simulation`
+    - midday review can now scan OMS namespaces, find the active real execution namespace for the current release, and generate a bounded afternoon adjustment plan
+    - afternoon execution now reuses the morning namespace and can explicitly allow unfinished-order reconcile instead of being fail-closed at the safety layer
+    - automatic `shadow` dispatch is now disabled by default until shadow becomes broker-isolated
+  - execution-window truth:
+    - `execution_only` now recognizes both:
+      - `morning_primary 09:30:30-10:00:00`
+      - `afternoon_primary 13:00:00-14:50:00`
+    - the scheduler phase graph now includes `midday_review` and `afternoon_execution`
   - namespace split:
     - simulation OMS truth lives under `...\oms_v1\simulation`
     - shadow OMS truth lives under `...\oms_v1\shadow`
+    - the active real namespace can now also be an adopted namespace such as `probe_live_shsz` when midday review detects that the current release was actually executed there
 - Current recommended commands:
   - operator plain-language guide:
     - `F:\quant_data\Ashare\SYSTEM_DAILY_USAGE_GUIDE_CN.txt`
@@ -134,11 +146,14 @@
   - `python F:\quant_data\Ashare\launch_canonical.py --mode research_only --profile daily_production`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode release_only --profile quick_test`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode release_only --profile daily_production`
+  - `python F:\quant_data\Ashare\launch_canonical.py --mode release_only --profile daily_production --release-trade-date 2026-03-23`
+  - `python F:\quant_data\Ashare\launch_canonical.py --mode midday_review_only --profile daily_production --release-id <release_id>`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile quick_test --gate-only`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile daily_production --gate-only`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile quick_test --execution-mode simulation --gate-only`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile quick_test --execution-mode precision --precision-trade off --gate-only`
   - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile quick_test --execution-mode precision --precision-trade on`
+  - `python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile daily_production --execution-mode precision --precision-trade on --execution-namespace <morning_namespace> --allow-unfinished-orders-reconcile on --ignore-market-panic-reduce-only on`
   - `python F:\quant_data\Ashare\trade_clock_service.py --profile daily_production --once`
   - `powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\start_trade_clock.ps1 -Profile daily_production`
   - `powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\stop_trade_clock.ps1`
@@ -724,6 +739,8 @@
 | `OVERNIGHT_V5_GPU_MAX_CYCLES_PER_TICK` | `hub_v6/local_settings.py` | `8` | controls overnight runtime and research depth |
 | `QUICK_TEST_V5_GPU_MAX_CYCLES_PER_TICK` | `hub_v6/local_settings.py` | `1` | controls quick_test runtime and debugging speed |
 | `ENABLE_EXECUTION_BRIDGE` | `hub_v6/local_settings.py` | `True` | determines whether simulated execution runs after portfolio generation |
+| `PORTFOLIO_ENFORCE_EXECUTABLE_UNIVERSE` | `hub_v6/local_settings.py` | `True` | filters research-side candidates to broker-executable symbols before release publication, currently restricted to `.SH` / `.SZ` |
+| `PORTFOLIO_EXECUTABLE_ALLOWED_SUFFIXES` / `PORTFOLIO_EXECUTABLE_REQUIRE_TRADABLE_BASIC` | `hub_v6/local_settings.py` | `.SH,.SZ / True` | enforces exchange suffix and tradable-basic checks so `.BJ` and non-tradable rows do not leak into the formal target book |
 | `PORTFOLIO_ENABLE_POST_FILTER_REWEIGHT` | `hub_v6/local_settings.py` | `True` | allows filtered target weights to be re-expanded toward a meaningful exposure floor when regime capacity still exists |
 | `PORTFOLIO_MIN_EXPOSURE_FILL_RATIO` | `hub_v6/local_settings.py` | `0.75` | target fraction of the current total-exposure cap used by post-filter reweighting when the filtered book is too sparse |
 | `ENABLE_PORTFOLIO_V2A` | `hub_v6/local_settings.py` | `True` | enables the deterministic V2A posture/lifecycle/admission engine inside portfolio recommendation |
@@ -752,8 +769,10 @@
 | `EXECUTION_ACCOUNT_MODE` | `hub_v6/local_settings.py` | `precision` | selects which gmtrade account profile is active by default: `simulation` or `precision` |
 | `PRECISION_TRADE_ENABLED` | `hub_v6/local_settings.py` | `False` | when `False`, precision mode still refreshes heartbeat/gate logs but refuses to call the execution bridge |
 | `ALLOW_INTEGRATED_PRECISION_EXECUTION` | `hub_v6/local_settings.py` | `False` | keeps `integrated_supervisor` and `resume_downstream` from directly executing against the precision account unless explicitly allowed |
+| `EXECUTION_IGNORE_MARKET_PANIC_REDUCE_ONLY` | `hub_v6/local_settings.py` | `False` | keeps normal execution fail-closed under `PANIC`; use explicit overrides when a controlled precision probe must place new buys |
 | `ENABLE_TRADE_RELEASE` | `hub_v6/local_settings.py` | `True` | turns the middle release layer on after research-side portfolio generation |
 | `TRADE_RELEASE_VALID_AFTER_TIME` / `TRADE_RELEASE_EXPIRES_AT_TIME` | `hub_v6/local_settings.py` | `09:30:30 / 15:00:00` | defines the default release validity window consumed by `execution_only` |
+| `--release-trade-date` | `launch_canonical.py` / `main_research_runner.py` | operator override | release-only escape hatch for an explicitly forced same-day trading-date publication when the normal release resolver would move the book to the next trading day |
 | `ENABLE_TRADE_CLOCK` | `hub_v6/local_settings.py` | `True` | enables the lightweight always-on clock-service path |
 | `ENABLE_SAFETY_LAYER` | `hub_v6/local_settings.py` | `True` | enables fail-closed safety evaluation, manual overrides, incident logging, and gmtrade health probes on the execution side |
 | `SAFETY_HEALTH_PROBE_INTERVAL_SECONDS` | `hub_v6/local_settings.py` | `300` | controls how often the clock may refresh the broker/account health snapshot via the dedicated `gmtrade39` probe |
@@ -766,7 +785,8 @@
 | `INDUSTRY_ROUTER_SOURCE_FETCH_CACHE_HOURS` | `hub_v6/local_settings.py` | `12` | controls reuse of cached official-source snapshots under `source_snapshots` |
 | `INDUSTRY_ROUTER_SOURCE_FETCH_MAX_SOURCES_PER_RUN` | `hub_v6/local_settings.py` | `9` | caps the number of official sources fetched in a single `industry_router` run |
 | `TRADE_CLOCK_POLL_SECONDS` | `hub_v6/local_settings.py` | `30` | controls the sleeping heartbeat interval of the clock supervisor |
-| `TRADE_CLOCK_EXECUTION_WINDOWS` | `hub_v6/local_settings.py` | `[{label=morning_primary,start=09:30:30,end=10:00:00}]` | defines the only windows in which `execution_only` may auto-dispatch |
+| `TRADE_CLOCK_EXECUTION_WINDOWS` | `hub_v6/local_settings.py` | `[{label=morning_primary,start=09:30:30,end=10:00:00},{label=afternoon_primary,start=13:00:00,end=14:50:00}]` | defines the currently recognized trading-session windows for `execution_only`; the scheduler phase graph is still separate from this list |
+| `TRADE_CLOCK_SIMULATION_IGNORE_MARKET_PANIC_REDUCE_ONLY` / `TRADE_CLOCK_SHADOW_IGNORE_MARKET_PANIC_REDUCE_ONLY` | `hub_v6/local_settings.py` | `True / True` | allows the trade clock’s simulation and shadow child phases to keep probing new-entry flow even on `PANIC` days instead of being silently forced to sell-only |
 | `manual_halt` / `manual_reduce_only` | `data\\trade_clock\\manual_overrides.json` | `False / False` | operator-facing runtime kill switches; `manual_halt` blocks all new orders, `manual_reduce_only` keeps the bridge sell-only |
 | `ENABLE_INDUSTRY_ROUTER` | `hub_v6/local_settings.py` | `True` | turns the stock/mechanism skeleton and split-backtest sidecar on inside V6 |
 | `INDUSTRY_ROUTER_CONTRACT_ROOT` / `INDUSTRY_ROUTER_OUTPUT_ROOT` | `hub_v6/local_settings.py` | `...\configs\industry_router / data\event_lake_v6\research\industry_router` | separates static contracts from runtime artifacts |
@@ -817,7 +837,9 @@
 - There is no code-level guarantee against third-party security software terminating the clock process; the current mitigation is low resource usage plus manual restart scripts and clear runtime logs.
 - In the current Codex / IDE environment, direct complex foreground Python invocations can occasionally fail with `ACP process` initialization errors or exit code `0xC000013A`; for operator automation and in-session validation, prefer the PowerShell start/stop scripts or `Start-Process` with stdout/stderr redirected to files.
 - The safety layer is intentionally fail-closed. Recent execution failures, stale account truth, unfinished broker orders, or release validation failures can push `system_safety_state.json` to `HALT` and block new execution until the operator intervenes.
+- Afternoon execution is now implemented, but true broker-isolated shadow execution is not. `shadow_run` still shares the same broker/account path and only changes runtime namespace, so automatic shadow dispatch is disabled by default until a no-submit shadow path exists.
 - The initial market-safety thresholds are deliberately conservative and can classify a broad market selloff day as `PANIC`; treat them as operational guardrails, not a final market-timing model.
+- The precision-sim account currently has live pending buy orders from the validated namespace `probe_live_shsz` against release `release_20260323_123443_09ebad73`; until those orders fill, cancel, or are reconciled, fresh precision execution attempts can be blocked by unfinished-order safety checks.
 - The active precision/simulation account mapping currently lives in `configs\gmtrade_runtime_config.local.json`; if that file is changed manually, make sure the `account_profiles` block stays aligned with `EXECUTION_ACCOUNT_MODE`.
 - `hub_v6/local_settings.py` still contains legacy V5 naming such as `V5_PROJECT_ROOT`, which can mislead readers into thinking a root-level package is launched directly.
 - The actual V5 launcher path is package-local `...\v5_gpu_runtime\run_research_hub_v5_1_local.py`; treat `project_root` inside V5 JSON as required config metadata, not launch-path truth.
@@ -996,6 +1018,146 @@
 
 ## Change Log
 All timestamps below are local file write times in the current workspace and should be read as Asia/Shanghai local time.
+
+### 2026-03-23 12:36
+- Type:
+  - `bugfix`
+  - `runtime`
+  - `execution`
+- Scope:
+  - `trade_release`
+  - `precision_probe`
+  - `scheduler_execution_truth`
+- Files:
+  - `F:\quant_data\Ashare\launch_canonical.py`
+  - `F:\quant_data\Ashare\main_research_runner.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_release.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\supervisor.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_manager.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\safety_guard.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_bridge_runner.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\health_probe.py`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Diagnosed the morning “no real orders” failure into two separate causes:
+    - `PANIC` market safety had forced `reduce_only`, so all new BUY legs were being skipped before broker dispatch.
+    - the formal same-day release contained `.BJ` names, and precision gmtrade rejected them with `委托代码不存在或已过期`.
+  - Added an explicit execution override path:
+    - `--ignore-market-panic-reduce-only on|off|default`
+    - this preserves the fail-closed safety layer while allowing a controlled operator or scheduler probe to bypass only the `PANIC -> reduce_only` transformation.
+  - Added broker-executable-universe filtering on the research-side portfolio book so the formal target book now prefers executable `.SH` / `.SZ` names and falls back from `latest_portfolio_v1.csv` to executable rows in `latest_scores.csv` when necessary.
+  - Added an operator-only release escape hatch:
+    - `--release-trade-date YYYY-MM-DD`
+    - this allows `release_only` to publish an explicitly forced same-day release when the normal resolver would roll the book forward to the next trading day after the first execution window.
+  - Expanded `TRADE_CLOCK_EXECUTION_WINDOWS` to include both:
+    - `morning_primary 09:30:30-10:00:00`
+    - `afternoon_primary 13:00:00-14:50:00`
+  - Published the corrected same-day release:
+    - `release_20260323_123443_09ebad73`
+    - `trade_date = 2026-03-23`
+    - `target_count = 12`
+    - `selection_reason = operator_forced_trade_date`
+  - Ran a real precision-sim broker probe against that corrected release under isolated namespace `probe_live_shsz`.
+  - The corrected probe reached real broker submission truth:
+    - `n_dispatch_orders = 6`
+    - `n_submitted_orders = 6`
+    - order ledger statuses are `acknowledged`
+    - no `.BJ` symbol rejection remained on the corrected release
+  - Current validated pending orders now exist on the precision-sim account for:
+    - `300986.SZ`
+    - `301500.SZ`
+    - `601233.SH`
+    - `688273.SH`
+    - `688328.SH`
+    - `688779.SH`
+- Impact:
+  - The system is no longer stuck in the ambiguous state where:
+    - scheduler says execution ran
+    - OMS shows zero dispatch
+    - broker truth is unclear
+  - There is now a clean operational path to:
+    - generate broker-executable targets
+    - publish a same-day release when intentionally forced
+    - submit real precision-sim orders while keeping OMS, safety, and release artifacts aligned
+  - Precision execution truth is now materially better aligned across:
+    - release manifest
+    - execution report
+    - OMS ledgers
+    - gmtrade account health probe
+  - Operators must now treat the pending `probe_live_shsz` orders as real unfinished broker truth; further precision attempts can be blocked until they are filled, cancelled, or reconciled.
+- Validation:
+  - `python -m py_compile` on:
+    - `launch_canonical.py`
+    - `main_research_runner.py`
+    - `hub_v6\portfolio_release.py`
+    - `hub_v6\supervisor.py`
+    - `hub_v6\local_settings.py`
+    - `hub_v6\local_settings.example.py`
+  - Published same-day corrected release:
+    - `python launch_canonical.py --mode release_only --profile daily_production --release-trade-date 2026-03-23 --release-note "operator_forced_same_day_precision_probe" --skip-preflight`
+  - Ran real precision-sim execution probe:
+    - `python launch_canonical.py --mode execution_only --profile daily_production --release-id release_20260323_123443_09ebad73 --execution-mode precision --precision-trade on --execution-namespace probe_live_shsz --ignore-market-panic-reduce-only on --ignore-window --skip-preflight`
+  - Confirmed authoritative artifacts:
+    - `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\probe_live_shsz\snapshots\oms_summary.json`
+    - `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\probe_live_shsz\ledgers\order_ledger_latest.csv`
+    - `F:\quant_data\Ashare\data\live_execution_bridge\probe_live_shsz\latest_execution_feedback.json`
+    - `F:\quant_data\Ashare\data\trade_release_v1\releases\release_20260323_123443_09ebad73\release_manifest.json`
+  - No full integrated pipeline or long full-cycle run was used.
+- Compatibility:
+  - Default release behavior is unchanged unless `--release-trade-date` is explicitly provided.
+  - Default execution fail-closed behavior is unchanged unless `--ignore-market-panic-reduce-only on` is explicitly provided or the scheduler child profile sets the targeted override.
+  - Existing operator entrypoints remain unchanged; this is an additive capability, not a new main path.
+- Rollback:
+  - Remove the new CLI passthrough for `--release-trade-date` and the forced-trade-date branch in `portfolio_release.py` to restore strict automatic trade-date resolution only.
+  - Set `TRADE_CLOCK_SIMULATION_IGNORE_MARKET_PANIC_REDUCE_ONLY = False` and `TRADE_CLOCK_SHADOW_IGNORE_MARKET_PANIC_REDUCE_ONLY = False` if the scheduler should go back to strictly honoring `PANIC -> reduce_only`.
+  - Revert the executable-universe fallback in `portfolio_recommendation.py` if you intentionally want `.BJ` or non-executable research outputs to remain visible in formal target books, but that will again break broker executability on the current precision account.
+
+### 2026-03-23 07:46
+- Type:
+  - `bugfix`
+  - `ops`
+- Scope:
+  - `execution`
+  - `scheduler`
+  - `safety`
+- Files:
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\health_probe.py`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+- Change:
+  - Fixed the daily scheduler gap where manually published same-day releases were not adopted into the current `phase_state`, causing `simulation` to skip with `no_formal_release_for_trade_date` unless the scheduler itself had produced the release.
+  - Added external same-day release adoption into `clock_supervisor.py`; the current-day cycle state can now import `latest_release.json` for the matching `trade_date` before `preopen_gate / simulation / shadow`.
+  - Manually backfilled `data\trade_clock\phase_state\20260323.json` with release `release_20260323_073800_98009a30` so the currently running morning cycle can consume the newly published release immediately.
+  - Fixed the execution health-probe import path after the OMS authority refactor. `live_execution_bridge\health_probe.py` was still importing `build_broker` from the old wrapper runtime, which no longer exported it, so safety refresh degraded into `account_state_stale`.
+  - Re-ran a forced safety refresh; `latest_account_health.json` is now fresh again and `system_safety_state.json` returned to `NORMAL`.
+- Impact:
+  - The operator can now manually run `research_only` and/or `release_only` before the execution window and let the resident scheduler continue with the morning execution phases without waiting for an internally scheduled release phase.
+  - Safety refresh is no longer blocked by the stale OMS import path, so the morning execution path is not automatically halted by a fake stale-account condition.
+- Validation:
+  - Ran `python -m py_compile` on:
+    - `hub_v6\clock_supervisor.py`
+    - `live_execution_bridge\health_probe.py`
+  - Verified `_adopt_external_release_for_trade_date(...)` returns the current same-day release id and marks `external_release_adopted.active=True`.
+  - Re-ran the real execution health probe through `run_execution_health_probe(...)`; it returned `ok=True` with the precision account id.
+  - Forced a safety refresh and confirmed:
+    - `latest_account_health.json` timestamp updated to `2026-03-23T07:44:05`
+    - `system_safety_state.json` moved to `system_mode=NORMAL`
+  - Confirmed the current scheduler heartbeat now sees:
+    - same-day release `release_20260323_073800_98009a30`
+    - `system_mode=NORMAL`
+  - No full integrated pipeline and no real execution dispatch were run.
+- Compatibility:
+  - Additive.
+  - Existing scheduled release flow remains valid.
+  - Manual same-day release publish is now first-class instead of an accidental side path.
+- Rollback:
+  - Revert the external-release adoption helper in `clock_supervisor.py` if the scheduler must go back to consuming only self-produced release ids.
+  - Revert `live_execution_bridge\health_probe.py` if the OMS wrapper is later changed again and a different broker-construction entry becomes canonical.
 
 ### 2026-03-23 03:05
 - Type:
@@ -2849,4 +3011,86 @@ All timestamps below are local file write times in the current workspace and sho
   - No effect on runtime behavior, release contracts, OMS truth ownership, or execution safety.
 - Rollback:
   - Remove `SYSTEM_DAILY_USAGE_GUIDE_CN.txt` and the new pointer/log entry if the guide is no longer wanted.
+
+### 2026-03-23 13:05
+- Type:
+  - `feature`
+  - `bugfix`
+  - `ops`
+- Scope:
+  - `scheduler`
+  - `execution`
+  - `safety`
+  - `operator`
+- Files:
+  - `F:\quant_data\Ashare\launch_canonical.py`
+  - `F:\quant_data\Ashare\main_research_runner.py`
+  - `F:\quant_data\Ashare\RUN_PROFILES.yaml`
+  - `F:\quant_data\Ashare\SYSTEM_DAILY_USAGE_GUIDE_CN.txt`
+  - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\midday_review.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_manager.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\safety_guard.py`
+- Change:
+  - Added formal `midday_review_only` mode. It scans OMS namespaces for the current release, identifies the active real-execution namespace, and writes:
+    - `data\trade_clock\midday_review\YYYYMMDD\midday_adjustment_plan.json`
+    - `data\trade_clock\midday_review\latest\midday_adjustment_plan.json`
+  - Expanded the scheduler phase graph to include:
+    - `midday_review`
+    - `afternoon_execution`
+    - `afternoon_shadow`
+  - Added controlled execution override `allow_unfinished_orders_reconcile`. Safety no longer hard-stops on unfinished broker orders when this explicit override is enabled; instead it records:
+    - `allow_unfinished_orders_reconcile=true`
+    - `unfinished_orders_reconcile_allowed=true`
+  - Afternoon execution now reuses the morning namespace selected by midday review instead of blindly reusing `simulation`.
+  - Verified real afternoon execution against the precision-sim account using namespace `probe_live_shsz`.
+  - Disabled automatic shadow dispatch by default (`TRADE_CLOCK_SHADOW_ENABLED=False`, `TRADE_CLOCK_AFTERNOON_SHADOW_ENABLED=False`) after confirming that `shadow_run` is not yet broker-isolated and still shares the live precision broker path.
+  - Updated the plain-language operator guide so it no longer incorrectly claims that `shadow_run` never touches the broker.
+- Impact:
+  - The system can now run a bounded same-day second execution leg without re-running the research chain.
+  - Unfinished morning orders can be reconciled in the afternoon through the same OMS namespace instead of causing an unconditional safety halt.
+  - Afternoon logic is now release/OMS driven:
+    - morning truth first
+    - then midday review
+    - then afternoon adjustment
+  - Automatic shadow is intentionally held back until a real no-submit broker-isolated shadow path exists.
+- Validation:
+  - `python -m py_compile` on:
+    - `launch_canonical.py`
+    - `main_research_runner.py`
+    - `hub_v6\midday_review.py`
+    - `hub_v6\clock_supervisor.py`
+    - `hub_v6\config_builder.py`
+    - `hub_v6\execution_manager.py`
+    - `hub_v6\safety_guard.py`
+    - `hub_v6\local_settings.py`
+    - `hub_v6\local_settings.example.py`
+  - Ran:
+    - `python launch_canonical.py --mode midday_review_only --profile daily_production --release-id release_20260323_123443_09ebad73 --skip-preflight`
+  - Confirmed midday review selected:
+    - real namespace `probe_live_shsz`
+    - action `carry_and_reconcile`
+    - `allow_unfinished_orders_reconcile=true`
+  - Ran real afternoon precision execution:
+    - `python launch_canonical.py --mode execution_only --profile daily_production --release-id release_20260323_123443_09ebad73 --execution-mode precision --precision-trade on --execution-namespace probe_live_shsz --allow-unfinished-orders-reconcile on --ignore-market-panic-reduce-only on --skip-preflight`
+  - Confirmed authoritative results:
+    - `data\live_execution_bridge\probe_live_shsz\latest_execution_feedback.json`
+    - `data\live_execution_bridge\oms_v1\probe_live_shsz\snapshots\oms_summary.json`
+    - `data\trade_clock\midday_review\latest\midday_adjustment_plan.json`
+  - This afternoon execution actually filled orders on the precision-sim account:
+    - `n_success = 4`
+    - `n_partial = 1`
+    - `n_failed = 0`
+    - remaining unfinished orders now include `688548.SH` and carried `601233.SH`
+- Compatibility:
+  - Additive for midday review and afternoon execution.
+  - Safety remains fail-closed by default; unfinished-order reconcile only opens when explicitly enabled.
+  - Automatic shadow is now more conservative than before; this is intentional execution-side hardening, not a regression.
+- Rollback:
+  - Remove `midday_review.py`, `midday_review_only`, the new scheduler phases, and the `allow_unfinished_orders_reconcile` override to restore the previous single-execution-leg behavior.
+  - Re-enable automatic shadow only after broker-isolated no-submit shadow is implemented; do not simply flip the booleans back on in the current design.
 

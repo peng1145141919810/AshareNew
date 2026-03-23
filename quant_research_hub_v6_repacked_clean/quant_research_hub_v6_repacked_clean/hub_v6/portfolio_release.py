@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, Tuple
 from uuid import uuid4
@@ -91,6 +91,27 @@ def _resolve_trade_date(config: Dict[str, Any], now: datetime) -> Dict[str, Any]
     }
 
 
+def _forced_trade_date_info(config: Dict[str, Any], now: datetime, forced_trade_date: str) -> Dict[str, Any]:
+    raw = str(forced_trade_date or "").strip()
+    if not raw:
+        return {}
+    try:
+        forced_date = date.fromisoformat(raw)
+    except ValueError as exc:
+        raise ValueError(f"非法 trade_date 覆盖值: {raw}") from exc
+    if forced_date < now.date():
+        raise ValueError(f"拒绝发布过期 release，trade_date={forced_date.isoformat()} 早于今天 {now.date().isoformat()}")
+    trading_day = is_trading_day(config=config, target_date=forced_date)
+    if not bool(trading_day.get("ok", False)) or not bool(trading_day.get("is_trading_day", False)):
+        raise RuntimeError(f"指定 trade_date 不是交易日，无法发布 release: {forced_date.isoformat()}")
+    return {
+        "ok": True,
+        "trade_date": forced_date.isoformat(),
+        "selection_reason": "operator_forced_trade_date",
+        "calendar_path": str(trading_day.get("calendar_path", "") or ""),
+    }
+
+
 def _release_constraints(config: Dict[str, Any], summary: Dict[str, Any]) -> Dict[str, Any]:
     portfolio_cfg = dict(config.get("portfolio_recommendation", {}) or {})
     control_cfg = dict(config.get("portfolio_control", {}) or {})
@@ -116,6 +137,7 @@ def publish_portfolio_release(
     summary_path: str = "",
     target_positions_path: str = "",
     note: str = "",
+    forced_trade_date: str = "",
 ) -> Dict[str, Any]:
     now = clock_now(str(config.get("trade_clock", {}).get("timezone", "Asia/Shanghai") or "Asia/Shanghai"))
     src_summary, src_target, src_rebalance = _source_paths(config=config, summary_path=summary_path, target_positions_path=target_positions_path)
@@ -129,7 +151,9 @@ def publish_portfolio_release(
         raise ValueError(f"目标持仓为空，拒绝发布 release: {src_target}")
     summary = _load_json(src_summary)
 
-    trade_date_info = _resolve_trade_date(config=config, now=now)
+    trade_date_info = _forced_trade_date_info(config=config, now=now, forced_trade_date=forced_trade_date)
+    if not trade_date_info:
+        trade_date_info = _resolve_trade_date(config=config, now=now)
     if not bool(trade_date_info.get("ok", False)):
         raise RuntimeError("交易日历不可用，无法安全发布 portfolio release。")
     trade_date = str(trade_date_info.get("trade_date", "") or "")

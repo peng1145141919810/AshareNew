@@ -14,7 +14,8 @@
    负责在交易窗口读取 release，然后进入 OMS / execution 去做执行。
 
 4. 调度层
-   负责按时间自动拉起研究、发布、预检、simulation、shadow、日报。
+   负责按时间自动拉起研究、发布、盘前门禁、上午执行、午间复盘、下午执行、日报。
+   自动 shadow 当前默认关闭。
 
 你平时不要把它理解成“一个脚本一次跑完全部事情”。
 正确理解是：
@@ -192,12 +193,17 @@
    命令逻辑：execution_only，走 simulation namespace
    目标：跑拟真实执行链，暴露实际落地问题
 
-5. shadow
-   建议时间：09:35
-   命令逻辑：execution_only + shadow_run，走 shadow namespace
-   目标：留一条“理论上本来想怎么做”的并行基线
+5. midday_review
+   建议时间：11:35
+   命令逻辑：midday_review_only
+   目标：读取上午 OMS 真相，判断下午是否继续执行、用哪个 namespace、是否允许 unfinished-order reconcile
 
-6. summary
+6. afternoon_execution
+   建议时间：13:05
+   命令逻辑：execution_only，沿用上午真实 namespace
+   目标：做下午二次调整，不重新跑研究链
+
+7. summary
    建议时间：15:20
    目标：把今天的 phase、release、OMS、warnings 整理成日报和运行包
 
@@ -210,9 +216,11 @@
    用来观察系统真正落地时会发生什么。
 
 2. shadow
-   是并行基线。
-   会进入 execution / OMS / audit，但 shadow_run 不会提交 broker 动作。
-   用来观察“系统理论上本来想怎么做”。
+   当前不要把它理解成“完全无风险的只读模拟线”。
+   现阶段 shadow_run 还没有 broker-isolated 的真 shadow 语义。
+   也就是说，shadow 现在只是 namespace 隔离，不等于 broker 隔离。
+   所以自动 shadow 调度目前默认关闭。
+   在没有专门加 broker no-submit 保护前，不建议盘中手动开 shadow。
 
 它们会吃同一版 release。
 但它们不会共用一套 OMS 账本。
@@ -304,8 +312,8 @@ powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\show_trade
 - next_due_phase
 - 最新 release 是哪一版
 - safety 当前是不是 halt
-- 当天 research / release / simulation / shadow / summary 各自状态
-- simulation / shadow 的 OMS summary 在哪里
+- 当天 research / release / simulation / midday_review / afternoon_execution / summary 各自状态
+- simulation 的 OMS summary 在哪里
 - automation_runs 当天目录在哪里
 
 
@@ -449,10 +457,13 @@ powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\show_trade
 4. 精准模拟执行线
    python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile daily_production --execution-mode precision --precision-trade on --execution-namespace simulation
 
-5. shadow 观测线
-   python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile daily_production --execution-mode precision --precision-trade on --execution-namespace shadow --shadow-run
+5. 午间复盘
+   python F:\quant_data\Ashare\launch_canonical.py --mode midday_review_only --profile daily_production --release-id <release_id>
 
-6. OMS 验证
+6. 下午二次执行
+   python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile daily_production --execution-mode precision --precision-trade on --execution-namespace <上午真实namespace> --allow-unfinished-orders-reconcile on --ignore-market-panic-reduce-only on
+
+7. OMS 验证
    python F:\quant_data\Ashare\main_research_runner.py --mode oms_validate --profile quick_test
 
 
@@ -466,5 +477,5 @@ powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\show_trade
 4. research 负责出目标组合。
 5. release 负责冻结正式版本。
 6. simulation 是主执行观测线。
-7. shadow 是并行理论基线。
-8. 出问题先看 clock_state，再看 phase_state，再看 release / safety / OMS。
+7. midday_review 负责决定下午要不要继续动手。
+8. 当前自动 shadow 默认关闭，出问题先看 clock_state，再看 phase_state，再看 release / safety / OMS。

@@ -19,6 +19,7 @@ if str(PACKAGE_ROOT) not in sys.path:
 from hub_v6 import local_settings as LS
 from hub_v6.config_builder import build_runtime_config
 from hub_v6.execution_manager import run_execution_only
+from hub_v6.midday_review import run_midday_review
 from hub_v6.orchestrator_v6 import run_v6_cycle
 from hub_v6.runtime_profiles import normalize_profile, profile_overrides
 from hub_v6.supervisor import run_integrated_supervisor, run_release_only, run_research_only, run_resume_downstream
@@ -34,6 +35,7 @@ def parse_args() -> argparse.Namespace:
             "research_only",
             "release_only",
             "execution_only",
+            "midday_review_only",
             "resume_downstream",
             "oms_validate",
             "full_cycle",
@@ -68,11 +70,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--execution-mode", default="", choices=["", "simulation", "precision"], help="执行账户模式；留空时使用 local_settings 默认值")
     parser.add_argument("--precision-trade", default="default", choices=["default", "on", "off"], help="精准撮合模式下是否允许真实下发执行桥；default 使用 local_settings")
     parser.add_argument("--execution-namespace", default="", help="execution_only 命名空间；用于隔离 simulation / shadow 账本")
+    parser.add_argument(
+        "--ignore-market-panic-reduce-only",
+        default="default",
+        choices=["default", "on", "off"],
+        help="execution_only 使用；on 时允许在 market PANIC 下继续开新仓，不再被 safety 强制 reduce_only。",
+    )
+    parser.add_argument(
+        "--allow-unfinished-orders-reconcile",
+        default="default",
+        choices=["default", "on", "off"],
+        help="execution_only 使用；on 时允许在存在未完成委托时继续进入 OMS 做 carry/reconcile，而不是被 safety 直接拦下。",
+    )
     parser.add_argument("--shadow-run", action="store_true", help="execution_only 使用 shadow-run；进入 OMS 留痕但不提交 broker 动作")
     parser.add_argument("--source-summary-path", default="", help="仅 release_only 模式使用；显式指定 portfolio_recommendation.json")
     parser.add_argument("--source-target-positions-path", default="", help="仅 release_only 模式使用；显式指定 target_positions.csv")
     parser.add_argument("--release-note", default="", help="仅 release_only 模式使用；写入 release manifest 的说明")
     parser.add_argument("--release-source-mode", default="", help="仅 release_only 模式使用；覆盖 release source_mode")
+    parser.add_argument("--release-trade-date", default="", help="仅 release_only 模式使用；显式覆盖 release trade_date，格式 YYYY-MM-DD")
     return parser.parse_args()
 
 
@@ -89,6 +104,8 @@ def _apply_execution_runtime_overrides(
     execution_mode: str = "",
     precision_trade: str = "default",
     execution_namespace: str = "",
+    ignore_market_panic_reduce_only: str = "default",
+    allow_unfinished_orders_reconcile: str = "default",
     shadow_run: bool = False,
 ) -> Dict[str, Any]:
     policy = dict(config.get("execution_policy", {}) or {})
@@ -100,6 +117,14 @@ def _apply_execution_runtime_overrides(
         policy["precision_trade_enabled"] = False
     if str(execution_namespace).strip():
         policy["namespace"] = str(execution_namespace).strip()
+    if str(ignore_market_panic_reduce_only).strip().lower() == "on":
+        policy["ignore_market_panic_reduce_only"] = True
+    elif str(ignore_market_panic_reduce_only).strip().lower() == "off":
+        policy["ignore_market_panic_reduce_only"] = False
+    if str(allow_unfinished_orders_reconcile).strip().lower() == "on":
+        policy["allow_unfinished_orders_reconcile"] = True
+    elif str(allow_unfinished_orders_reconcile).strip().lower() == "off":
+        policy["allow_unfinished_orders_reconcile"] = False
     policy["shadow_run"] = bool(shadow_run)
     config["execution_policy"] = policy
     return config
@@ -118,6 +143,8 @@ def _write_runtime_config(
     execution_mode: str = "",
     precision_trade: str = "default",
     execution_namespace: str = "",
+    ignore_market_panic_reduce_only: str = "default",
+    allow_unfinished_orders_reconcile: str = "default",
     shadow_run: bool = False,
 ) -> Path:
     resolved_profile = normalize_profile(profile)
@@ -128,6 +155,8 @@ def _write_runtime_config(
         execution_mode=execution_mode,
         precision_trade=precision_trade,
         execution_namespace=execution_namespace,
+        ignore_market_panic_reduce_only=ignore_market_panic_reduce_only,
+        allow_unfinished_orders_reconcile=allow_unfinished_orders_reconcile,
         shadow_run=shadow_run,
     )
     config["runtime_selection"] = {
@@ -136,6 +165,8 @@ def _write_runtime_config(
         "execution_mode": str(config.get("execution_policy", {}).get("account_mode", "") or ""),
         "precision_trade_enabled": bool(config.get("execution_policy", {}).get("precision_trade_enabled", False)),
         "execution_namespace": str(config.get("execution_policy", {}).get("namespace", "") or ""),
+        "ignore_market_panic_reduce_only": bool(config.get("execution_policy", {}).get("ignore_market_panic_reduce_only", False)),
+        "allow_unfinished_orders_reconcile": bool(config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile", False)),
         "shadow_run": bool(config.get("execution_policy", {}).get("shadow_run", False)),
     }
     config_path = PACKAGE_ROOT / "configs" / f"hub_config.v6.runtime.{resolved_profile}.json"
@@ -152,6 +183,8 @@ def _effective_config_path(
     execution_mode: str = "",
     precision_trade: str = "default",
     execution_namespace: str = "",
+    ignore_market_panic_reduce_only: str = "default",
+    allow_unfinished_orders_reconcile: str = "default",
     shadow_run: bool = False,
 ) -> Path:
     if str(explicit_path).strip():
@@ -161,6 +194,8 @@ def _effective_config_path(
         execution_mode=execution_mode,
         precision_trade=precision_trade,
         execution_namespace=execution_namespace,
+        ignore_market_panic_reduce_only=ignore_market_panic_reduce_only,
+        allow_unfinished_orders_reconcile=allow_unfinished_orders_reconcile,
         shadow_run=shadow_run,
     )
 
@@ -186,6 +221,7 @@ def _mode_stage_preview(mode: str, config: Dict[str, Any]) -> list[str]:
         "research_only": ["市场数据流水线", "策略反馈刷新", "V6 研究计划", "V5.1 GPU 研究", "持仓建议生成", "组合 release 发布"],
         "release_only": ["发布最新持仓建议为组合 release"],
         "execution_only": ["读取最新 release", "交易时钟门禁检查", "执行桥"],
+        "midday_review_only": ["读取上午 OMS 真相", "分析未完成委托与剩余 gap", "生成午间调整计划"],
         "oms_validate": ["OMS synthetic/replay validation harness", "状态迁移与连续性探针", "validation artifact 输出"],
         "full_cycle": ["基础表刷新与事件抓取", "事件抽取", "分行业/分机制路由", "市场状态/资金面总阀门", "数据缺口分析", "研究计划生成", "桥接产物生成"],
         "ingest_only": ["基础表刷新与事件抓取"],
@@ -219,6 +255,8 @@ def main() -> None:
         execution_mode=str(args.execution_mode).strip(),
         precision_trade=str(args.precision_trade).strip(),
         execution_namespace=str(args.execution_namespace).strip(),
+        ignore_market_panic_reduce_only=str(args.ignore_market_panic_reduce_only).strip(),
+        allow_unfinished_orders_reconcile=str(args.allow_unfinished_orders_reconcile).strip(),
         shadow_run=bool(args.shadow_run),
     )
     config = json.loads(config_path.read_text(encoding="utf-8-sig"))
@@ -231,6 +269,8 @@ def main() -> None:
     print("执行账户模式:", config.get("execution_policy", {}).get("account_mode"))
     print("精准交易开关:", config.get("execution_policy", {}).get("precision_trade_enabled"))
     print("执行命名空间:", config.get("execution_policy", {}).get("namespace"))
+    print("忽略 PANIC 强制 reduce_only:", config.get("execution_policy", {}).get("ignore_market_panic_reduce_only"))
+    print("允许未完成委托继续 reconcile:", config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile"))
     print("Shadow Run:", config.get("execution_policy", {}).get("shadow_run"))
     print("日志根目录:", config.get("paths", {}).get("log_root"))
     print("Supervisor 状态文件:", Path(str(config.get("paths", {}).get("research_root", ""))) / "supervisor" / "supervisor_state.json")
@@ -246,6 +286,7 @@ def main() -> None:
             summary_path=str(args.source_summary_path).strip(),
             target_positions_path=str(args.source_target_positions_path).strip(),
             note=str(args.release_note).strip(),
+            forced_trade_date=str(args.release_trade_date).strip(),
         )
         print("最新 release:", release.get("release_id"))
         print("Trade Date:", release.get("trade_date"))
@@ -259,6 +300,12 @@ def main() -> None:
             gate_only=bool(args.gate_only),
             trigger_label="manual",
             trigger_source="main_research_runner",
+        )
+        _emit_result_json(result)
+    elif args.mode == "midday_review_only":
+        result = run_midday_review(
+            config_path=config_path,
+            release_id=str(args.release_id).strip(),
         )
         _emit_result_json(result)
     elif args.mode == "oms_validate":

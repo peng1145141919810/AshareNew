@@ -766,6 +766,7 @@ def run_release_only(
     summary_path: str = "",
     target_positions_path: str = "",
     note: str = "",
+    forced_trade_date: str = "",
 ) -> Dict[str, Any]:
     """仅把当前最新组合建议发布为可执行 release。"""
     config = load_config(config_path)
@@ -776,6 +777,7 @@ def run_release_only(
         summary_path=str(summary_path or ""),
         target_positions_path=str(target_positions_path or ""),
         note=str(note or ""),
+        forced_trade_date=str(forced_trade_date or ""),
     )
     log_line(
         config,

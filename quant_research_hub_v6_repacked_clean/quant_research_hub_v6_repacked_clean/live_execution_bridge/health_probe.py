@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict
 
-from .runtime import build_broker
+from hub_v6.oms.core.snapshot_loader import build_broker
 
 
 def probe_once(config: Dict[str, Any]) -> Dict[str, Any]:

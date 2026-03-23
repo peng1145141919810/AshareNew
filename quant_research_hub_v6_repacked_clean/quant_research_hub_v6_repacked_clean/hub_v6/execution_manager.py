@@ -188,6 +188,7 @@ def run_execution_only(
             "gate": gate,
             "safety": safety,
             "execution_namespace": namespace,
+            "allow_unfinished_orders_reconcile": bool(config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile", False)),
             "shadow_run": shadow_run,
             "market_state": _market_state_runtime(release_doc=_load_release(config=config, release_id=release_id), config=config) if bool(gate.get("ok", False)) else {},
         }
@@ -199,6 +200,7 @@ def run_execution_only(
             "gate": gate,
             "safety": safety,
             "execution_namespace": namespace,
+            "allow_unfinished_orders_reconcile": bool(config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile", False)),
             "shadow_run": shadow_run,
             "market_state": _market_state_runtime(release_doc=release_doc, config=config) if release_doc else {},
         }
@@ -210,6 +212,7 @@ def run_execution_only(
             "gate": gate,
             "safety": safety,
             "execution_namespace": namespace,
+            "allow_unfinished_orders_reconcile": bool(config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile", False)),
             "shadow_run": shadow_run,
             "market_state": _market_state_runtime(release_doc=release_doc, config=config) if release_doc else {},
         }
@@ -232,6 +235,9 @@ def run_execution_only(
         "new_position_policy": str(market_state.get("new_position_policy", "") or ""),
         "effective_reduce_only": bool(safety.get("effective_reduce_only", False)),
         "effective_turnover_multiplier": float(safety.get("effective_turnover_multiplier", 1.0) or 1.0),
+        "panic_reduce_only_ignored": bool(safety.get("panic_reduce_only_ignored", False)),
+        "allow_unfinished_orders_reconcile": bool(safety.get("allow_unfinished_orders_reconcile", False)),
+        "unfinished_orders_reconcile_allowed": bool(safety.get("unfinished_orders_reconcile_allowed", False)),
         "execution_namespace": namespace,
         "shadow_run": shadow_run,
         "shadow_reason": "shadow_run_bypass" if shadow_run and (not bool(gate.get("should_execute", False)) or not bool(safety.get("allow_execution", False))) else "",
@@ -273,6 +279,7 @@ def run_execution_only(
             "gate": gate,
             "safety": safety,
             "execution_namespace": namespace,
+            "allow_unfinished_orders_reconcile": bool(config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile", False)),
             "shadow_run": shadow_run,
             "error": str(exc),
         }
@@ -286,6 +293,7 @@ def run_execution_only(
         "safety": safety,
         "release": release_context,
         "execution_report": report,
+        "allow_unfinished_orders_reconcile": bool(config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile", False)),
     }
     dispatch_path.write_text(json.dumps(dispatch_doc, ensure_ascii=False, indent=2), encoding="utf-8")
     latest_path = _trade_clock_root(config) / "latest_execution_dispatch.json"

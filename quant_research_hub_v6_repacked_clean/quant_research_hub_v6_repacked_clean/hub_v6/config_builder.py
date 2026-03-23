@@ -212,6 +212,9 @@ def build_runtime_config() -> Dict[str, Any]:
             "technical_confirmation_gate": bool(getattr(LS, "PORTFOLIO_TECHNICAL_CONFIRMATION_GATE", True)),
             "enable_post_filter_reweight": bool(getattr(LS, "PORTFOLIO_ENABLE_POST_FILTER_REWEIGHT", True)),
             "min_exposure_fill_ratio": float(getattr(LS, "PORTFOLIO_MIN_EXPOSURE_FILL_RATIO", 0.75) or 0.75),
+            "enforce_executable_universe": bool(getattr(LS, "PORTFOLIO_ENFORCE_EXECUTABLE_UNIVERSE", True)),
+            "executable_allowed_suffixes": list(getattr(LS, "PORTFOLIO_EXECUTABLE_ALLOWED_SUFFIXES", [".SH", ".SZ"]) or [".SH", ".SZ"]),
+            "require_tradable_basic": bool(getattr(LS, "PORTFOLIO_EXECUTABLE_REQUIRE_TRADABLE_BASIC", True)),
         },
         "portfolio_v2a": {
             "enabled": bool(getattr(LS, "ENABLE_PORTFOLIO_V2A", True)),
@@ -274,6 +277,8 @@ def build_runtime_config() -> Dict[str, Any]:
             "account_mode": str(getattr(LS, "EXECUTION_ACCOUNT_MODE", "simulation") or "simulation").strip().lower(),
             "precision_trade_enabled": bool(getattr(LS, "PRECISION_TRADE_ENABLED", False)),
             "allow_integrated_precision_execution": bool(getattr(LS, "ALLOW_INTEGRATED_PRECISION_EXECUTION", False)),
+            "ignore_market_panic_reduce_only": bool(getattr(LS, "EXECUTION_IGNORE_MARKET_PANIC_REDUCE_ONLY", False)),
+            "allow_unfinished_orders_reconcile": bool(getattr(LS, "EXECUTION_ALLOW_UNFINISHED_ORDERS_RECONCILE", False)),
             "namespace": "main",
             "shadow_run": False,
         },
@@ -304,10 +309,16 @@ def build_runtime_config() -> Dict[str, Any]:
                 "fallback_require_release": bool(getattr(LS, "TRADE_CLOCK_FALLBACK_REQUIRE_RELEASE", False)),
                 "simulation_namespace": str(getattr(LS, "TRADE_CLOCK_SIMULATION_NAMESPACE", "simulation") or "simulation"),
                 "shadow_namespace": str(getattr(LS, "TRADE_CLOCK_SHADOW_NAMESPACE", "shadow") or "shadow"),
+                "shadow_enabled": bool(getattr(LS, "TRADE_CLOCK_SHADOW_ENABLED", False)),
+                "afternoon_shadow_enabled": bool(getattr(LS, "TRADE_CLOCK_AFTERNOON_SHADOW_ENABLED", False)),
                 "simulation_execution_mode": str(getattr(LS, "TRADE_CLOCK_SIMULATION_EXECUTION_MODE", "precision") or "precision"),
                 "shadow_execution_mode": str(getattr(LS, "TRADE_CLOCK_SHADOW_EXECUTION_MODE", "precision") or "precision"),
                 "simulation_precision_trade": bool(getattr(LS, "TRADE_CLOCK_SIMULATION_PRECISION_TRADE", True)),
                 "shadow_precision_trade": bool(getattr(LS, "TRADE_CLOCK_SHADOW_PRECISION_TRADE", True)),
+                "simulation_ignore_market_panic_reduce_only": bool(getattr(LS, "TRADE_CLOCK_SIMULATION_IGNORE_MARKET_PANIC_REDUCE_ONLY", True)),
+                "shadow_ignore_market_panic_reduce_only": bool(getattr(LS, "TRADE_CLOCK_SHADOW_IGNORE_MARKET_PANIC_REDUCE_ONLY", True)),
+                "simulation_allow_unfinished_orders_reconcile": bool(getattr(LS, "TRADE_CLOCK_SIMULATION_ALLOW_UNFINISHED_ORDERS_RECONCILE", False)),
+                "shadow_allow_unfinished_orders_reconcile": bool(getattr(LS, "TRADE_CLOCK_SHADOW_ALLOW_UNFINISHED_ORDERS_RECONCILE", False)),
                 "phases": {
                     "research": {
                         "time": str(getattr(LS, "TRADE_CLOCK_PHASE_RESEARCH_TIME", "15:05:00") or "15:05:00"),
@@ -328,6 +339,18 @@ def build_runtime_config() -> Dict[str, Any]:
                     "shadow": {
                         "time": str(getattr(LS, "TRADE_CLOCK_PHASE_SHADOW_TIME", "09:35:00") or "09:35:00"),
                         "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_SHADOW_TIMEOUT_MINUTES", 30) or 30),
+                    },
+                    "midday_review": {
+                        "time": str(getattr(LS, "TRADE_CLOCK_PHASE_MIDDAY_REVIEW_TIME", "11:35:00") or "11:35:00"),
+                        "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_MIDDAY_REVIEW_TIMEOUT_MINUTES", 10) or 10),
+                    },
+                    "afternoon_execution": {
+                        "time": str(getattr(LS, "TRADE_CLOCK_PHASE_AFTERNOON_EXECUTION_TIME", "13:05:00") or "13:05:00"),
+                        "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_AFTERNOON_EXECUTION_TIMEOUT_MINUTES", 30) or 30),
+                    },
+                    "afternoon_shadow": {
+                        "time": str(getattr(LS, "TRADE_CLOCK_PHASE_AFTERNOON_SHADOW_TIME", "13:15:00") or "13:15:00"),
+                        "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_AFTERNOON_SHADOW_TIMEOUT_MINUTES", 20) or 20),
                     },
                     "summary": {
                         "time": str(getattr(LS, "TRADE_CLOCK_PHASE_SUMMARY_TIME", "15:20:00") or "15:20:00"),

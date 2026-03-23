@@ -47,11 +47,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--execution-mode", default="", choices=["", "simulation", "precision"], help="Execution account mode override")
     parser.add_argument("--precision-trade", default="default", choices=["default", "on", "off"], help="Precision-trade switch override")
     parser.add_argument("--execution-namespace", default="", help="Execution namespace override for simulation/shadow isolation")
+    parser.add_argument(
+        "--ignore-market-panic-reduce-only",
+        default="default",
+        choices=["default", "on", "off"],
+        help="Execution-only override; when on, PANIC market regime will not force reduce_only.",
+    )
+    parser.add_argument(
+        "--allow-unfinished-orders-reconcile",
+        default="default",
+        choices=["default", "on", "off"],
+        help="Execution-only override; when on, unfinished orders do not hard-block OMS carry/reconcile execution.",
+    )
     parser.add_argument("--shadow-run", action="store_true", help="Execution-only shadow-run; keep OMS/audit but do not dispatch broker actions")
     parser.add_argument("--source-summary-path", default="", help="Release-only explicit portfolio_recommendation.json path")
     parser.add_argument("--source-target-positions-path", default="", help="Release-only explicit target_positions.csv path")
     parser.add_argument("--release-note", default="", help="Release-only note written into the release manifest")
     parser.add_argument("--release-source-mode", default="", help="Release-only source_mode override")
+    parser.add_argument("--release-trade-date", default="", help="Release-only explicit trade_date override in YYYY-MM-DD")
     parser.add_argument("--skip-preflight", action="store_true", help="Skip lightweight preflight checks")
     parser.add_argument("--preflight-only", action="store_true", help="Run only the lightweight preflight checks")
     return parser.parse_args()
@@ -100,6 +113,20 @@ def _build_command(research_python: str, manifest: Dict[str, Any], args: argpars
         command.extend(["--precision-trade", str(args.precision_trade).strip().lower()])
     if str(args.execution_namespace).strip():
         command.extend(["--execution-namespace", str(args.execution_namespace).strip()])
+    if str(args.ignore_market_panic_reduce_only).strip().lower() != "default":
+        command.extend(
+            [
+                "--ignore-market-panic-reduce-only",
+                str(args.ignore_market_panic_reduce_only).strip().lower(),
+            ]
+        )
+    if str(args.allow_unfinished_orders_reconcile).strip().lower() != "default":
+        command.extend(
+            [
+                "--allow-unfinished-orders-reconcile",
+                str(args.allow_unfinished_orders_reconcile).strip().lower(),
+            ]
+        )
     if bool(args.shadow_run):
         command.append("--shadow-run")
     if str(args.source_summary_path).strip():
@@ -110,6 +137,8 @@ def _build_command(research_python: str, manifest: Dict[str, Any], args: argpars
         command.extend(["--release-note", str(args.release_note).strip()])
     if str(args.release_source_mode).strip():
         command.extend(["--release-source-mode", str(args.release_source_mode).strip()])
+    if str(args.release_trade_date).strip():
+        command.extend(["--release-trade-date", str(args.release_trade_date).strip()])
     return command
 
 

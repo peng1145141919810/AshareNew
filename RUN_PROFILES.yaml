@@ -28,6 +28,7 @@
     "research_only",
     "release_only",
     "execution_only",
+    "midday_review_only",
     "resume_downstream",
     "oms_validate",
     "full_cycle",

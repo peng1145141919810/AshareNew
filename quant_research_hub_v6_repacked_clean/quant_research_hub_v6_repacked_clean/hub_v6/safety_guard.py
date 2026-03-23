@@ -156,6 +156,8 @@ def _default_system_state(now_text: str = "") -> Dict[str, Any]:
         "position_sync_age_seconds": None,
         "effective_reduce_only": False,
         "effective_turnover_multiplier": 1.0,
+        "allow_unfinished_orders_reconcile": False,
+        "unfinished_orders_reconcile_allowed": False,
     }
 
 
@@ -439,6 +441,9 @@ def apply_execution_safety_overrides(config: Dict[str, Any], safety_report: Dict
         "manual_reduce_only": bool(safety_report.get("manual_reduce_only", False)),
         "effective_reduce_only": bool(safety_report.get("effective_reduce_only", False)),
         "effective_turnover_multiplier": float(safety_report.get("effective_turnover_multiplier", 1.0) or 1.0),
+        "panic_reduce_only_ignored": bool(safety_report.get("panic_reduce_only_ignored", False)),
+        "allow_unfinished_orders_reconcile": bool(safety_report.get("allow_unfinished_orders_reconcile", False)),
+        "unfinished_orders_reconcile_allowed": bool(safety_report.get("unfinished_orders_reconcile_allowed", False)),
     }
     return updated
 
@@ -505,6 +510,10 @@ def assess_system_safety(
     position_age = account_age
     release_age = _seconds_since(str(release_doc.get("generated_at", "") or ""), now)
     safety_cfg = _safety_cfg(config)
+    execution_policy = dict(config.get("execution_policy", {}) or {})
+    panic_reduce_only_ignored = bool(execution_policy.get("ignore_market_panic_reduce_only", False))
+    allow_unfinished_orders_reconcile = bool(execution_policy.get("allow_unfinished_orders_reconcile", False))
+    unfinished_orders_reconcile_allowed = False
 
     if bool(overrides.get("manual_halt", False)):
         system_mode = SYSTEM_HALT
@@ -531,8 +540,11 @@ def assess_system_safety(
         system_mode = SYSTEM_HALT
         halt_reason = "unknown_order_status"
     elif bool(safety_cfg.get("fail_on_unfinished_orders", True)) and int(account_health.get("order_health", {}).get("summary", {}).get("n_unfinished_orders", 0) or 0) > 0:
-        system_mode = SYSTEM_HALT
-        halt_reason = "unfinished_orders_present"
+        if allow_unfinished_orders_reconcile:
+            unfinished_orders_reconcile_allowed = True
+        else:
+            system_mode = SYSTEM_HALT
+            halt_reason = "unfinished_orders_present"
     elif bool(feedback_health.get("ok", False)) and int(feedback_health.get("total_orders", 0) or 0) >= int(safety_cfg.get("execution_fail_min_orders", 3) or 3):
         fail_ratio = float(feedback_health.get("fail_ratio", 0.0) or 0.0)
         if fail_ratio >= float(safety_cfg.get("execution_fail_ratio_halt", 0.75) or 0.75):
@@ -547,7 +559,7 @@ def assess_system_safety(
 
     market_regime = str(market.get("regime", MARKET_NORMAL) or MARKET_NORMAL)
     effective_reduce_only = bool(overrides.get("manual_reduce_only", False))
-    if market_regime == MARKET_PANIC:
+    if market_regime == MARKET_PANIC and not panic_reduce_only_ignored:
         effective_reduce_only = True
     if system_mode == SYSTEM_DEGRADED and bool(safety_cfg.get("degraded_reduce_only", True)):
         effective_reduce_only = True
@@ -593,6 +605,9 @@ def assess_system_safety(
             "position_sync_age_seconds": position_age,
             "effective_reduce_only": effective_reduce_only,
             "effective_turnover_multiplier": turnover_multiplier,
+            "panic_reduce_only_ignored": panic_reduce_only_ignored,
+            "allow_unfinished_orders_reconcile": allow_unfinished_orders_reconcile,
+            "unfinished_orders_reconcile_allowed": unfinished_orders_reconcile_allowed,
             "market_snapshot": market,
             "account_health": {
                 "status": str(account_health.get("status", "") or ""),
@@ -712,6 +727,9 @@ def assess_system_safety(
         "manual_reduce_only": bool(overrides.get("manual_reduce_only", False)),
         "effective_reduce_only": effective_reduce_only,
         "effective_turnover_multiplier": turnover_multiplier,
+        "panic_reduce_only_ignored": panic_reduce_only_ignored,
+        "allow_unfinished_orders_reconcile": allow_unfinished_orders_reconcile,
+        "unfinished_orders_reconcile_allowed": unfinished_orders_reconcile_allowed,
         "state": state,
         "incidents": incidents,
         "release_validation": release_validation,
