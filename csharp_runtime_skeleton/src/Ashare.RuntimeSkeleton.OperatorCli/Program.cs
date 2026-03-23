@@ -379,6 +379,10 @@ static async Task RunGuarded(
         python_command_preview = result.PythonCommandPreview,
         backend_selected = result.BackendSelected,
         backend_executor_type = result.BackendExecutorType,
+        control_plane_owner = result.ControlPlaneOwner,
+        authority_owner = result.AuthorityOwner,
+        adapter_used = result.AdapterUsed,
+        failure_classification = result.FailureClassification,
         launched_by_control_plane = result.LaunchedByControlPlane,
         submit_disabled = result.SubmitDisabled,
         broker_isolated = result.BrokerIsolated,
@@ -433,6 +437,10 @@ static void PrintPhaseResult(PhaseRunResult result)
     Console.WriteLine($"mode: {result.MappedMode}");
     Console.WriteLine($"backend: {result.BackendSelected}");
     Console.WriteLine($"executor: {result.BackendExecutorType}");
+    Console.WriteLine($"control_plane_owner: {result.ControlPlaneOwner}");
+    Console.WriteLine($"authority_owner: {result.AuthorityOwner}");
+    Console.WriteLine($"adapter_used: {result.AdapterUsed}");
+    Console.WriteLine($"failure_classification: {result.FailureClassification}");
     Console.WriteLine($"launched_by_control_plane: {result.LaunchedByControlPlane}");
     Console.WriteLine($"submit_disabled: {result.SubmitDisabled}");
     Console.WriteLine($"broker_isolated: {result.BrokerIsolated}");

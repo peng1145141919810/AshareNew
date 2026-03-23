@@ -1,0 +1,26 @@
+﻿{
+  "checked_at": "2026-03-24T01:18:00+08:00",
+  "decision": "no_runtime_python_archive",
+  "feature_parity": true,
+  "authority_parity": true,
+  "live_cutover_safety_ready": false,
+  "active_runtime_paths": [
+    "F:/quant_data/AshareC#/launch_canonical.py",
+    "F:/quant_data/AshareC#/main_research_runner.py",
+    "F:/quant_data/AshareC#/trade_clock_service.py"
+  ],
+  "checked_references": [
+    "Program.cs command routes",
+    "PhaseOrchestrator and backend owner services",
+    "PathRegistry runtime entries",
+    "scheduler/host services",
+    "docs active-runtime declarations"
+  ],
+  "candidate_files": [],
+  "blockers": [
+    "python canonical entry is still active runtime path",
+    "trade clock python runtime is still active path",
+    "runtime proof for order/fill completeness not yet available"
+  ],
+  "restore_instructions": "No restore needed because no files were moved."
+}

@@ -1,0 +1,46 @@
+{
+  "timestamp": "2026-03-24T01:13:14.5697420\u002B08:00",
+  "phase": "execution",
+  "control_plane_owner": "csharp_runtime_skeleton",
+  "authority_owner": "PhaseOrchestrator",
+  "backend_executor_type": "blocked_before_backend",
+  "adapter_used": false,
+  "launched_by_control_plane": true,
+  "submit_disabled": false,
+  "broker_isolated": false,
+  "final_status": "blocked",
+  "exit_code": null,
+  "failure_classification": "policy_blocked",
+  "pre_oms_lifecycle": {
+    "has_desired_state": true,
+    "has_actual_state": true,
+    "has_order_artifacts": false,
+    "has_fill_artifacts": false,
+    "has_account_snapshot": true,
+    "compare_capability": true,
+    "order_count": 0,
+    "fill_count": 0,
+    "lifecycle_severity": "Warning",
+    "unavailable_reasons": [
+      "intent_lifecycle_unavailable",
+      "order_lifecycle_unavailable",
+      "fill_lifecycle_unavailable"
+    ]
+  },
+  "post_oms_lifecycle": {
+    "has_desired_state": true,
+    "has_actual_state": true,
+    "has_order_artifacts": false,
+    "has_fill_artifacts": false,
+    "has_account_snapshot": true,
+    "compare_capability": true,
+    "order_count": 0,
+    "fill_count": 0,
+    "lifecycle_severity": "Warning",
+    "unavailable_reasons": [
+      "intent_lifecycle_unavailable",
+      "order_lifecycle_unavailable",
+      "fill_lifecycle_unavailable"
+    ]
+  }
+}

@@ -51,6 +51,24 @@ public sealed class PhaseOrchestrator
         if (!PhaseRegistry.TryGet(phase, out var definition))
         {
             var unsupported = BuildBlocked(runId, phase, string.Empty, start, ["phase_not_registered"], "Register phase in PhaseRegistry first.", null, null, lifecyclePre);
+            _omsLifecycleService.WriteExecutionLifecycle(
+                registry,
+                phase,
+                new ExecutionBackendResult
+                {
+                    BackendSelected = "none",
+                    BackendExecutorType = "none",
+                    ControlPlaneOwner = "csharp_runtime_skeleton",
+                    AuthorityOwner = "PhaseOrchestrator",
+                    AdapterUsed = false,
+                    LaunchedByControlPlane = true,
+                    Launched = false,
+                    ExitCode = null,
+                    NormalizedFinalStatus = "blocked",
+                    FailureClassification = "phase_not_registered"
+                },
+                lifecyclePre,
+                lifecyclePre);
             _resultWriter.WritePhaseJournal(registry, unsupported);
             _manifestWriter.Write(registry, "phase-run", new { runId, phase = ToPhaseName(phase), final_status = "blocked", reasons = unsupported.Reasons });
             return unsupported;
@@ -84,6 +102,26 @@ public sealed class PhaseOrchestrator
         {
             var reasons = policy.Reasons.Concat(shadowGuard.Reasons).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             var blockedShadow = BuildBlocked(runId, phase, definition.CanonicalMode, start, reasons, "Shadow guard fail-closed: enforce no-submit and isolated namespace.", null, gap, lifecyclePre, GateSeverity.Blocking, shadowGuard.SubmitDisabled, shadowGuard.BrokerIsolated);
+            _omsLifecycleService.WriteExecutionLifecycle(
+                registry,
+                phase,
+                new ExecutionBackendResult
+                {
+                    BackendSelected = definition.CanonicalMode,
+                    BackendExecutorType = "blocked_by_shadow_guard",
+                    ControlPlaneOwner = "csharp_runtime_skeleton",
+                    AuthorityOwner = "ShadowExecutionGuardService",
+                    AdapterUsed = false,
+                    LaunchedByControlPlane = true,
+                    SubmitDisabled = shadowGuard.SubmitDisabled,
+                    BrokerIsolated = shadowGuard.BrokerIsolated,
+                    Launched = false,
+                    ExitCode = null,
+                    NormalizedFinalStatus = "blocked",
+                    FailureClassification = "shadow_guard_blocked"
+                },
+                lifecyclePre,
+                lifecyclePre);
             _resultWriter.WritePhaseJournal(registry, blockedShadow);
             _manifestWriter.Write(registry, "phase-run", new { runId, phase = ToPhaseName(phase), final_status = "blocked", reasons = blockedShadow.Reasons, shadow = true });
             return blockedShadow;
@@ -103,6 +141,10 @@ public sealed class PhaseOrchestrator
                 PythonCommandPreview = "summary_internal",
                 BackendSelected = "csharp_internal",
                 BackendExecutorType = "internal_owner",
+                ControlPlaneOwner = "csharp_runtime_skeleton",
+                AuthorityOwner = "PhaseOrchestrator",
+                AdapterUsed = false,
+                FailureClassification = "none",
                 LaunchedByControlPlane = true,
                 SubmitDisabled = false,
                 BrokerIsolated = false,
@@ -129,6 +171,26 @@ public sealed class PhaseOrchestrator
         if (!policy.CanExecute || policy.Severity == GateSeverity.Blocking)
         {
             var blocked = BuildBlocked(runId, phase, definition.CanonicalMode, start, policy.Reasons, policy.RecommendedNextAction, request, gap, lifecyclePre, policy.Severity, shadowGuard.SubmitDisabled, shadowGuard.BrokerIsolated);
+            _omsLifecycleService.WriteExecutionLifecycle(
+                registry,
+                phase,
+                new ExecutionBackendResult
+                {
+                    BackendSelected = definition.CanonicalMode,
+                    BackendExecutorType = "blocked_before_backend",
+                    ControlPlaneOwner = "csharp_runtime_skeleton",
+                    AuthorityOwner = "PhaseOrchestrator",
+                    AdapterUsed = false,
+                    LaunchedByControlPlane = true,
+                    SubmitDisabled = shadowGuard.SubmitDisabled,
+                    BrokerIsolated = shadowGuard.BrokerIsolated,
+                    Launched = false,
+                    ExitCode = null,
+                    NormalizedFinalStatus = "blocked",
+                    FailureClassification = "policy_blocked"
+                },
+                lifecyclePre,
+                lifecyclePre);
             _resultWriter.WritePhaseJournal(registry, blocked);
             _manifestWriter.Write(registry, "phase-run", new { runId, phase = ToPhaseName(phase), final_status = "blocked", reasons = blocked.Reasons });
             return blocked;
@@ -144,7 +206,8 @@ public sealed class PhaseOrchestrator
             shadowGuard.SubmitDisabled,
             shadowGuard.BrokerIsolated);
 
-        _omsLifecycleService.Capture(registry, "post_phase");
+        var lifecyclePost = _omsLifecycleService.Capture(registry, "post_phase");
+        _omsLifecycleService.WriteExecutionLifecycle(registry, phase, backendResult, lifecyclePre, lifecyclePost);
 
         var output = new PhaseRunResult
         {
@@ -158,6 +221,10 @@ public sealed class PhaseOrchestrator
             PythonCommandPreview = BuildCommandPreview(request),
             BackendSelected = backendResult.BackendSelected,
             BackendExecutorType = backendResult.BackendExecutorType,
+            ControlPlaneOwner = backendResult.ControlPlaneOwner,
+            AuthorityOwner = backendResult.AuthorityOwner,
+            AdapterUsed = backendResult.AdapterUsed,
+            FailureClassification = backendResult.FailureClassification,
             LaunchedByControlPlane = backendResult.LaunchedByControlPlane,
             SubmitDisabled = backendResult.SubmitDisabled,
             BrokerIsolated = backendResult.BrokerIsolated,
@@ -211,6 +278,10 @@ public sealed class PhaseOrchestrator
             PythonCommandPreview = request is null ? string.Empty : BuildCommandPreview(request),
             BackendSelected = "blocked_before_backend",
             BackendExecutorType = "none",
+            ControlPlaneOwner = "csharp_runtime_skeleton",
+            AuthorityOwner = "PhaseOrchestrator",
+            AdapterUsed = false,
+            FailureClassification = "blocked_pre_launch",
             LaunchedByControlPlane = true,
             SubmitDisabled = submitDisabled,
             BrokerIsolated = brokerIsolated,

@@ -98,6 +98,10 @@ public sealed record PhaseRunResult
     public string PythonCommandPreview { get; init; } = string.Empty;
     public string BackendSelected { get; init; } = string.Empty;
     public string BackendExecutorType { get; init; } = string.Empty;
+    public string ControlPlaneOwner { get; init; } = string.Empty;
+    public string AuthorityOwner { get; init; } = string.Empty;
+    public bool AdapterUsed { get; init; }
+    public string FailureClassification { get; init; } = string.Empty;
     public bool LaunchedByControlPlane { get; init; }
     public bool SubmitDisabled { get; init; }
     public bool BrokerIsolated { get; init; }
@@ -111,16 +115,23 @@ public sealed record PhaseRunResult
 
 public sealed record OmsLifecycleResult
 {
+    public string AuthorityOwner { get; init; } = string.Empty;
     public string LifecycleStage { get; init; } = string.Empty;
+    public bool HasDesiredState { get; init; }
+    public bool HasActualState { get; init; }
+    public bool HasOrderArtifacts { get; init; }
+    public bool HasFillArtifacts { get; init; }
+    public bool HasAccountSnapshot { get; init; }
     public string DesiredSnapshotPath { get; init; } = string.Empty;
     public string ActualSnapshotPath { get; init; } = string.Empty;
     public bool CompareCapability { get; init; }
+    public int OrderCount { get; init; }
+    public int FillCount { get; init; }
     public string MismatchSummary { get; init; } = string.Empty;
+    public GateSeverity LifecycleSeverity { get; init; }
     public GateSeverity ReconciliationSeverity { get; init; }
+    public IReadOnlyList<string> UnavailableReasons { get; init; } = [];
     public IReadOnlyList<string> Reasons { get; init; } = [];
-    public bool OrderDataAvailable { get; init; }
-    public bool FillDataAvailable { get; init; }
-    public bool AccountDataAvailable { get; init; }
 }
 
 public sealed record SchedulerTickResult

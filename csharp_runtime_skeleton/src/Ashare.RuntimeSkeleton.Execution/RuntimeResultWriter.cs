@@ -57,6 +57,15 @@ public sealed class RuntimeResultWriter
         return path;
     }
 
+    public string WriteExecutionLifecycle(PathRegistry registry, object payload)
+    {
+        var io = RuntimeIoPaths.Build(registry);
+        Directory.CreateDirectory(io.RuntimeRoot);
+        var path = Path.Combine(io.RuntimeRoot, "execution_lifecycle_result.json");
+        File.WriteAllText(path, JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
+        return path;
+    }
+
     public string WriteShadowRunReport(PathRegistry registry, object payload)
     {
         var io = RuntimeIoPaths.Build(registry);
@@ -86,6 +95,10 @@ public sealed class RuntimeResultWriter
             python_command_preview = result.PythonCommandPreview,
             backend_selected = result.BackendSelected,
             backend_executor_type = result.BackendExecutorType,
+            control_plane_owner = result.ControlPlaneOwner,
+            authority_owner = result.AuthorityOwner,
+            adapter_used = result.AdapterUsed,
+            failure_classification = result.FailureClassification,
             launched_by_control_plane = result.LaunchedByControlPlane,
             submit_disabled = result.SubmitDisabled,
             broker_isolated = result.BrokerIsolated,
