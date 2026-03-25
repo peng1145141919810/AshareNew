@@ -1,11 +1,41 @@
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$python = Join-Path $repoRoot ".venv\Scripts\python.exe"
-$pythonw = Join-Path $repoRoot ".venv\Scripts\pythonw.exe"
 $scriptPath = Join-Path $PSScriptRoot "sync_codex_dev_log_to_gdrive.py"
-$mirrorDir = "G:\我的云端硬盘\Ashare_backups\codex_dev_log_mirror"
+$mirrorDir = "G:\我的云端硬盘\AshareCSharp_backups\codex_dev_log_mirror"
 $pollSeconds = 5
+
+function Resolve-PythonLaunch {
+    $venvPython = Join-Path $repoRoot ".venv\Scripts\python.exe"
+    $venvPythonw = Join-Path $repoRoot ".venv\Scripts\pythonw.exe"
+    if (Test-Path $venvPython) {
+        return @{
+            FilePath = $venvPython
+            Arguments = @()
+        }
+    }
+    if (Test-Path $venvPythonw) {
+        return @{
+            FilePath = $venvPythonw
+            Arguments = @()
+        }
+    }
+    $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($pythonCmd) {
+        return @{
+            FilePath = $pythonCmd.Source
+            Arguments = @()
+        }
+    }
+    $pyCmd = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyCmd) {
+        return @{
+            FilePath = $pyCmd.Source
+            Arguments = @("-3")
+        }
+    }
+    throw "No usable Python launcher found. Expected .venv\\Scripts\\python.exe, PATH python, or py launcher."
+}
 
 function Get-WatcherProcesses {
     Get-CimInstance Win32_Process | Where-Object {
@@ -25,15 +55,10 @@ if ($existing) {
     exit 0
 }
 
-if (Test-Path $python) {
-    $pythonExecutable = $python
-} elseif (Test-Path $pythonw) {
-    $pythonExecutable = $pythonw
-} else {
-    throw "Python executable not found under $repoRoot\.venv\Scripts"
-}
+$launch = Resolve-PythonLaunch
 
 $args = @(
+    $launch.Arguments
     $scriptPath,
     "--mirror-dir",
     $mirrorDir,
@@ -41,6 +66,6 @@ $args = @(
     $pollSeconds
 )
 
-Start-Process -FilePath $pythonExecutable -ArgumentList $args -WorkingDirectory $repoRoot -WindowStyle Hidden | Out-Null
+Start-Process -FilePath $launch.FilePath -ArgumentList $args -WorkingDirectory $repoRoot -WindowStyle Hidden | Out-Null
 Write-Output "Started CODEX_DEV_LOG Google Drive sync watcher."
 Write-Output "Mirror directory: $mirrorDir"

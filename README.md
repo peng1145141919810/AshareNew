@@ -1,8 +1,11 @@
 # Ashare Quant Research System
 
+当前 `F:\quant_data\AshareC#` 是给 Rider / C# 迁移准备的代码工作区副本，不是已经切换完成的 live 运行根。
+当前 live Python 系统仍以原始 `F:\quant_data\Ashare` 为主，大体量 `data/`、训练表和多数历史运行产物也还在原目录。
+
 当前 GitHub 仓库只承载可运行代码和治理文档，不包含大体量训练表、运行产物、密钥、本机配置。
 
-## 当前正式入口
+## 当前工作区镜像入口
 
 - 正式操作入口: `launch_canonical.py`
 - 被包装的业务根入口: `main_research_runner.py`
@@ -12,7 +15,8 @@
   - `research_only` -> 发布 `portfolio release`
   - `trade_clock_service.py` -> 常驻读时间并触发 `execution_only`
 
-不要把旧文档里提到的历史入口当成现行真相。当前运行法统以 `CODEX_DEV_LOG.md` 为准。
+不要把旧文档里提到的历史入口当成现行真相。当前工作区法统以 `CODEX_DEV_LOG.md` 为准。
+如果你问的是当前 live 生产链，请先确认是不是仍在指原始 `F:\quant_data\Ashare`。
 
 ## 仓库里有什么
 
@@ -35,6 +39,7 @@
 - 本机 `local_settings.py`
 
 这些内容需要按实际环境单独补齐。
+当前默认现实情况是: 大体量数据和训练表仍在 `F:\quant_data\Ashare\data`，`AshareC#` 还不是独立可运行副本。
 
 ## 协作者最小上手步骤
 
@@ -48,14 +53,15 @@
    - `GMTRADE_PYTHON_EXECUTABLE`
    - `TUSHARE_TOKEN`
    - 需要时再填 OpenAI / DeepSeek 等密钥
-5. 通过云盘补齐 `data/` 下所需训练表和运行依赖数据。
-6. 先跑轻量预检:
+5. 当前若只是做 Rider / C# 迁移分析，可直接把原始 `F:\quant_data\Ashare\data` 视为外部依赖。
+6. 若要让 `AshareC#` 独立运行，再补齐或迁移 `data/` 下所需训练表和运行依赖数据。
+7. 先跑轻量预检:
 
 ```powershell
 python launch_canonical.py --preflight-only --profile quick_test --mode integrated_supervisor
 ```
 
-7. 预检通过后，再跑正式入口:
+8. 预检通过后，再跑正式入口:
 
 ```powershell
 python launch_canonical.py --profile quick_test

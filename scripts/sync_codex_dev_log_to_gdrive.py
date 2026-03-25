@@ -16,8 +16,9 @@ from typing import Optional
 
 
 DEFAULT_POLL_SECONDS = 5.0
-DEFAULT_MIRROR_DIR = Path(r"G:\我的云端硬盘\Ashare_backups\codex_dev_log_mirror")
-WINDOWS_MUTEX_NAME = "Local\\AshareCodexDevLogSync"
+DEFAULT_BACKUP_ROOT = Path(r"G:\我的云端硬盘\AshareCSharp_backups")
+DEFAULT_MIRROR_DIR = DEFAULT_BACKUP_ROOT / "codex_dev_log_mirror"
+WINDOWS_MUTEX_NAME = "Local\\AshareCSharpCodexDevLogSync"
 ERROR_ALREADY_EXISTS = 183
 IDLE_PRIORITY_CLASS = 0x00000040
 

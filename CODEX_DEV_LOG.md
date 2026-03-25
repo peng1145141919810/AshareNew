@@ -1,4 +1,4 @@
-﻿# Codex Development Log
+# Codex Development Log
 
 ## Must Read First
 - This file is the current handoff document for future Codex sessions in this project.
@@ -43,9 +43,9 @@
 - History note:
   - most historical entries below were inherited from `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
   - when inherited history still points at `F:\quant_data\Ashare`, this file's stable sections win for the local `AshareC#` workspace
-- External dependency note:
-  - large `data/`, training tables, and many runtime artifacts still live under `F:\quant_data\Ashare\data`
-  - this workspace currently does not contain a local `data/` tree and should not be assumed standalone-runnable
+- Data migration note:
+  - required runtime `data/` (base tables + key operator artifacts) is now mirrored under `F:\quant_data\AshareC#\data`
+  - the old data root `F:\quant_data\Ashare\data` remains a read-only upstream source for ad-hoc backfills
 - C# scaffold status:
   - migration scaffold now exists under `F:\quant_data\AshareC#\csharp_runtime_skeleton`
   - current scaffold footprint:
@@ -69,7 +69,7 @@
 - Root layout note:
   - active migration-workspace code now remains under `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean`
   - the mirrored V5.1 research brain is embedded under `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime`
-  - current large runtime data and train tables still remain under `F:\quant_data\Ashare\data`
+  - runtime data root is now `F:\quant_data\AshareC#\data`
   - current standalone exported C# runtime skeleton repo lives at `F:\quant_data\AshareCSharp-runtime-skeleton`
   - archived legacy root packages were moved to `F:\quant_data\早期实验数据\Ashare_legacy_code_20260321`
 - Git sync behavior:
@@ -114,20 +114,20 @@
   - `execution_only` reads the latest published release, applies trading-clock gates, and only then calls the gmtrade bridge.
   - `trade_clock_service.py` is now the lightweight manual-start daily scheduler that watches phase timepoints, release state, and safety truth, then dispatches bounded subprocess phases.
 - Trade clock runtime:
-  - release root: `F:\quant_data\Ashare\data\trade_release_v1`
-  - clock state root: `F:\quant_data\Ashare\data\trade_clock`
-  - OMS truth root: `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1`
+  - release root: `F:\quant_data\AshareC#\data\trade_release_v1`
+  - clock state root: `F:\quant_data\AshareC#\data\trade_clock`
+  - OMS truth root: `F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1`
   - automation pack root: `F:\quant_data\AshareC#\outputs\automation_runs`
-  - latest release pointer: `F:\quant_data\Ashare\data\trade_release_v1\latest_release.json`
-  - latest clock heartbeat: `F:\quant_data\Ashare\data\trade_clock\clock_state.json`
-  - phase-state root: `F:\quant_data\Ashare\data\trade_clock\phase_state`
-  - scheduler-runtime state: `F:\quant_data\Ashare\data\trade_clock\runtime\scheduler_runtime.json`
-  - trade-clock runtime log root: `F:\quant_data\Ashare\data\trade_clock\runtime`
-  - latest safety truth: `F:\quant_data\Ashare\data\trade_clock\system_safety_state.json`
-  - incident log: `F:\quant_data\Ashare\data\trade_clock\incident_log.jsonl`
-  - manual overrides: `F:\quant_data\Ashare\data\trade_clock\manual_overrides.json`
-  - latest account health probe: `F:\quant_data\Ashare\data\trade_clock\latest_account_health.json`
-  - latest OMS actual-state truth: `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\latest_actual_portfolio_state.json`
+  - latest release pointer: `F:\quant_data\AshareC#\data\trade_release_v1\latest_release.json`
+  - latest clock heartbeat: `F:\quant_data\AshareC#\data\trade_clock\clock_state.json`
+  - phase-state root: `F:\quant_data\AshareC#\data\trade_clock\phase_state`
+  - scheduler-runtime state: `F:\quant_data\AshareC#\data\trade_clock\runtime\scheduler_runtime.json`
+  - trade-clock runtime log root: `F:\quant_data\AshareC#\data\trade_clock\runtime`
+  - latest safety truth: `F:\quant_data\AshareC#\data\trade_clock\system_safety_state.json`
+  - incident log: `F:\quant_data\AshareC#\data\trade_clock\incident_log.jsonl`
+  - manual overrides: `F:\quant_data\AshareC#\data\trade_clock\manual_overrides.json`
+  - latest account health probe: `F:\quant_data\AshareC#\data\trade_clock\latest_account_health.json`
+  - latest OMS actual-state truth: `F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\snapshots\latest_actual_portfolio_state.json`
   - manual operator scripts:
     - start now: `F:\quant_data\AshareC#\scripts\start_trade_clock.ps1`
     - stop now: `F:\quant_data\AshareC#\scripts\stop_trade_clock.ps1`
@@ -1177,6 +1177,34 @@
 
 ## Change Log
 All timestamps below are local file write times in the current workspace and should be read as Asia/Shanghai local time.
+
+### 2026-03-25  (local)
+- Type:
+  - `ops`
+  - `runtime`
+- Scope:
+  - `data`
+  - `infra`
+- Files:
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+  - `F:\quant_data\AshareC#\data\live_execution_bridge\daily_price_snapshot.csv`
+  - `F:\quant_data\AshareC#\data\daily_cache_v6\market_pipeline_report.json`
+  - `F:\quant_data\AshareC#\data\event_lake_v6\research\supervisor\supervisor_state.json`
+  - `F:\quant_data\AshareC#\data\trade_clock\manual_overrides.json`
+  - `F:\quant_data\AshareC#\data\trade_clock\clock_state.json`
+  - `F:\quant_data\AshareC#\data\trade_release_v1\latest_release.json`
+  - `F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\snapshots\latest_actual_portfolio_state.json`
+- Change:
+  - Mirrored the key operator/runtime artifacts from the old data root into `AshareC#\data` so default config paths resolve locally inside this workspace.
+  - Updated stable-path documentation to point trade-clock/release/OMS roots at `F:\quant_data\AshareC#\data`.
+- Impact:
+  - Local runs and lightweight operator checks no longer require `F:\quant_data\Ashare\data` to exist for the core watch files.
+- Validation:
+  - File-existence checks only; no full pipeline / integrated run executed.
+- Compatibility:
+  - Backward compatible (old root still usable as read-only backfill source).
+- Rollback:
+  - Revert this entry and re-point the documented roots back to `F:\quant_data\Ashare\data` if needed.
 
 ### 2026-03-23 23:35
 - Type:

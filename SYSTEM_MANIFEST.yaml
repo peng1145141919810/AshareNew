@@ -2,32 +2,32 @@
   "project_id": "ashare_quant_runtime",
   "law_version": 1,
   "canonical": {
-    "formal_operator_entry": "F:\\quant_data\\Ashare\\launch_canonical.py",
-    "trade_clock_service_entry": "F:\\quant_data\\Ashare\\trade_clock_service.py",
-    "wrapped_business_root_entry": "F:\\quant_data\\Ashare\\main_research_runner.py",
-    "live_runtime_root": "F:\\quant_data\\Ashare\\quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean",
+    "formal_operator_entry": "F:\\quant_data\\AshareC#\\launch_canonical.py",
+    "trade_clock_service_entry": "F:\\quant_data\\AshareC#\\trade_clock_service.py",
+    "wrapped_business_root_entry": "F:\\quant_data\\AshareC#\\main_research_runner.py",
+    "live_runtime_root": "F:\\quant_data\\AshareC#\\quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean",
     "default_mode": "integrated_supervisor",
     "default_profile": "quick_test",
-    "formal_output_root": "F:\\quant_data\\Ashare\\outputs\\canonical_runs",
+    "formal_output_root": "F:\\quant_data\\AshareC#\\outputs\\canonical_runs",
     "formal_run_manifest_name": "run_manifest.json"
   },
   "paths": {
-    "repo_root": "F:\\quant_data\\Ashare",
-    "live_data_root": "F:\\quant_data\\Ashare\\data",
-    "active_v6_root": "F:\\quant_data\\Ashare\\quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean",
-    "active_v5_runtime_root": "F:\\quant_data\\Ashare\\quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\v5_gpu_runtime",
+    "repo_root": "F:\\quant_data\\AshareC#",
+    "live_data_root": "F:\\quant_data\\AshareC#\\data",
+    "active_v6_root": "F:\\quant_data\\AshareC#\\quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean",
+    "active_v5_runtime_root": "F:\\quant_data\\AshareC#\\quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\v5_gpu_runtime",
     "archive_roots": [
       "F:\\quant_data\\早期实验数据\\Ashare_legacy_code_20260321"
     ],
     "experiment_roots": [
-      "F:\\quant_data\\Ashare\\quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\examples"
+      "F:\\quant_data\\AshareC#\\quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\examples"
     ],
     "mixed_roots": [
       {
-        "path": "F:\\quant_data\\Ashare\\outputs",
+        "path": "F:\\quant_data\\AshareC#\\outputs",
         "default_status": "experiment",
         "formal_subroots": [
-          "F:\\quant_data\\Ashare\\outputs\\canonical_runs"
+          "F:\\quant_data\\AshareC#\\outputs\\canonical_runs"
         ]
       }
     ]
