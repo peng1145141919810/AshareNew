@@ -30,9 +30,10 @@ This solution is the first C# governance and orchestration skeleton for the `Ash
 ## Build
 
 ```powershell
-$env:Path='C:\Program Files\JetBrains\Rider\r2r\2025.3.3R\892993BC90E9A7EEE7A2C3ADD7B8003\windows-x64\dotnet;' + $env:Path
 dotnet build .\Ashare.RuntimeSkeleton.sln
 ```
+
+Current project files target `.NET 8`, so a standard .NET 8 SDK is enough for local build and `dotnet run`.
 
 ## Example Commands
 

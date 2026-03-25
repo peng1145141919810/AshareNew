@@ -57,7 +57,7 @@
   - runtime Python lines scanned: `23317`
 
 ## Latest Stable Snapshot
-- Snapshot date: `2026-03-23`
+- Snapshot date: `2026-03-26`
 - Workspace operator mirror: `F:\quant_data\AshareC#\launch_canonical.py`
 - Workspace trade-clock service mirror: `F:\quant_data\AshareC#\trade_clock_service.py`
 - Workspace business root mirror: `F:\quant_data\AshareC#\main_research_runner.py`
@@ -70,6 +70,9 @@
   - active migration-workspace code now remains under `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean`
   - the mirrored V5.1 research brain is embedded under `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime`
   - runtime data root is now `F:\quant_data\AshareC#\data`
+  - hybrid-runtime truth:
+    - formal business runtime still executes through the Python operator chain
+    - `csharp_runtime_skeleton` is currently a control-plane / inspection / bridge sidecar, not the formal production runtime owner
   - current standalone exported C# runtime skeleton repo lives at `F:\quant_data\AshareCSharp-runtime-skeleton`
   - archived legacy root packages were moved to `F:\quant_data\早期实验数据\Ashare_legacy_code_20260321`
 - Git sync behavior:
@@ -77,7 +80,7 @@
   - the hook must never be allowed to push `AshareC#` changes into the old shared `Ashare` GitHub remote
   - if the current remote still points at the old shared repo, the hook should fail closed and print guidance instead of pushing
   - local git hook activation is now restored through `core.hooksPath=.githooks`
-  - current `origin` still points at `https://github.com/peng1145141919810/Ashare.git`, so auto-push is intentionally blocked until a dedicated `AshareC#` remote is configured
+  - dedicated repo target for this workspace is `https://github.com/peng1145141919810/AshareNew`
   - the first standalone migration skeleton is now published separately at `https://github.com/peng1145141919810/AshareCSharp-runtime-skeleton` and currently stays `private`
   - use `$env:DISABLE_AUTO_PUSH='1'; git commit -m "..."; Remove-Item Env:DISABLE_AUTO_PUSH` when a local-only commit is needed in PowerShell
 - Google Drive dev-log mirror:
@@ -175,6 +178,7 @@
 - Current recommended commands:
   - operator plain-language guide:
     - `F:\quant_data\AshareC#\SYSTEM_DAILY_USAGE_GUIDE_CN.txt`
+    - this guide now documents the real hybrid usage path and the current C# sidecar boundary
   - workspace command note:
     - for local code-entry commands in this repo, replace the root prefix `F:\quant_data\Ashare\` with `F:\quant_data\AshareC#\`
     - external data and gmtrade environment references still remain in the original `Ashare` tree until migration
@@ -962,11 +966,11 @@
 | `V5_HUB_OUTPUT_ROOT` | `hub_v6/local_settings.py` | `F:\quant_data\Ashare\data\research_hub_v5_1_gpu_integrated` | current V5 output root consumed by registry, cycle summaries, and portfolio recommendation |
 
 ## Known Issues
-- `AshareC#` currently has no local `data/` tree; training tables and many generated artifacts still remain under `F:\quant_data\Ashare\data`.
-- `AshareC#` now has an initial `.NET/C#` runtime skeleton under `csharp_runtime_skeleton`, but it is still governance/orchestration-first and not yet a full runtime replacement.
+- `AshareC#` now has a local `data/` mirror, but the control-plane contract is still incomplete locally; if required files such as `system_safety_state.json` or `oms_summary.json` are missing, the C# path registry can still fall back to `F:\quant_data\Ashare\data`.
+- `AshareC#` still depends on a private `hub_v6\local_settings.py` that is not committed in this repo; only `local_settings.example.py` is tracked, so fresh clones are not fully runnable until local secrets/paths are provisioned.
+- `AshareC#` now has an initial `.NET/C#` runtime skeleton under `csharp_runtime_skeleton`, and it builds on local `.NET 8`, but it is still governance/orchestration-first and not yet a full runtime replacement.
 - Governance/runtime files such as `SYSTEM_MANIFEST.yaml` are still inherited from the original repo snapshot and can still point at `F:\quant_data\Ashare`; do not treat this Rider copy as cut-over runtime yet.
 - Historical log entries below still mention original `F:\quant_data\Ashare` paths because they were inherited from the source repo snapshot.
-- Git auto-push is now wired locally again, but current `origin` still points at the old shared `Ashare` GitHub repo; the hook therefore refuses to push until a dedicated remote is configured.
 - OpenAI upstream network resets can still happen occasionally; the client now retries transient failures and auto-drops unsupported `reasoning.effort`.
 - Tushare news can still return zero rows when upstream quota is exhausted even after local quota guarding.
 - V5.1 runtime exposes sparse heartbeat artifacts while a cycle is running; operators often need to infer progress from candidate file timestamps.
@@ -4079,3 +4083,56 @@ All timestamps below are local file write times in the current workspace and sho
   - Revert touched C# execution/OMS services and docs in this entry.
   - Remove generated runtime result files if needed.
   - No archive rollback needed because no runtime Python file was moved.
+
+### 2026-03-26 01:20
+- Type:
+  - `bugfix`
+- Scope:
+  - `infra`
+- Files:
+  - `F:\quant_data\AshareC#\tools\preflight_check.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `F:\quant_data\AshareC#\README.md`
+  - `F:\quant_data\AshareC#\SYSTEM_DAILY_USAGE_GUIDE_CN.txt`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\README.md`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Clock\Ashare.RuntimeSkeleton.Clock.csproj`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Contracts\Ashare.RuntimeSkeleton.Contracts.csproj`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Execution\Ashare.RuntimeSkeleton.Execution.csproj`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Governance\Ashare.RuntimeSkeleton.Governance.csproj`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Oms\Ashare.RuntimeSkeleton.Oms.csproj`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Pathing\Ashare.RuntimeSkeleton.Pathing.csproj`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.PythonBridge\Ashare.RuntimeSkeleton.PythonBridge.csproj`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Safety\Ashare.RuntimeSkeleton.Safety.csproj`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Hardened `tools\preflight_check.py` so missing private `hub_v6.local_settings` now produces a normal failed preflight result instead of crashing through `WinError 5`.
+  - Mirrored the repaired daily-pack bookkeeping logic from the live Python repo into the Rider workspace copy:
+    - normalized `phase_status.json`
+    - explicit `phase_status.source.json`
+    - stale-shadow rejection
+    - gap diagnosis sidecars for simulation/shadow
+  - Rewrote `SYSTEM_DAILY_USAGE_GUIDE_CN.txt` to match current truth:
+    - Python remains the formal runtime entry
+    - C# is the operator/control-plane sidecar
+    - documented the actual hybrid command path and default operator workflow
+  - Updated root `README.md` and `csharp_runtime_skeleton\README.md` so they no longer imply a cut-over standalone runtime.
+  - Retargeted the entire C# runtime skeleton from `.NET 9` to `.NET 8` so the local environment can build and run the operator CLI without extra SDK installation.
+- Impact:
+  - The migration workspace now documents and validates the real hybrid architecture instead of implying a premature C# runtime takeover.
+  - Local C# inspection and control-plane commands can be built on the current machine.
+  - Preflight behavior is now predictable on clean or partially provisioned clones.
+- Validation:
+  - `python -m py_compile F:\quant_data\AshareC#\tools\preflight_check.py`
+  - `python -m py_compile F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `python F:\quant_data\AshareC#\tools\preflight_check.py --profile quick_test --mode research_only`
+  - `dotnet build F:\quant_data\AshareC#\csharp_runtime_skeleton\Ashare.RuntimeSkeleton.sln`
+  - `dotnet run --project F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj -- paths F:\quant_data\AshareC#`
+  - `dotnet run --project F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj -- status F:\quant_data\AshareC#`
+- Compatibility:
+  - Additive and corrective.
+  - Formal runtime entry remains Python; no business-chain authority moved into C# here.
+  - C# still falls back to legacy `F:\quant_data\Ashare\data` when local required control-plane artifacts are incomplete.
+- Rollback:
+  - Revert the touched docs, `tools\preflight_check.py`, `hub_v6\clock_supervisor.py`, and the `net8.0` csproj changes.
+  - If the older documentation wording is intentionally restored, re-check that it does not overstate C# runtime authority.

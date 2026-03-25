@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import copy
 import json
 import os
 import shutil
@@ -777,6 +778,220 @@ def _oms_summary_for_namespace(config: Dict[str, Any], namespace: str) -> Dict[s
     return summary
 
 
+def _phase_status_for_pack(config: Dict[str, Any], trade_date: str, cycle_state: Dict[str, Any]) -> Dict[str, Any]:
+    latest_state = _load_json(_phase_state_path(config, trade_date), default=cycle_state)
+    pack_state = copy.deepcopy(latest_state if latest_state else cycle_state)
+    phases = dict(pack_state.get("phases", {}) or {})
+    now_iso = clock_now().isoformat(timespec="seconds")
+    scheduler = _scheduler_cfg(config)
+
+    for phase_name in PHASE_SEQUENCE:
+        entry = _empty_phase_state()
+        entry.update(dict(phases.get(phase_name, {}) or {}))
+        if phase_name == "summary" and str(entry.get("status", "") or "") == "running":
+            entry["status"] = "success"
+            entry["finished_at"] = now_iso
+            entry["result_status"] = str(entry.get("result_status", "") or "summary_success")
+        if phase_name == "shadow" and not bool(scheduler.get("shadow_enabled", False)) and not _phase_state_final(entry):
+            entry.update(
+                {
+                    "status": "skipped",
+                    "finished_at": str(entry.get("finished_at", "") or now_iso),
+                    "error_message": "automatic_shadow_disabled",
+                    "result_status": "automatic_shadow_disabled",
+                    "result_payload": {"reason": "automatic_shadow_disabled"},
+                }
+            )
+        if phase_name == "afternoon_shadow" and not bool(scheduler.get("afternoon_shadow_enabled", False)) and not _phase_state_final(entry):
+            entry.update(
+                {
+                    "status": "skipped",
+                    "finished_at": str(entry.get("finished_at", "") or now_iso),
+                    "error_message": "automatic_shadow_disabled",
+                    "result_status": "automatic_shadow_disabled",
+                    "result_payload": {"reason": "automatic_shadow_disabled"},
+                }
+            )
+        phases[phase_name] = entry
+
+    external_release = dict(pack_state.get("external_release_adopted", {}) or {})
+    adopted_release_id = str(external_release.get("release_id", "") or "").strip()
+    if bool(external_release.get("active", False)) and adopted_release_id:
+        adopted_at = str(external_release.get("adopted_at", "") or now_iso)
+        release_entry = _empty_phase_state()
+        release_entry.update(dict(phases.get("release", {}) or {}))
+        if not _phase_state_final(release_entry):
+            release_entry.update(
+                {
+                    "status": "success",
+                    "started_at": str(release_entry.get("started_at", "") or adopted_at),
+                    "finished_at": str(release_entry.get("finished_at", "") or adopted_at),
+                    "release_id": adopted_release_id,
+                    "error_message": "external_release_adopted",
+                    "result_status": "external_release_adopted",
+                    "result_payload": {
+                        "reason": "external_release_adopted",
+                        "external_release_adopted": external_release,
+                    },
+                }
+            )
+            phases["release"] = release_entry
+        research_entry = _empty_phase_state()
+        research_entry.update(dict(phases.get("research", {}) or {}))
+        if not _phase_state_final(research_entry):
+            research_entry.update(
+                {
+                    "status": "skipped",
+                    "finished_at": str(research_entry.get("finished_at", "") or adopted_at),
+                    "error_message": "external_release_adopted_no_scheduler_trace",
+                    "result_status": "external_release_adopted_no_scheduler_trace",
+                    "result_payload": {
+                        "reason": "external_release_adopted_no_scheduler_trace",
+                        "external_release_adopted": external_release,
+                    },
+                }
+            )
+            phases["research"] = research_entry
+
+    pack_state["phases"] = phases
+    pack_state["current_phase"] = ""
+    pack_state["updated_at"] = now_iso
+    return pack_state
+
+
+def _validated_oms_summary(
+    config: Dict[str, Any],
+    namespace: str,
+    expected_release_id: str,
+    phase_entry: Dict[str, Any],
+) -> Dict[str, Any]:
+    phase_status = str(dict(phase_entry or {}).get("status", "") or "")
+    summary = _oms_summary_for_namespace(config, namespace)
+    return _validate_oms_summary_payload(
+        summary=summary,
+        namespace=namespace,
+        expected_release_id=expected_release_id,
+        phase_status=phase_status,
+    )
+
+
+def _validate_oms_summary_payload(
+    summary: Dict[str, Any],
+    namespace: str,
+    expected_release_id: str,
+    phase_status: str,
+) -> Dict[str, Any]:
+    summary = dict(summary or {})
+    summary["phase_status"] = phase_status
+    if not bool(summary.get("available", False)):
+        summary["unavailable_reason"] = "missing_summary"
+        return summary
+    stale_reasons: list[str] = []
+    actual_release_id = str(summary.get("release_id", "") or "").strip()
+    if phase_status != "success":
+        stale_reasons.append(f"phase_status_{phase_status or 'unknown'}")
+    if expected_release_id and actual_release_id != expected_release_id:
+        stale_reasons.append("release_id_mismatch")
+    if stale_reasons:
+        return {
+            "available": False,
+            "namespace": namespace,
+            "oms_summary_path": str(summary.get("oms_summary_path", "") or ""),
+            "generated_at": str(summary.get("generated_at", "") or ""),
+            "release_id": actual_release_id,
+            "phase_status": phase_status,
+            "stale_reasons": stale_reasons,
+            "unavailable_reason": "stale_snapshot",
+        }
+    return summary
+
+
+def _phase_embedded_oms_summary(phase_entry: Dict[str, Any], namespace: str) -> Dict[str, Any]:
+    payload = dict(dict(phase_entry or {}).get("result_payload", {}) or {})
+    execution_report = dict(payload.get("execution_report", {}) or {})
+    oms_bucket = dict(execution_report.get("oms", {}) or {})
+    embedded = dict(oms_bucket.get("summary", {}) or {})
+    if not embedded:
+        report_path = Path(str(payload.get("execution_report_path", "") or "").strip())
+        if report_path.exists():
+            report_doc = _load_json(report_path, default={})
+            oms_bucket = dict(report_doc.get("oms", {}) or {})
+            embedded = dict(oms_bucket.get("summary", {}) or {})
+    if not embedded:
+        return {}
+    embedded["available"] = True
+    embedded["namespace"] = namespace
+    embedded["oms_summary_path"] = str(oms_bucket.get("summary_path", "") or embedded.get("oms_summary_path", "") or "")
+    return embedded
+
+
+def _phase_or_latest_oms_summary(
+    config: Dict[str, Any],
+    namespace: str,
+    expected_release_id: str,
+    phase_entry: Dict[str, Any],
+) -> Dict[str, Any]:
+    phase_status = str(dict(phase_entry or {}).get("status", "") or "")
+    embedded = _phase_embedded_oms_summary(phase_entry, namespace)
+    if embedded:
+        validated = _validate_oms_summary_payload(
+            summary=embedded,
+            namespace=namespace,
+            expected_release_id=expected_release_id,
+            phase_status=phase_status,
+        )
+        if bool(validated.get("available", False)):
+            validated["source"] = "phase_execution_report"
+        return validated
+    validated = _validated_oms_summary(
+        config=config,
+        namespace=namespace,
+        expected_release_id=expected_release_id,
+        phase_entry=phase_entry,
+    )
+    if bool(validated.get("available", False)):
+        validated["source"] = "latest_snapshot"
+    return validated
+
+
+def _gap_diagnostics(oms_summary: Dict[str, Any]) -> Dict[str, Any]:
+    if not bool(oms_summary.get("available", False)):
+        return {
+            "available": False,
+            "primary_cause": "unavailable",
+            "drivers": [],
+        }
+    dispatch = dict(oms_summary.get("dispatch", {}) or {})
+    continuity = dict(oms_summary.get("continuity", {}) or {})
+    gap = dict(oms_summary.get("gap", {}) or {})
+    drivers: list[str] = []
+    turnover_truncation_ratio = float(dispatch.get("turnover_truncation_ratio", 0.0) or 0.0)
+    n_dispatch_orders = int(dispatch.get("n_dispatch_orders", 0) or 0)
+    n_fills = int(dispatch.get("n_fills", 0) or 0)
+    n_open_intents_after = int(continuity.get("n_open_intents_after", 0) or 0)
+    n_carried_symbols = int(continuity.get("n_carried_symbols", 0) or 0)
+    gap_weight_ratio = float(gap.get("gap_weight_ratio", 0.0) or 0.0)
+    if turnover_truncation_ratio >= 0.25:
+        drivers.append("turnover_budget_truncation")
+    if n_open_intents_after > 0 or n_carried_symbols > 0:
+        drivers.append("oms_continuity_carryover")
+    if n_dispatch_orders > 0 and n_fills < n_dispatch_orders:
+        drivers.append("execution_fill_friction")
+    if gap_weight_ratio > 0 and not drivers:
+        drivers.append("residual_portfolio_gap")
+    return {
+        "available": True,
+        "primary_cause": drivers[0] if drivers else "none",
+        "drivers": drivers,
+        "turnover_truncation_ratio": turnover_truncation_ratio,
+        "n_dispatch_orders": n_dispatch_orders,
+        "n_fills": n_fills,
+        "n_open_intents_after": n_open_intents_after,
+        "n_carried_symbols": n_carried_symbols,
+        "gap_weight_ratio": gap_weight_ratio,
+    }
+
+
 def _build_daily_pack(
     config: Dict[str, Any],
     trade_date: str,
@@ -785,22 +1000,37 @@ def _build_daily_pack(
 ) -> Dict[str, Any]:
     pack_dir = ensure_dir(_automation_runs_root(config) / trade_date.replace("-", ""))
     logs_dir = ensure_dir(pack_dir / "logs")
-    release_doc = _release_by_id_safe(config, str(cycle_state.get("release_id", "") or "")) or _latest_release_for_trade_date(config, trade_date)
+    pack_state = _phase_status_for_pack(config=config, trade_date=trade_date, cycle_state=cycle_state)
+    release_doc = _release_by_id_safe(config, str(pack_state.get("release_id", "") or "")) or _latest_release_for_trade_date(config, trade_date)
     release_summary = _daily_release_summary(release_doc)
     market_summary = _market_state_summary(release_doc)
     v2a_summary = _portfolio_v2a_summary(release_doc)
     scheduler = _scheduler_cfg(config)
-    midday_plan = _midday_plan_payload(cycle_state)
+    midday_plan = _midday_plan_payload(pack_state)
     simulation_namespace = str(midday_plan.get("real_execution", {}).get("namespace", "") or scheduler.get("simulation_namespace", "simulation") or "simulation")
     shadow_namespace = str(midday_plan.get("shadow_execution", {}).get("namespace", "") or scheduler.get("shadow_namespace", "shadow") or "shadow")
-    simulation_oms = _oms_summary_for_namespace(config, simulation_namespace)
-    shadow_oms = _oms_summary_for_namespace(config, shadow_namespace)
+    simulation_phase = dict(pack_state.get("phases", {}).get("simulation", {}) or {})
+    shadow_phase = dict(pack_state.get("phases", {}).get("shadow", {}) or {})
+    simulation_oms = _phase_or_latest_oms_summary(
+        config=config,
+        namespace=simulation_namespace,
+        expected_release_id=str(release_summary.get("release_id", "") or ""),
+        phase_entry=simulation_phase,
+    )
+    shadow_oms = _phase_or_latest_oms_summary(
+        config=config,
+        namespace=shadow_namespace,
+        expected_release_id=str(release_summary.get("release_id", "") or ""),
+        phase_entry=shadow_phase,
+    )
+    simulation_gap_analysis = _gap_diagnostics(simulation_oms)
+    shadow_gap_analysis = _gap_diagnostics(shadow_oms)
     safety_state = _load_json(_trade_clock_root(config) / "system_safety_state.json", default={})
     phase_status_path = _phase_state_path(config, trade_date)
     warnings: list[Dict[str, Any]] = []
     critical_flags: list[Dict[str, Any]] = []
     for phase_name in PHASE_SEQUENCE:
-        phase_entry = dict(cycle_state.get("phases", {}).get(phase_name, {}) or {})
+        phase_entry = dict(pack_state.get("phases", {}).get(phase_name, {}) or {})
         status = str(phase_entry.get("status", "") or "")
         if status in {"failed", "timeout"}:
             critical_flags.append({"phase": phase_name, "code": status, "message": str(phase_entry.get("error_message", "") or status)})
@@ -825,23 +1055,59 @@ def _build_daily_pack(
             }
         )
     if int(simulation_oms.get("gap", {}).get("n_gap_symbols", 0) or 0) > 0:
-        warnings.append({"phase": "simulation", "code": "oms_gap", "message": f"simulation gap symbols={simulation_oms.get('gap', {}).get('n_gap_symbols', 0)}"})
+        warnings.append(
+            {
+                "phase": "simulation",
+                "code": "oms_gap",
+                "message": (
+                    f"simulation gap symbols={simulation_oms.get('gap', {}).get('n_gap_symbols', 0)} "
+                    f"primary_cause={simulation_gap_analysis.get('primary_cause', 'unknown')}"
+                ),
+            }
+        )
+    elif str(simulation_oms.get("unavailable_reason", "") or "") == "stale_snapshot":
+        warnings.append(
+            {
+                "phase": "simulation",
+                "code": "stale_oms_summary",
+                "message": f"simulation summary stale reasons={','.join(list(simulation_oms.get('stale_reasons', []) or []))}",
+            }
+        )
     if int(shadow_oms.get("gap", {}).get("n_gap_symbols", 0) or 0) > 0:
-        warnings.append({"phase": "shadow", "code": "oms_gap", "message": f"shadow gap symbols={shadow_oms.get('gap', {}).get('n_gap_symbols', 0)}"})
+        warnings.append(
+            {
+                "phase": "shadow",
+                "code": "oms_gap",
+                "message": (
+                    f"shadow gap symbols={shadow_oms.get('gap', {}).get('n_gap_symbols', 0)} "
+                    f"primary_cause={shadow_gap_analysis.get('primary_cause', 'unknown')}"
+                ),
+            }
+        )
+    elif str(shadow_oms.get("unavailable_reason", "") or "") == "stale_snapshot" and str(shadow_phase.get("status", "") or "") == "success":
+        warnings.append(
+            {
+                "phase": "shadow",
+                "code": "stale_oms_summary",
+                "message": f"shadow summary stale reasons={','.join(list(shadow_oms.get('stale_reasons', []) or []))}",
+            }
+        )
 
-    _write_json(pack_dir / "phase_status.json", cycle_state)
+    _write_json(pack_dir / "phase_status.json", pack_state)
     _write_json(pack_dir / "daily_release_summary.json", release_summary)
     _write_json(pack_dir / "market_state_summary.json", market_summary)
     _write_json(pack_dir / "portfolio_v2a_summary.json", v2a_summary)
     _write_json(pack_dir / "oms_summary_simulation.json", simulation_oms)
     _write_json(pack_dir / "oms_summary_shadow.json", shadow_oms)
+    _write_json(pack_dir / "gap_analysis_simulation.json", simulation_gap_analysis)
+    _write_json(pack_dir / "gap_analysis_shadow.json", shadow_gap_analysis)
     _write_json(pack_dir / "warnings.json", {"count": len(warnings), "items": warnings})
     _write_json(pack_dir / "critical_flags.json", {"count": len(critical_flags), "items": critical_flags})
     if phase_status_path.exists():
         shutil.copy2(phase_status_path, pack_dir / "phase_status.source.json")
 
     phase_overview = {
-        phase_name: str(dict(cycle_state.get("phases", {}).get(phase_name, {}) or {}).get("status", "") or "")
+        phase_name: str(dict(pack_state.get("phases", {}).get(phase_name, {}) or {}).get("status", "") or "")
         for phase_name in PHASE_SEQUENCE
     }
     target_count = int(release_doc.get("target_count", 0) or release_summary.get("target_count", 0) or 0)
@@ -860,6 +1126,8 @@ def _build_daily_pack(
         f"afternoon_shadow: {phase_overview.get('afternoon_shadow', '') or 'queued'}",
         f"OMS gap(simulation): {simulation_oms.get('gap', {}).get('n_gap_symbols', 0) if simulation_oms.get('available', False) else 'n/a'}",
         f"OMS gap(shadow): {shadow_oms.get('gap', {}).get('n_gap_symbols', 0) if shadow_oms.get('available', False) else 'n/a'}",
+        f"simulation gap primary_cause: {simulation_gap_analysis.get('primary_cause', 'unknown')}",
+        f"shadow data_state: {shadow_oms.get('unavailable_reason', 'fresh') if not shadow_oms.get('available', False) else 'fresh'}",
         "Top warnings:",
     ]
     if warnings:

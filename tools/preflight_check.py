@@ -32,7 +32,10 @@ def _subprocess_import_check(python_executable: Path, runtime_root: Path, module
             f"importlib.import_module('{module_name}')"
         ),
     ]
-    return subprocess.run(command, capture_output=True, text=True, check=False)
+    try:
+        return subprocess.run(command, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        return subprocess.CompletedProcess(command, returncode=1, stdout="", stderr=str(exc))
 
 
 def run_preflight(repo_root: Path, profile: str, mode: str, explicit_config: str = "") -> Dict[str, Any]:
@@ -99,12 +102,12 @@ def run_preflight(repo_root: Path, profile: str, mode: str, explicit_config: str
         local_settings = importlib.import_module("hub_v6.local_settings")
         research_python = Path(str(getattr(local_settings, "PYTHON_EXECUTABLE", "") or "").strip())
     except Exception as exc:
-        research_python = Path("")
+        research_python = Path("__missing_python__")
         _append_check(checks, "canonical_research_python", False, str(exc))
     else:
         _append_check(checks, "canonical_research_python", research_python.exists(), str(research_python))
 
-    if str(research_python):
+    if research_python.exists():
         proc = _subprocess_import_check(
             python_executable=research_python,
             runtime_root=runtime_root,

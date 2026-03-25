@@ -1,481 +1,241 @@
-﻿系统日常使用说明（稳定运行版）
+系统日常使用说明（AshareC# 混合架构版）
 
-一、先用一句话理解系统
+一、先用一句话理解当前架构
 
-这套系统现在分成 4 层：
+当前不是 “C# 已经替代 Python 运行时”。
+当前真实结构是：
 
-1. 研究层
-   负责夜里做研究，产出目标组合。
-
-2. 发布层
-   负责把目标组合冻结成正式 release。
-
-3. 执行层
-   负责在交易窗口读取 release，然后进入 OMS / execution 去做执行。
-
-4. 调度层
-   负责按时间自动拉起研究、发布、盘前门禁、上午执行、午间复盘、下午执行、日报。
-   自动 shadow 当前默认关闭。
-
-你平时不要把它理解成“一个脚本一次跑完全部事情”。
-正确理解是：
-
-研究负责“想”
-发布负责“定稿”
-执行负责“做”
-调度层负责“按时间拉起来并留痕”
+1. Python 仍然负责正式研究、release、执行、trade clock。
+2. `launch_canonical.py` 仍是正式入口。
+3. `main_research_runner.py` 仍是业务根入口。
+4. `trade_clock_service.py` 仍是自动调度主进程。
+5. `csharp_runtime_skeleton` 目前只是治理 / 编排 / 边界建模骨架，不直接替代研究与下单。
 
 
-二、现在最重要的 4 个入口
+二、当前最重要的入口
 
 1. 正式包装入口
-   F:\quant_data\Ashare\launch_canonical.py
+   `F:\quant_data\AshareC#\launch_canonical.py`
 
 2. 业务根入口
-   F:\quant_data\Ashare\main_research_runner.py
+   `F:\quant_data\AshareC#\main_research_runner.py`
 
-3. 手动启动调度器脚本
-   F:\quant_data\Ashare\scripts\start_trade_clock.ps1
+3. 自动调度入口
+   `F:\quant_data\AshareC#\trade_clock_service.py`
 
-4. 手动停止调度器脚本
-   F:\quant_data\Ashare\scripts\stop_trade_clock.ps1
+4. 调度器启动脚本
+   `F:\quant_data\AshareC#\scripts\start_trade_clock.ps1`
 
-5. 手动查看调度器状态脚本
-   F:\quant_data\Ashare\scripts\show_trade_clock_status.ps1
+5. 调度器停止脚本
+   `F:\quant_data\AshareC#\scripts\stop_trade_clock.ps1`
 
+6. 调度器状态脚本
+   `F:\quant_data\AshareC#\scripts\show_trade_clock_status.ps1`
 
-三、平时到底改哪些文件
 
-这一节很重要。
+三、当前真正推荐的使用方式
 
-你以后如果要改默认模式、交易账户、调度时间，优先只改下面这些文件。
+日常正式链路不要理解成 “一个脚本一次跑完全部事情”。
+当前稳定操作方式是分层：
 
-1. 日常默认运行设置
-   F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py
+1. 研究层
+   `research_only`
+   负责跑研究，生成组合建议，并发布对应 release。
 
-   这个文件主要控制：
+2. 发布层
+   `release_only`
+   负责把现有组合建议重新冻结成正式 release。
 
-   - 默认 mode
-   - 默认 profile
-   - 默认 execution_mode
-   - 是否允许 precision_trade
-   - trade clock phase 时间
-   - simulation / shadow namespace
-   - scheduler timeout
-   - daily_production 的局部强度参数
+3. 执行层
+   `execution_only`
+   负责读取 release，经过时间门禁和 safety 后进入 OMS / bridge。
 
-   这是“你最常改”的文件。
+4. 调度层
+   `trade_clock_service.py`
+   负责按时间触发 research / release / preopen_gate / simulation / midday_review / afternoon_execution / summary。
 
-2. 账户与 broker 配置
-   F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\gmtrade_runtime_config.local.json
 
-   这个文件主要控制：
+四、你平时最常用的命令
 
-   - simulation 账户 id
-   - precision 账户 id
-   - broker endpoint
-   - 下单 lot size
-   - min_trade_value
-   - cash_reserve_ratio
+1. 跑轻量预检
 
-   这是“账户真相”的地方。
+```powershell
+python F:\quant_data\AshareC#\launch_canonical.py --preflight-only --profile quick_test --mode integrated_supervisor
+```
 
-3. 运行 profile 说明
-   F:\quant_data\Ashare\RUN_PROFILES.yaml
+2. 跑一次轻量联调
 
-   这个文件主要是对外说明和法统白名单。
-   它不是你最常改的实参细节文件，但 profile 名字和用途应该和这里保持一致。
+```powershell
+python F:\quant_data\AshareC#\launch_canonical.py --profile quick_test
+```
 
-4. 全局安全层人工开关
-   F:\quant_data\Ashare\data\trade_clock\manual_overrides.json
+3. 跑正式研究链
 
-   这个文件主要控制：
+```powershell
+python F:\quant_data\AshareC#\launch_canonical.py --mode research_only --profile daily_production
+```
 
-   - manual_halt
-   - manual_reduce_only
-   - 其他全局安全人工覆盖
+4. 重发 release
 
-5. OMS 人工干预文件
-   F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\manual_overrides.json
+```powershell
+python F:\quant_data\AshareC#\launch_canonical.py --mode release_only --profile daily_production
+```
 
-   这个文件主要控制：
+5. 只做执行门禁检查
 
-   - freeze 某个 symbol
-   - force_close_intent
-   - reconcile-only
-   - force resync
+```powershell
+python F:\quant_data\AshareC#\launch_canonical.py --mode execution_only --profile daily_production --gate-only
+```
 
-6. 不建议手改的文件
+6. 盘中正式执行
 
-   不要手改这些：
+```powershell
+python F:\quant_data\AshareC#\launch_canonical.py --mode execution_only --profile daily_production --execution-mode precision --precision-trade on --execution-namespace simulation
+```
 
-   - hub_config.v6.runtime.*.json
-   - gmtrade_runtime_config.autogen.json
-   - generated_runtime 目录里的运行时生成配置
+7. 午间复盘
 
-   这些是运行期自动产物，不是长期配置面。
+```powershell
+python F:\quant_data\AshareC#\launch_canonical.py --mode midday_review_only --profile daily_production --release-id <release_id>
+```
 
-四、现在推荐的研究档位
+8. 下午二次执行
 
-目前有 3 个 profile：
+```powershell
+python F:\quant_data\AshareC#\launch_canonical.py --mode execution_only --profile daily_production --execution-mode precision --precision-trade on --execution-namespace <上午真实namespace> --allow-unfinished-orders-reconcile on --ignore-market-panic-reduce-only on
+```
 
-1. quick_test
-   用于轻量联调。
-   V5 cycles = 1。
+9. 手动启动调度器
 
-2. daily_production
-   用于日常自动主链。
-   V5 cycles = 3。
-   这是稳定运行测试阶段的默认自动研究档。
+```powershell
+powershell -ExecutionPolicy Bypass -File F:\quant_data\AshareC#\scripts\start_trade_clock.ps1 -Profile daily_production
+```
 
-3. overnight
-   用于更重的夜间研究。
-   V5 cycles = 8。
-   现在不再作为日常自动主链默认档。
+10. 查看调度器状态
 
-为什么日常自动链不用 overnight：
+```powershell
+powershell -ExecutionPolicy Bypass -File F:\quant_data\AshareC#\scripts\show_trade_clock_status.ps1
+```
 
-因为 overnight 太重，更适合“重研究”，不适合“每天稳定准时产出”。
-现在自动主链追求的是：
 
-- 准时
-- 稳定
-- 有 fallback
-- 不拖跨第二天执行
+五、当前 profile 怎么选
 
-所以自动主链默认用 daily_production，不用 overnight。
+1. `quick_test`
+   最轻量的真实集成联调档。
+   不是秒级 smoke test。
 
+2. `daily_production`
+   当前日常自动主链默认档。
+   研究时长受控，适合每天自动研究 + 次日执行准备。
 
-五、最常用的 mode 是什么
+3. `overnight`
+   更重的夜间研究档。
+   适合你明确接受更长运行时间时使用。
 
-1. research_only
-   跑正式研究链。
-   会走到目标组合产出。
 
-2. release_only
-   把当前最新组合建议发布成正式 release。
+六、当前 phase 图怎么理解
 
-3. execution_only
-   只做执行，不重跑研究。
+当前自动调度主链是：
 
-4. oms_validate
-   只做 OMS 硬化验证，不跑重研究链。
-
-5. integrated_supervisor
-   仍然存在，但现在主要用于联调。
-   不建议作为稳定运行测试阶段的正式日常主流程。
-
-
-六、调度器每天自动跑什么
-
-调度器是手动启动、持续运行的轻进程。
-它自己不直接做重研究，只会按 phase 拉起子进程。
-
-当前自动 phase 是：
-
-1. research
-   建议时间：15:05
-   命令逻辑：research_only + daily_production
-   目标：为下一交易日准备研究结果
-
-2. release
-   建议时间：15:10
-   命令逻辑：release_only
-   目标：冻结正式 release
-
-3. preopen_gate
-   建议时间：09:20
-   命令逻辑：execution_only --gate-only --ignore-window
-   目标：盘前检查今天有没有资格尝试执行
-
-4. simulation
-   建议时间：09:30:35
-   命令逻辑：execution_only，走 simulation namespace
-   目标：跑拟真实执行链，暴露实际落地问题
-
-5. midday_review
-   建议时间：11:35
-   命令逻辑：midday_review_only
-   目标：读取上午 OMS 真相，判断下午是否继续执行、用哪个 namespace、是否允许 unfinished-order reconcile
-
-6. afternoon_execution
-   建议时间：13:05
-   命令逻辑：execution_only，沿用上午真实 namespace
-   目标：做下午二次调整，不重新跑研究链
-
-7. summary
-   建议时间：15:20
-   目标：把今天的 phase、release、OMS、warnings 整理成日报和运行包
-
-
-七、simulation 和 shadow 的区别
-
-1. simulation
-   是主执行观测线。
-   会进入 execution / OMS / audit。
-   用来观察系统真正落地时会发生什么。
-
-2. shadow
-   当前不要把它理解成“完全无风险的只读模拟线”。
-   现阶段 shadow_run 还没有 broker-isolated 的真 shadow 语义。
-   也就是说，shadow 现在只是 namespace 隔离，不等于 broker 隔离。
-   所以自动 shadow 调度目前默认关闭。
-   在没有专门加 broker no-submit 保护前，不建议盘中手动开 shadow。
-
-它们会吃同一版 release。
-但它们不会共用一套 OMS 账本。
-
-当前隔离方式是：
-
-- simulation OMS: ...\oms_v1\simulation\...
-- shadow OMS: ...\oms_v1\shadow\...
-
-所以不要担心 shadow 污染 simulation，或 simulation 污染 shadow。
-
-
-八、研究失败时会发生什么
-
-现在不是“研究失败，第二天所有东西一起崩”。
-调度器已经有 fallback 规则。
-
-大意是：
-
-1. research 超时或失败
-   不会无限等。
-
-2. release 阶段会尝试 fallback
-   优先使用最近一版仍然可接受的组合产物，再重新发布一版新的正式 release。
-
-3. 如果 fallback 也不可用
-   simulation 会跳过。
-   shadow / gate / 日报仍会继续按规则留下痕迹。
-
-所以现在的原则是：
-
-- 不无限拖延
-- 不让后续 phase 叠在一起
-- 失败要留痕
-- 能降级就降级，不能降级就明确 skip
-
-
-九、如何手动启动调度器
-
-最常用命令：
-
-powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\start_trade_clock.ps1 -Profile daily_production
-
-如果你只想前台看输出，可以加：
-
-powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\start_trade_clock.ps1 -Profile daily_production -Foreground
+1. `research`
+2. `release`
+3. `preopen_gate`
+4. `simulation`
+5. `midday_review`
+6. `afternoon_execution`
+7. `summary`
 
 说明：
 
-- 默认不会开机自启
-- 默认不会自动安装计划任务
-- 这是一个手动启动的长期运行进程
-- 它默认走后台子进程 + stdout/stderr 落盘，目的就是绕开 IDE / ACP 前台长命令不稳定的问题
+1. `shadow`
+   当前默认自动关闭。
+   原因不是代码没入口，而是它还没有 broker-isolated 的真 shadow 语义。
 
+2. `afternoon_shadow`
+   当前默认也关闭。
 
-十、如何手动停止调度器
+3. `summary`
+   负责把 phase 状态、release、market posture、OMS 汇总和 gap 诊断打包到 `outputs\automation_runs\YYYYMMDD\`。
 
-最常用命令：
 
-powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\stop_trade_clock.ps1
+七、现在最该看哪些输出
 
-它的行为是：
+1. wrapper 运行追踪
+   `F:\quant_data\AshareC#\outputs\canonical_runs\<run_id>\run_manifest.json`
 
-1. 写 stop request 文件
-2. 调度器在空闲等待或下一次 stop 检查时优雅退出
-3. 不会乱删 OMS / execution 真相账本
+2. 调度 heartbeat
+   `F:\quant_data\AshareC#\data\trade_clock\clock_state.json`
 
-如果你真的要立即停掉，可以用：
+3. 调度 phase 状态
+   `F:\quant_data\AshareC#\data\trade_clock\phase_state\YYYYMMDD.json`
 
-powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\stop_trade_clock.ps1 -Force
+4. safety 真相
+   `F:\quant_data\AshareC#\data\trade_clock\system_safety_state.json`
 
-但正常情况下不建议先上 Force。
+5. 最新 release 指针
+   `F:\quant_data\AshareC#\data\trade_release_v1\latest_release.json`
 
+6. simulation OMS 汇总
+   `F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\simulation\snapshots\oms_summary.json`
 
-十一、如何手动看当前状态
+7. 自动化日报包
+   `F:\quant_data\AshareC#\outputs\automation_runs\YYYYMMDD\`
 
-最常用命令：
+8. gap 归因
+   `F:\quant_data\AshareC#\outputs\automation_runs\YYYYMMDD\gap_analysis_simulation.json`
 
-powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\show_trade_clock_status.ps1
 
-如果你要看某一天的状态包：
+八、当前关于 shadow 的真实规则
 
-powershell -ExecutionPolicy Bypass -File F:\quant_data\Ashare\scripts\show_trade_clock_status.ps1 -Date 20260323
+这个部分很重要。
 
-这个脚本会把下面这些东西用比较直观的方式打印出来：
+1. shadow 不是坏了，而是默认故意不自动运行。
 
-- 调度器活没活
-- 当前 profile
-- next_due_phase
-- 最新 release 是哪一版
-- safety 当前是不是 halt
-- 当天 research / release / simulation / midday_review / afternoon_execution / summary 各自状态
-- simulation 的 OMS summary 在哪里
-- automation_runs 当天目录在哪里
+2. 过去日报里会把旧 shadow OMS 快照误当成当天结果。
+   这个汇总问题已经修正；现在如果当天 shadow 没跑，日报会明确把它标成不可用 / 未运行，而不是继续拿旧快照装成新结果。
 
+3. 在没有 broker no-submit 隔离前，不建议把 shadow 当成正式盘中并行对照线。
 
-十二、不要再用什么
 
-1. 不要把 daily scheduler 设成开机自启
-   现在明确不推荐这样做。
+九、当前关于 simulation gap 的理解
 
-2. 不要把 overnight 当日常自动主链默认档
+当前最该盯的不是短期收益，而是 simulation 的 desired vs actual gap。
 
-3. 不要再把 integrated_supervisor 当正式稳定运行主流程
+新的自动化日报会额外给出 gap 的主因归类，优先识别：
 
-4. 不要让 gmtrade 改走主 Python
-   gmtrade 必须继续走专用环境：
-   F:\quant_data\Ashare\venvs\gmtrade39\Scripts\python.exe
+1. `turnover_budget_truncation`
+   组合想动，但被日内换手 / 预算约束截断。
 
+2. `oms_continuity_carryover`
+   上一轮未完成意图、延续单、carry/reconcile 还没收口。
 
-十三、每天最应该看哪些文件
+3. `execution_fill_friction`
+   有派单，但成交跟不上。
 
-1. 调度器心跳
-   F:\quant_data\Ashare\data\trade_clock\clock_state.json
+4. `residual_portfolio_gap`
+   仍有剩余目标偏差，但前三类不显著。
 
-   这个文件的意思：
 
-   - 服务是否还活着
-   - 现在是不是 stop_requested
-   - 下一次应该跑哪个 phase
-   - 当前 gate / safety 的高层状态
+十、当前新库和老库的关系
 
-2. 调度器运行状态
-   F:\quant_data\Ashare\data\trade_clock\runtime\scheduler_runtime.json
+1. 老库 `F:\quant_data\Ashare`
+   仍是当前稳定运行中的 live Python 系统。
 
-   这个文件的意思：
+2. 新库 `F:\quant_data\AshareC#`
+   是迁移工作区。
+   这里已经有本地 `data` 镜像，但仍依赖本机私有 `local_settings.py`。
 
-   - 调度器自己的内部运行态
-   - active_phase
-   - stopping / starting / running
-   - 最后更新时间
+3. Gmtrade Python 仍保持在老库环境
+   `F:\quant_data\Ashare\venvs\gmtrade39\Scripts\python.exe`
 
-3. 当天 / 当期 phase 状态
-   F:\quant_data\Ashare\data\trade_clock\phase_state\YYYYMMDD.json
+4. 新库的 C# skeleton 目前用于边界治理、命令生成、状态诊断，不直接替代研究和下单。
 
-   这个文件的意思：
 
-   - 今天每个 phase 到底有没有跑
-   - 是 success / failed / skipped / timeout 哪一种
-   - stdout/stderr 落在哪个文件
+十一、最后的操作原则
 
-4. 最新正式 release 指针
-   F:\quant_data\Ashare\data\trade_release_v1\latest_release.json
-
-   这个文件的意思：
-
-   - 当前执行层真正会去读哪一版 release
-   - trade_date 是哪天
-   - source_mode 是正常 release 还是 fallback_release
-
-5. 安全层真相
-   F:\quant_data\Ashare\data\trade_clock\system_safety_state.json
-
-   这个文件的意思：
-
-   - 当前系统是不是 NORMAL / CAUTION / PANIC / HALT
-   - halt_reason 是什么
-   - 是安全层不让动，还是调度器自己没跑到
-
-6. simulation OMS 真相
-   F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\simulation\snapshots\oms_summary.json
-
-   这个文件的意思：
-
-   - simulation 那条线实际上发生了什么
-   - 有没有 dispatch
-   - 有没有未完成 intent
-   - gap / actual_state 是否正常
-
-7. shadow OMS 真相
-   F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\shadow\snapshots\oms_summary.json
-
-   这个文件的意思：
-
-   - shadow 理论基线那条线的 OMS 留痕
-   - 用来和 simulation 对照
-
-8. 每日自动运行包
-   F:\quant_data\Ashare\outputs\automation_runs\YYYYMMDD\
-
-这个目录里最重要的是：
-
-- run_manifest.json
-- phase_status.json
-- daily_release_summary.json
-- market_state_summary.json
-- portfolio_v2a_summary.json
-- oms_summary_simulation.json
-- oms_summary_shadow.json
-- warnings.json
-- critical_flags.json
-- daily_report.txt
-
-   这个目录的意思：
-
-   - 这是“今天这一整天自动链最后留给人看的包”
-   - 如果你不想翻很多散文件，优先看这里
-
-
-十四、如果程序“没动”，先按什么顺序查
-
-按这个顺序最有效：
-
-1. 先看 clock_state.json
-   看 service_alive / next_due_phase / stop_requested
-
-2. 再看 phase_state\YYYYMMDD.json
-   看卡在哪个 phase
-
-3. 再看 latest_release.json
-   看今天到底有没有正式 release
-
-4. 再看 system_safety_state.json
-   看是不是 safety 把系统拦住了
-
-5. 再看 simulation / shadow 的 OMS summary
-   看是不是 gap、continuity、dispatch 出了问题
-
-6. 最后再去看每个 phase 的 stdout/stderr 日志
-   这些日志会被收进 outputs\automation_runs\YYYYMMDD\logs\ 里
-
-
-十五、日常最常用命令清单
-
-1. 手动跑一次夜间研究
-   python F:\quant_data\Ashare\launch_canonical.py --mode research_only --profile daily_production
-
-2. 手动重发 release
-   python F:\quant_data\Ashare\launch_canonical.py --mode release_only --profile daily_production
-
-3. 只做执行门禁检查
-   python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile daily_production --gate-only
-
-4. 精准模拟执行线
-   python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile daily_production --execution-mode precision --precision-trade on --execution-namespace simulation
-
-5. 午间复盘
-   python F:\quant_data\Ashare\launch_canonical.py --mode midday_review_only --profile daily_production --release-id <release_id>
-
-6. 下午二次执行
-   python F:\quant_data\Ashare\launch_canonical.py --mode execution_only --profile daily_production --execution-mode precision --precision-trade on --execution-namespace <上午真实namespace> --allow-unfinished-orders-reconcile on --ignore-market-panic-reduce-only on
-
-7. OMS 验证
-   python F:\quant_data\Ashare\main_research_runner.py --mode oms_validate --profile quick_test
-
-
-十六、最简单的记忆版
-
-你只要记住下面 8 句就够了：
-
-1. 日常自动研究档现在是 daily_production，不是 overnight。
-2. 调度器必须手动启动，不做开机自启。
-3. 调度器只负责按时间拉 phase，不直接跑重研究逻辑。
-4. research 负责出目标组合。
-5. release 负责冻结正式版本。
-6. simulation 是主执行观测线。
-7. midday_review 负责决定下午要不要继续动手。
-8. 当前自动 shadow 默认关闭，出问题先看 clock_state，再看 phase_state，再看 release / safety / OMS。
+1. 正式运行优先走 `launch_canonical.py`。
+2. `integrated_supervisor` 主要用于联调，不是正式精确交易主路径。
+3. 正式精确交易优先走：
+   `research_only -> release_only -> execution_only`
+4. 不要把 `quick_test` 当成秒级 smoke test。
+5. 不要把 shadow 当前状态理解成“自动并行对照线已经可用”。
