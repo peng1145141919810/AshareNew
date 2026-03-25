@@ -81,6 +81,7 @@
   - if the current remote still points at the old shared repo, the hook should fail closed and print guidance instead of pushing
   - local git hook activation is now restored through `core.hooksPath=.githooks`
   - dedicated repo target for this workspace is `https://github.com/peng1145141919810/AshareNew`
+  - current `origin` now points at `https://github.com/peng1145141919810/AshareNew.git`
   - the first standalone migration skeleton is now published separately at `https://github.com/peng1145141919810/AshareCSharp-runtime-skeleton` and currently stays `private`
   - use `$env:DISABLE_AUTO_PUSH='1'; git commit -m "..."; Remove-Item Env:DISABLE_AUTO_PUSH` when a local-only commit is needed in PowerShell
 - Google Drive dev-log mirror:
@@ -4136,3 +4137,30 @@ All timestamps below are local file write times in the current workspace and sho
 - Rollback:
   - Revert the touched docs, `tools\preflight_check.py`, `hub_v6\clock_supervisor.py`, and the `net8.0` csproj changes.
   - If the older documentation wording is intentionally restored, re-check that it does not overstate C# runtime authority.
+
+### 2026-03-26 01:24
+- Type:
+  - `ops`
+- Scope:
+  - `infra`
+- Files:
+  - `F:\quant_data\AshareC#\.git\config`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Repointed this workspace Git `origin` from the old shared `Ashare` remote to the dedicated migration repo:
+    - `https://github.com/peng1145141919810/AshareNew.git`
+  - Committed the hybrid-runtime documentation and bookkeeping fixes, then pushed `main` to the dedicated repo.
+- Impact:
+  - `AshareC#` is now uploaded to its intended standalone GitHub repository instead of remaining blocked behind the old shared remote.
+  - The local auto-push hook can now target the correct repository for future commits in this workspace.
+- Validation:
+  - `git -C F:\quant_data\AshareC# remote -v`
+  - `git -C F:\quant_data\AshareC# push -u origin main`
+  - Confirmed pushed commit:
+    - `a3cecfb Fix hybrid runtime docs and automation pack bookkeeping`
+- Compatibility:
+  - Repository transport change only.
+  - No runtime entrypoint, execution authority, or data-path contract changed in this step.
+- Rollback:
+  - `git -C F:\quant_data\AshareC# remote set-url origin <previous-url>`
+  - If needed, force future local-only commits with `DISABLE_AUTO_PUSH=1` until the desired remote is restored.
