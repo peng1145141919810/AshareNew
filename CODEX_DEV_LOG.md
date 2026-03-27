@@ -4164,3 +4164,33 @@ All timestamps below are local file write times in the current workspace and sho
 - Rollback:
   - `git -C F:\quant_data\AshareC# remote set-url origin <previous-url>`
   - If needed, force future local-only commits with `DISABLE_AUTO_PUSH=1` until the desired remote is restored.
+
+### 2026-03-27 15:25
+- Type:
+  - `bugfix`
+- Scope:
+  - `execution`
+- Files:
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\io_portfolio.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\brokers\gmtrade_sim_broker.py`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Mirrored the live-repo fix for broker-side illegal order prices into the Rider workspace copy.
+  - `io_portfolio.py` now reconstructs execution reference prices from embedded `raw` payloads when the portfolio file does not expose flattened execution price columns.
+  - `gmtrade_sim_broker.py` now quantizes A-share submit prices to valid tick boundaries before calling gmtrade:
+    - `BUY` floors to the nearest `0.01`
+    - `SELL` ceils to the nearest `0.01`
+  - This prevents edge prices like `10.868` from being sent unchanged to the broker adapter.
+- Impact:
+  - New and old execution stacks now share the same broker-price legality fix.
+  - The migration workspace no longer lags the live Python runtime on this execution bug.
+- Validation:
+  - `python -m py_compile` on both touched files succeeded.
+  - Targeted import probe confirmed:
+    - `build_price_map(..., None)` can resolve execution prices from `raw`
+    - `GMTradeSimBroker._quantize_price('000703.SZ', 10.76 * 1.01, 'BUY') -> 10.86`
+- Compatibility:
+  - Additive and corrective only.
+  - No scheduler phase, profile, or C# control-plane contract changed in this step.
+- Rollback:
+  - Revert the two touched execution files if needed.

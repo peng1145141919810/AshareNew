@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -13,6 +14,94 @@ SYMBOL_COLUMNS = ["symbol", "ts_code", "code", "stock_code", "ticker"]
 WEIGHT_COLUMNS = ["target_weight", "weight", "portfolio_weight", "target_pct", "pct"]
 SCORE_COLUMNS = ["score", "pred_score", "signal", "rank_score"]
 PRICE_COLUMNS = ["price", "close", "last_price", "last", "adj_close", "open"]
+
+
+def _coerce_price(value: Any) -> float:
+    try:
+        price = float(value)
+    except Exception:
+        return 0.0
+    return price if price > 0 else 0.0
+
+
+def _coerce_timestamp(value: Any) -> pd.Timestamp | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() == "nan":
+        return None
+    ts = pd.to_datetime(text, errors="coerce")
+    if pd.isna(ts):
+        return None
+    return ts
+
+
+def _row_value(row: pd.Series, key: str, raw_payload: Dict[str, Any]) -> Any:
+    value = row.get(key)
+    if value is not None:
+        text = str(value).strip()
+        if text and text.lower() != "nan":
+            return value
+    return raw_payload.get(key)
+
+
+def _parse_raw_payload(row: pd.Series) -> Dict[str, Any]:
+    raw_text = row.get("raw", row.get("metadata", row.get("context", "")))
+    if raw_text is None:
+        return {}
+    text = str(raw_text).strip()
+    if not text or text.lower() == "nan":
+        return {}
+    try:
+        payload = ast.literal_eval(text)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _pick_portfolio_row_price(row: pd.Series) -> Tuple[float, pd.Timestamp | None]:
+    raw_payload = _parse_raw_payload(row)
+    last_price = _coerce_price(_row_value(row, "last_price", raw_payload) or _row_value(row, "last", raw_payload))
+    last_date = _coerce_timestamp(_row_value(row, "last_price_date", raw_payload) or _row_value(row, "last_date", raw_payload))
+    snapshot_price = _coerce_price(_row_value(row, "price", raw_payload))
+    snapshot_date = _coerce_timestamp(_row_value(row, "price_date", raw_payload))
+    close_price = _coerce_price(_row_value(row, "close", raw_payload))
+    close_date = _coerce_timestamp(_row_value(row, "date", raw_payload))
+    tech_close = _coerce_price(_row_value(row, "tech_close", raw_payload))
+    tech_date = _coerce_timestamp(_row_value(row, "tech_date", raw_payload))
+
+    execution_candidates = [
+        (last_date, last_price),
+        (snapshot_date, snapshot_price),
+    ]
+    execution_candidates = [(ts, price) for ts, price in execution_candidates if ts is not None and price > 0]
+    if execution_candidates:
+        latest_ts = max(ts for ts, _ in execution_candidates)
+        latest_prices = [price for ts, price in execution_candidates if ts == latest_ts]
+        if latest_prices:
+            return float(latest_prices[0]), latest_ts
+
+    if snapshot_price > 0:
+        return snapshot_price, snapshot_date
+    if last_price > 0:
+        return last_price, last_date
+
+    research_candidates = [
+        (close_date, close_price),
+        (tech_date, tech_close),
+    ]
+    research_candidates = [(ts, price) for ts, price in research_candidates if ts is not None and price > 0]
+    if research_candidates:
+        latest_ts = max(ts for ts, _ in research_candidates)
+        latest_prices = [price for ts, price in research_candidates if ts == latest_ts]
+        if latest_prices:
+            return float(latest_prices[0]), latest_ts
+
+    if close_price > 0:
+        return close_price, close_date
+    if tech_close > 0:
+        return tech_close, tech_date
+    return 0.0, None
 
 
 def discover_latest_portfolio_file(config: Dict[str, Any]) -> Path:
@@ -152,6 +241,7 @@ def build_price_map(
         Dict[str, float]: 证券代码到价格的映射。
     """
     price_map: Dict[str, float] = {}
+    price_dates: Dict[str, pd.Timestamp | None] = {}
 
     if price_snapshot_path:
         price_path = Path(price_snapshot_path)
@@ -163,20 +253,29 @@ def build_price_map(
                 ext_frame = ext_frame.copy()
                 ext_frame["__symbol"] = ext_frame[symbol_col].map(normalize_symbol)
                 ext_frame["__price"] = pd.to_numeric(ext_frame[price_col], errors="coerce")
+                ext_date_col = _find_column(ext_frame, ["date", "trade_date", "price_date", "last_date"])
                 ext_frame = ext_frame.dropna(subset=["__symbol", "__price"])
                 ext_frame = ext_frame[ext_frame["__price"] > 0]
                 for _, row in ext_frame.iterrows():
-                    price_map[str(row["__symbol"])] = float(row["__price"])
+                    symbol = str(row["__symbol"])
+                    price_map[symbol] = float(row["__price"])
+                    price_dates[symbol] = _coerce_timestamp(row[ext_date_col]) if ext_date_col else None
 
     symbol_col = _find_column(portfolio_frame, SYMBOL_COLUMNS)
-    price_col = _find_column(portfolio_frame, PRICE_COLUMNS)
-    if symbol_col and price_col:
+    if symbol_col:
         inner = portfolio_frame.copy()
         inner["__symbol"] = inner[symbol_col].map(normalize_symbol)
-        inner["__price"] = pd.to_numeric(inner[price_col], errors="coerce")
-        inner = inner.dropna(subset=["__symbol", "__price"])
-        inner = inner[inner["__price"] > 0]
+        inner = inner.dropna(subset=["__symbol"])
         for _, row in inner.iterrows():
-            price_map.setdefault(str(row["__symbol"]), float(row["__price"]))
+            symbol = str(row["__symbol"])
+            price, price_ts = _pick_portfolio_row_price(row)
+            if price <= 0:
+                continue
+            existing_ts = price_dates.get(symbol)
+            if existing_ts is None or (price_ts is not None and price_ts >= existing_ts):
+                price_map[symbol] = price
+                price_dates[symbol] = price_ts
+            elif symbol not in price_map:
+                price_map[symbol] = price
 
     return price_map

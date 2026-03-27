@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 from typing import Any, Dict, List, Tuple
 
@@ -144,10 +145,10 @@ class GMTradeSimBroker(BaseBroker):
 
         order_type = self._pick_attr(["OrderType_Limit", "OrderType_LimitOrder"])
         if order.side == "BUY":
-            price = round(float(order.ref_price) * self.buy_price_ratio, 3)
+            price = self._quantize_price(order.symbol, float(order.ref_price) * self.buy_price_ratio, side="BUY")
             position_effect = getattr(gm, "PositionEffect_Open", None)
         else:
-            price = round(float(order.ref_price) * self.sell_price_ratio, 3)
+            price = self._quantize_price(order.symbol, float(order.ref_price) * self.sell_price_ratio, side="SELL")
             position_effect = getattr(gm, "PositionEffect_Close", None)
 
         kwargs: Dict[str, Any] = {
@@ -161,6 +162,26 @@ class GMTradeSimBroker(BaseBroker):
         if position_effect is not None:
             kwargs["position_effect"] = position_effect
         return kwargs
+
+    @staticmethod
+    def _price_tick(symbol: str) -> float:
+        text = str(symbol or "").upper()
+        if text.endswith(".SH") or text.endswith(".SZ"):
+            return 0.01
+        return 0.001
+
+    @classmethod
+    def _quantize_price(cls, symbol: str, raw_price: float, side: str) -> float:
+        tick = cls._price_tick(symbol)
+        if raw_price <= 0 or tick <= 0:
+            return round(raw_price, 3)
+        units = raw_price / tick
+        if str(side).upper() == "BUY":
+            quantized = math.floor(units + 1e-9) * tick
+        else:
+            quantized = math.ceil(units - 1e-9) * tick
+        digits = 2 if tick >= 0.01 else 3
+        return round(max(quantized, tick), digits)
 
     def _extract_order_ids(self, order_result: Any) -> List[Tuple[str, str, str]]:
         """从委托返回值中提取订单标识。
