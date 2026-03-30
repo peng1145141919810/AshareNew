@@ -11,6 +11,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $localSettings = Join-Path $repoRoot "quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py"
+$localSettingsExample = Join-Path $repoRoot "quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py"
 $serviceScript = Join-Path $repoRoot "trade_clock_service.py"
 $tradeClockRoot = Join-Path $repoRoot "data\trade_clock"
 $runtimeRoot = Join-Path $tradeClockRoot "runtime"
@@ -25,6 +26,87 @@ New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $effectiveLogRoot | Out-Null
 Remove-Item $stopRequestPath -ErrorAction SilentlyContinue
 
+function Get-PythonFromSettings {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SettingsPath
+    )
+
+    if (-not (Test-Path $SettingsPath)) {
+        return $null
+    }
+
+    $content = Get-Content $SettingsPath -Raw -Encoding UTF8
+    $match = [regex]::Match($content, '(?m)^PYTHON_EXECUTABLE\s*=\s*r?["'']([^"'']+)["'']')
+    if (-not $match.Success) {
+        return $null
+    }
+
+    $candidate = $match.Groups[1].Value.Trim()
+    if (-not $candidate) {
+        return $null
+    }
+    if ($candidate -match '^[A-Za-z]:\\path\\to\\') {
+        return $null
+    }
+    if (-not (Test-Path $candidate)) {
+        return $null
+    }
+
+    return [pscustomobject]@{
+        FilePath = $candidate
+        Prefix = @()
+        Source = $SettingsPath
+    }
+}
+
+function Resolve-ResearchPython {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LocalSettingsPath,
+        [Parameter(Mandatory = $true)]
+        [string]$ExampleSettingsPath
+    )
+
+    foreach ($settingsPath in @($LocalSettingsPath, $ExampleSettingsPath)) {
+        $resolved = Get-PythonFromSettings -SettingsPath $settingsPath
+        if ($resolved) {
+            return $resolved
+        }
+    }
+
+    foreach ($envName in @("ASHARE_RESEARCH_PYTHON", "PYTHON_EXECUTABLE")) {
+        $candidate = [Environment]::GetEnvironmentVariable($envName)
+        if ($candidate -and (Test-Path $candidate)) {
+            return [pscustomobject]@{
+                FilePath = $candidate
+                Prefix = @()
+                Source = "env:$envName"
+            }
+        }
+    }
+
+    $pythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($pythonCommand) {
+        return [pscustomobject]@{
+            FilePath = $pythonCommand.Source
+            Prefix = @()
+            Source = "PATH:python.exe"
+        }
+    }
+
+    $pyLauncher = Get-Command py.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($pyLauncher) {
+        return [pscustomobject]@{
+            FilePath = $pyLauncher.Source
+            Prefix = @("-3")
+            Source = "PATH:py.exe -3"
+        }
+    }
+
+    throw "Unable to resolve research Python. Checked local_settings.py, local_settings.example.py, environment variables, python.exe, and py.exe."
+}
+
 if (Test-Path $pidPath) {
     $existingPid = (Get-Content $pidPath -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
     if ($existingPid) {
@@ -37,17 +119,14 @@ if (Test-Path $pidPath) {
     Remove-Item $pidPath -ErrorAction SilentlyContinue
 }
 
-$content = Get-Content $localSettings -Raw -Encoding UTF8
-$match = [regex]::Match($content, '(?m)^PYTHON_EXECUTABLE\s*=\s*r?["'']([^"'']+)["'']')
-if (-not $match.Success) {
-    throw "Unable to resolve PYTHON_EXECUTABLE from local_settings.py"
-}
-$python = $match.Groups[1].Value.Trim()
-if (-not (Test-Path $python)) {
-    throw "Resolved Python executable does not exist: $python"
-}
+$pythonResolution = Resolve-ResearchPython -LocalSettingsPath $localSettings -ExampleSettingsPath $localSettingsExample
+$python = $pythonResolution.FilePath
 
-$args = @(
+$args = @()
+if ($pythonResolution.Prefix) {
+    $args += $pythonResolution.Prefix
+}
+$args += @(
     $serviceScript,
     "--profile", $Profile,
     "--skip-preflight"
@@ -61,6 +140,7 @@ if ($PrecisionTrade -ne "default") {
 
 if ($Foreground) {
     Write-Output "Starting trade clock in foreground. Profile=$Profile"
+    Write-Output "Python: $python (source=$($pythonResolution.Source))"
     Write-Output "Stdout: $stdoutPath"
     Write-Output "Stderr: $stderrPath"
     & $python @args 2>> $stderrPath | Tee-Object -FilePath $stdoutPath
@@ -71,5 +151,6 @@ $proc = Start-Process -FilePath $python -ArgumentList $args -WorkingDirectory $r
 Set-Content -Path $pidPath -Value $proc.Id -Encoding UTF8
 
 Write-Output "Started trade clock. PID=$($proc.Id) Profile=$Profile"
+Write-Output "Python: $python (source=$($pythonResolution.Source))"
 Write-Output "Stdout: $stdoutPath"
 Write-Output "Stderr: $stderrPath"

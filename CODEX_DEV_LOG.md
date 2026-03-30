@@ -1222,7 +1222,7 @@
 
 ## Known Issues
 - `AshareC#` now has a local `data/` mirror, but the control-plane contract is still incomplete locally; if required files such as `system_safety_state.json` or `oms_summary.json` are missing, the C# path registry can still fall back to `F:\quant_data\Ashare\data`.
-- `AshareC#` still depends on a private `hub_v6\local_settings.py` that is not committed in this repo; only `local_settings.example.py` is tracked, so fresh clones are not fully runnable until local secrets/paths are provisioned.
+- `AshareC#` still depends on a private `hub_v6\local_settings.py` that is not committed in this repo; only `local_settings.example.py` is tracked, so fresh clones are not fully runnable until local secrets/paths are provisioned. The manual clock starter now degrades more gracefully and can fall back to PATH Python when that private file is missing, but runtime secrets and machine-specific paths still need real local provisioning for full production use.
 - `AshareC#` now has an initial `.NET/C#` runtime skeleton under `csharp_runtime_skeleton`, and it builds on local `.NET 8`, but it is still governance/orchestration-first and not yet a full runtime replacement.
 - Governance/runtime files such as `SYSTEM_MANIFEST.yaml` are still inherited from the original repo snapshot and can still point at `F:\quant_data\Ashare`; do not treat this Rider copy as cut-over runtime yet.
 - Historical log entries below still mention original `F:\quant_data\Ashare` paths because they were inherited from the source repo snapshot.
@@ -1483,6 +1483,37 @@
 
 ## Change Log
 All timestamps below are local file write times in the current workspace and should be read as Asia/Shanghai local time.
+
+### 2026-03-31 04:12
+- Type:
+  - `ops_fix`
+  - `startup_resilience`
+- Scope:
+  - `trade_clock_manual_start`
+- Files:
+  - `F:\quant_data\AshareC#\scripts\start_trade_clock.ps1`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Hardened `scripts\start_trade_clock.ps1` so it no longer hard-fails when the private `hub_v6\local_settings.py` file is absent.
+  - The starter now resolves research Python in this order:
+    - tracked `local_settings.py` if present and valid
+    - `local_settings.example.py` if it contains a real executable path
+    - environment variables `ASHARE_RESEARCH_PYTHON` or `PYTHON_EXECUTABLE`
+    - `python.exe` on `PATH`
+    - `py.exe -3` on `PATH`
+  - Added explicit startup logging that records which resolution source was used.
+- Impact:
+  - Manual operator startup for the trade clock is now usable in this workspace even when only the tracked template exists.
+  - The previous immediate `Get-Content ... local_settings.py` crash path is removed.
+- Validation:
+  - PowerShell syntax re-read on the patched script.
+  - Targeted resolution checks confirmed that this workspace has no committed `local_settings.py`, so the new fallback path is required.
+  - No long-running trade-clock cycle was launched as part of this fix.
+- Compatibility:
+  - Backward compatible for machines that already have a valid private `local_settings.py`.
+  - More permissive for fresh/local-dev copies because startup can now fall back to environment or PATH Python.
+- Rollback:
+  - Restore the previous `start_trade_clock.ps1` if strict dependence on private `local_settings.py` is desired again.
 
 ### 2026-03-31 03:58
 - Type:
