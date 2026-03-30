@@ -12,6 +12,15 @@ import pandas as pd
 
 from .config_utils import ensure_dir
 from .execution_bridge_runner import execution_policy
+from .sql_store import (
+    append_runtime_jsonl_record,
+    ensure_schema,
+    load_runtime_json_artifact,
+    resolve_sqlite_path,
+    sql_store_enabled,
+    sqlite_connection,
+    upsert_runtime_json_artifact,
+)
 from .trading_clock import clock_now, current_execution_window, is_trading_day, load_execution_windows, next_trading_day
 
 RELEASE_SCHEMA_VERSION = 1
@@ -34,7 +43,34 @@ def _paths(config: Dict[str, Any]) -> Dict[str, Path]:
 
 
 def _load_json(path: Path) -> Dict[str, Any]:
+    config = getattr(_load_json, "_active_config", None)
+    if isinstance(config, dict) and sql_store_enabled(config):
+        db_path = resolve_sqlite_path(config)
+        if db_path.exists():
+            try:
+                with sqlite_connection(db_path) as conn:
+                    payload = load_runtime_json_artifact(conn, path)
+                if payload:
+                    return payload
+            except Exception:
+                pass
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _mirror_json_to_sql(config: Dict[str, Any], path: Path, payload: Dict[str, Any]) -> None:
+    if not sql_store_enabled(config):
+        return
+    with sqlite_connection(resolve_sqlite_path(config)) as conn:
+        ensure_schema(conn)
+        upsert_runtime_json_artifact(conn, path, payload)
+
+
+def _append_jsonl_to_sql(config: Dict[str, Any], path: Path, payload: Dict[str, Any], record_id: str = "") -> None:
+    if not sql_store_enabled(config):
+        return
+    with sqlite_connection(resolve_sqlite_path(config)) as conn:
+        ensure_schema(conn)
+        append_runtime_jsonl_record(conn, path, payload, record_id=record_id)
 
 
 def _copy_if_exists(src: Path, dst: Path) -> str:
@@ -139,6 +175,7 @@ def publish_portfolio_release(
     note: str = "",
     forced_trade_date: str = "",
 ) -> Dict[str, Any]:
+    _load_json._active_config = config
     now = clock_now(str(config.get("trade_clock", {}).get("timezone", "Asia/Shanghai") or "Asia/Shanghai"))
     src_summary, src_target, src_rebalance = _source_paths(config=config, summary_path=summary_path, target_positions_path=target_positions_path)
     if not src_summary.exists():
@@ -176,6 +213,7 @@ def publish_portfolio_release(
     if src_rebalance is not None:
         _copy_if_exists(src_rebalance, rebalance_copy)
     market_state_copy = _copy_optional_artifact(summary=summary, artifact_key="market_state_path", release_dir=release_dir, filename="latest_market_state.json")
+    three_strategy_copy = _copy_optional_artifact(summary=summary, artifact_key="three_strategy_state_path", release_dir=release_dir, filename="three_strategy_state.json")
     tech_copy = _copy_optional_artifact(summary=summary, artifact_key="technical_confirmation_path", release_dir=release_dir, filename="technical_confirmation.csv")
     tech_summary_copy = _copy_optional_artifact(summary=summary, artifact_key="technical_confirmation_summary_path", release_dir=release_dir, filename="technical_confirmation_summary.json")
     posture_copy = _copy_optional_artifact(summary=summary, artifact_key="portfolio_posture_path", release_dir=release_dir, filename="latest_portfolio_posture.json")
@@ -199,11 +237,14 @@ def publish_portfolio_release(
         "target_count": int(len(target_df.index)),
         "strategy_name": str(summary.get("strategy_name", "") or ""),
         "strategy_key": str(summary.get("strategy_key", "") or ""),
+        "formal_strategy_framework": str(summary.get("formal_strategy_framework", "three_long_term_strategies") or "three_long_term_strategies"),
+        "primary_strategy_key": str(summary.get("primary_strategy_key", "") or ""),
         "run_id": str(summary.get("run_id", "") or ""),
         "simulation_ready": bool(summary.get("simulation_ready", True)),
         "execution_policy": execution_policy(config),
         "constraints": _release_constraints(config=config, summary=summary),
         "market_state": dict(summary.get("market_state", {}) or {}),
+        "three_strategy_state": dict(summary.get("three_strategy_state", {}) or {}),
         "technical_confirmation": dict(summary.get("technical_confirmation", {}) or {}),
         "portfolio_v2a": dict(summary.get("portfolio_v2a", {}) or {}),
         "portfolio_posture": dict(summary.get("portfolio_posture", {}) or {}),
@@ -214,6 +255,7 @@ def publish_portfolio_release(
             "portfolio_summary_path": str(summary_copy),
             "rebalance_orders_path": str(rebalance_copy) if rebalance_copy.exists() else "",
             "market_state_path": str(market_state_copy),
+            "three_strategy_state_path": str(three_strategy_copy),
             "technical_confirmation_path": str(tech_copy),
             "technical_confirmation_summary_path": str(tech_summary_copy),
             "portfolio_posture_path": str(posture_copy),
@@ -237,6 +279,7 @@ def publish_portfolio_release(
         },
     }
     manifest_path.write_text(json.dumps(release_doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    _mirror_json_to_sql(config, manifest_path, release_doc)
 
     latest_root = path_map["latest_root"]
     _copy_if_exists(manifest_path, latest_root / "release_manifest.json")
@@ -246,6 +289,8 @@ def publish_portfolio_release(
         _copy_if_exists(rebalance_copy, latest_root / "rebalance_orders.csv")
     if market_state_copy:
         _copy_if_exists(Path(market_state_copy), latest_root / "latest_market_state.json")
+    if three_strategy_copy:
+        _copy_if_exists(Path(three_strategy_copy), latest_root / "three_strategy_state.json")
     if tech_copy:
         _copy_if_exists(Path(tech_copy), latest_root / "technical_confirmation.csv")
     if tech_summary_copy:
@@ -272,12 +317,15 @@ def publish_portfolio_release(
         "source_mode": str(source_mode or "research_only"),
     }
     path_map["latest_pointer"].write_text(json.dumps(pointer_doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    _mirror_json_to_sql(config, path_map["latest_pointer"], pointer_doc)
     with path_map["history_path"].open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(pointer_doc, ensure_ascii=False) + "\n")
+    _append_jsonl_to_sql(config, path_map["history_path"], pointer_doc, record_id=release_id)
     return release_doc
 
 
 def load_latest_release(config: Dict[str, Any]) -> Dict[str, Any]:
+    _load_json._active_config = config
     pointer_path = _paths(config)["latest_pointer"]
     if not pointer_path.exists():
         raise FileNotFoundError(f"未找到 latest release 指针: {pointer_path}")
@@ -289,6 +337,7 @@ def load_latest_release(config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def load_release_by_id(config: Dict[str, Any], release_id: str) -> Dict[str, Any]:
+    _load_json._active_config = config
     manifest_path = _paths(config)["releases_root"] / str(release_id).strip() / "release_manifest.json"
     if not manifest_path.exists():
         raise FileNotFoundError(f"未找到指定 release: {manifest_path}")
@@ -296,6 +345,7 @@ def load_release_by_id(config: Dict[str, Any], release_id: str) -> Dict[str, Any
 
 
 def record_release_execution(release_doc: Dict[str, Any], execution_record: Dict[str, Any]) -> Dict[str, Any]:
+    config = getattr(record_release_execution, "_active_config", None)
     manifest_path = Path(str(release_doc.get("artifacts", {}).get("manifest_path", "") or "")).resolve()
     release_dir = manifest_path.parent
     history_path = release_dir / "execution_history.jsonl"
@@ -303,6 +353,14 @@ def record_release_execution(release_doc: Dict[str, Any], execution_record: Dict
     latest_path.write_text(json.dumps(execution_record, ensure_ascii=False, indent=2), encoding="utf-8")
     with history_path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(execution_record, ensure_ascii=False) + "\n")
+    if isinstance(config, dict):
+        _mirror_json_to_sql(config, latest_path, execution_record)
+        _append_jsonl_to_sql(
+            config,
+            history_path,
+            execution_record,
+            record_id=str(execution_record.get("timestamp", "") or execution_record.get("generated_at", "") or uuid4().hex),
+        )
     return {
         "history_path": str(history_path),
         "latest_execution_path": str(latest_path),

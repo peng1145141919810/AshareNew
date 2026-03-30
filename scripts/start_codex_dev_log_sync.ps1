@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $scriptPath = Join-Path $PSScriptRoot "sync_codex_dev_log_to_gdrive.py"
-$mirrorDir = "G:\我的云端硬盘\AshareCSharp_backups\codex_dev_log_mirror"
+$mirrorDir = "H:\我的云端硬盘\AshareCSharp_backups\codex_dev_log_mirror"
 $pollSeconds = 5
 
 function Resolve-PythonLaunch {
@@ -34,7 +34,7 @@ function Resolve-PythonLaunch {
             Arguments = @("-3")
         }
     }
-    throw "No usable Python launcher found. Expected .venv\\Scripts\\python.exe, PATH python, or py launcher."
+    throw "No usable Python launcher found. Expected .venv\Scripts\python.exe, PATH python, or py launcher."
 }
 
 function Get-WatcherProcesses {
@@ -59,10 +59,10 @@ $launch = Resolve-PythonLaunch
 
 $args = @(
     $launch.Arguments
-    $scriptPath,
-    "--mirror-dir",
-    $mirrorDir,
-    "--poll-seconds",
+    $scriptPath
+    "--mirror-dir"
+    $mirrorDir
+    "--poll-seconds"
     $pollSeconds
 )
 

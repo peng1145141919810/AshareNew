@@ -63,7 +63,7 @@
     - total code lines: `478992`
 
 ## Latest Stable Snapshot
-- Snapshot date: `2026-03-30`
+- Snapshot date: `2026-03-31`
 - Workspace operator mirror: `F:\quant_data\AshareC#\launch_canonical.py`
 - Workspace trade-clock service mirror: `F:\quant_data\AshareC#\trade_clock_service.py`
 - Workspace business root mirror: `F:\quant_data\AshareC#\main_research_runner.py`
@@ -144,6 +144,53 @@
     - operator conclusion:
       - current low-cost data is enough to start integrating all three strategies into the system skeleton
       - current low-cost data is not enough to claim all three are fully completed or fully data-complete
+  - current formal three-strategy integration layer:
+    - artifact root:
+      - `F:\quant_data\AshareC#\data\event_lake_v6\research\three_strategy_kernel`
+    - primary artifacts:
+      - `three_strategy_state.json`
+      - `three_strategy_daily.csv`
+    - system wiring:
+      - `orchestrator_v6` now builds the three-strategy state after `market_state`
+      - `context_pack` now carries a `three_strategy` section for research planning / LLM explanation
+      - `portfolio_recommendation` now consumes the three-strategy state and applies a bounded `alpha_budget_multiplier` overlay to stock-sleeve sizing
+      - `portfolio_release` now copies `three_strategy_state.json` into each formal release
+    - current design truth:
+      - strategy 1 is materially anchored on `industry_router`
+      - strategy 2 is materially anchored on `forecast` / `express` / `daily_basic` and future earnings-source expansion
+      - strategy 3 is materially anchored on `market_state` and remains the top-level posture / risk-budget layer rather than a third stock-alpha stack
+  - current LLM operating boundary:
+    - LLM may be used for:
+      - announcement extraction
+      - evidence normalization
+      - research explanation
+      - strategy-state commentary
+    - LLM must not be used as:
+      - truth-source substitute
+      - final risk-budget override
+      - final execution decision-maker
+      - silent proxy-field promoter into canonical truth fields
+  - current formal intraday state machine layer:
+    - module root:
+      - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine`
+    - primary artifacts:
+      - `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_phase_state.json`
+      - `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\symbol_execution_state.csv`
+      - `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intent_state_daily.csv`
+      - `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_event_log.jsonl`
+      - `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_control_summary.json`
+    - runtime truth:
+      - `shadow` mode writes formalized sidecars only and does not rewrite afternoon execution plans
+      - `bounded_takeover` mode allows `clock_supervisor` to read the latest intraday control summary and apply a limited afternoon overlay
+    - current bounded integration:
+      - intraday sidecars refresh on selected trade-clock phase completions
+      - `summary` copies the latest intraday artifacts into each daily automation pack
+      - `afternoon_execution` and `afternoon_shadow` only read `overlay_recommendation` when `INTRADAY_STATE_MACHINE_SHADOW_MODE = False`
+    - current documentation set:
+      - `F:\quant_data\AshareC#\docs\INTRADAY_STATE_MACHINE_CN.md`
+      - `F:\quant_data\AshareC#\docs\INTRADAY_PHASE_MATRIX_CN.md`
+      - `F:\quant_data\AshareC#\docs\INTRADAY_SYMBOL_INTENT_MATRIX_CN.md`
+      - `F:\quant_data\AshareC#\docs\SYSTEM_OPERATOR_DAILY_LOOP_GUIDE_CN.md`
 - Formal run-trace root:
   - `F:\quant_data\AshareC#\outputs\canonical_runs`
 - Root layout note:
@@ -165,10 +212,10 @@
   - the first standalone migration skeleton is now published separately at `https://github.com/peng1145141919810/AshareCSharp-runtime-skeleton` and currently stays `private`
   - use `$env:DISABLE_AUTO_PUSH='1'; git commit -m "..."; Remove-Item Env:DISABLE_AUTO_PUSH` when a local-only commit is needed in PowerShell
 - Google Drive dev-log mirror:
-  - `CODEX_DEV_LOG.md` can be mirrored into `G:\我的云端硬盘\AshareCSharp_backups\codex_dev_log_mirror`
-  - versioned script snapshots now live under `G:\我的云端硬盘\AshareCSharp_backups\script_versions`
-  - versioned runtime skeleton exports now live under `G:\我的云端硬盘\AshareCSharp_backups\runtime_skeleton_versions`
-  - snapshot catalog now lives at `G:\我的云端硬盘\AshareCSharp_backups\VERSION_CATALOG.md`
+  - `CODEX_DEV_LOG.md` can be mirrored into `H:\我的云端硬盘\AshareCSharp_backups\codex_dev_log_mirror`
+  - versioned script snapshots now live under `H:\我的云端硬盘\AshareCSharp_backups\script_versions`
+  - versioned runtime skeleton exports now live under `H:\我的云端硬盘\AshareCSharp_backups\runtime_skeleton_versions`
+  - snapshot catalog now lives at `H:\我的云端硬盘\AshareCSharp_backups\VERSION_CATALOG.md`
   - current naming scheme:
     - `LEGACY-YYYYMMDD-RNNN` for milestone / layout-transition snapshots
     - `SCRIPT-YYYYMMDD-RNNN` for script-only repo snapshots without `data/`, `outputs/`, virtualenvs, caches, or private `local_settings.py`
@@ -184,6 +231,120 @@
   - runtime skeleton Google Drive export script: `F:\quant_data\AshareC#\scripts\export_csharp_runtime_skeleton_to_gdrive.ps1`
   - scheduled task name: `AshareCSharp Codex Dev Log Mirror`
   - startup behavior: logon trigger with 2-minute delay, hidden PowerShell launcher, low-priority watcher, 5-second poll interval
+- Server And Domain Stable Config:
+  - public domain:
+    - `peng1145141919810.xyz`
+    - `www.peng1145141919810.xyz`
+  - cloud platform:
+    - Tencent Cloud Lighthouse
+  - instance region:
+    - `Hong Kong, China`
+  - instance type:
+    - `Hong Kong Exclusive`
+    - `2vCPU / 4GB / 70GB SSD / 30Mbps / 2TB per month`
+  - instance operating system:
+    - `Ubuntu Server 24.04 LTS 64bit`
+  - public IPv4:
+    - `43.129.28.141`
+  - remote login user:
+    - `ubuntu`
+  - web root on server:
+    - `/var/www/peng1145141919810.xyz/site`
+  - published report root on server:
+    - `/var/www/peng1145141919810.xyz/site/reports`
+  - nginx site config:
+    - `/etc/nginx/sites-available/peng1145141919810.xyz`
+    - `/etc/nginx/sites-enabled/peng1145141919810.xyz`
+  - TLS certificate:
+    - issuer: `Let's Encrypt`
+    - current live path: `/etc/letsencrypt/live/peng1145141919810.xyz/`
+    - certbot renewal is installed through the package default scheduled task
+  - DNS hosting:
+    - DNSPod
+    - NS target:
+      - `a.dnspod.com`
+      - `b.dnspod.com`
+      - `c.dnspod.com`
+  - required DNS records:
+    - `A @ -> 43.129.28.141`
+    - `A www -> 43.129.28.141`
+  - required inbound ports:
+    - `22/tcp`
+    - `80/tcp`
+    - `443/tcp`
+  - SSH automation truth:
+    - key-based SSH login is now configured from the local Windows operator machine to this server
+    - unattended `ssh` and `scp` from the operator machine should work without password prompts when using the same Windows user profile
+  - site publish tooling:
+    - index builder:
+      - `F:\quant_data\AshareC#\scripts\build_audit_site_index.py`
+    - publish script:
+      - `F:\quant_data\AshareC#\scripts\publish_audit_report_to_site.ps1`
+    - backend deploy script:
+      - `F:\quant_data\AshareC#\scripts\deploy_portal_backend_to_server.ps1`
+    - portal backend source:
+      - `F:\quant_data\AshareC#\scripts\portal_backend_server.py`
+    - current portal output pages:
+      - `index.html`
+      - `system-status.html`
+      - `strategy-status.html`
+      - `trade-monitor.html`
+      - `intraday-state.html`
+      - `audit-center.html`
+      - `comments.html`
+      - `admin.html`
+      - `login.html`
+      - `register.html`
+      - `about.html`
+    - current portal truth:
+      - the site is still a static portal, not a live SPA or dynamic app server
+      - login and register pages now call a lightweight Python sidecar over `/api`, backed by a small SQLite database
+      - all system, strategy, trade, and audit pages are built from existing local runtime artifacts and then uploaded by SSH
+      - missing upstream artifacts degrade to empty blocks or placeholder text rather than synthetic data
+      - comments and admin moderation are currently single-node lightweight features intended for the portal, not a general forum system
+    - default publish target:
+      - host: `43.129.28.141`
+      - remote root: `/var/www/peng1145141919810.xyz/site`
+      - domain: `peng1145141919810.xyz`
+  - portal backend runtime on server:
+    - service name:
+      - `ashare-portal-backend`
+    - local bind:
+      - `127.0.0.1:8765`
+    - nginx proxy:
+      - `/api/ -> http://127.0.0.1:8765/`
+    - server script path:
+      - `/opt/ashare_portal/portal_backend_server.py`
+    - server data path:
+      - `/var/lib/ashare_portal/portal.sqlite3`
+    - server env file:
+      - `/etc/ashare_portal_backend.env`
+    - systemd unit:
+      - `/etc/systemd/system/ashare-portal-backend.service`
+  - trade-clock integration:
+    - `summary` phase now supports automatic public-site publishing after the local audit pack is built
+    - config surface:
+      - `ENABLE_AUDIT_SITE_PUBLISH`
+      - `AUDIT_SITE_PUBLISH_RUN_AFTER_SUMMARY`
+      - `AUDIT_SITE_PUBLISH_FAIL_OPEN`
+      - `AUDIT_SITE_PUBLISH_SCRIPT_PATH`
+      - `AUDIT_SITE_PUBLISH_POWERSHELL`
+      - `AUDIT_SITE_PUBLISH_REMOTE_USER`
+      - `AUDIT_SITE_PUBLISH_REMOTE_HOST`
+      - `AUDIT_SITE_PUBLISH_REMOTE_ROOT`
+      - `AUDIT_SITE_PUBLISH_DOMAIN`
+      - `AUDIT_SITE_PUBLISH_TIMEOUT_MINUTES`
+  - current public URLs:
+    - homepage: `https://peng1145141919810.xyz/`
+    - system status: `https://peng1145141919810.xyz/system-status.html`
+    - strategy status: `https://peng1145141919810.xyz/strategy-status.html`
+    - trade monitor: `https://peng1145141919810.xyz/trade-monitor.html`
+    - intraday state: `https://peng1145141919810.xyz/intraday-state.html`
+    - audit center: `https://peng1145141919810.xyz/audit-center.html`
+    - comments: `https://peng1145141919810.xyz/comments.html`
+    - admin: `https://peng1145141919810.xyz/admin.html`
+    - api health: `https://peng1145141919810.xyz/api/health`
+    - report sample: `https://peng1145141919810.xyz/reports/audit_probe_20260330/strategy_audit.html`
 - Canonical research Python:
   - `C:\Users\Administrator\PyCharmMiscProject\.venv\Scripts\python.exe`
 - Canonical Gmtrade Python:
@@ -951,6 +1112,11 @@
 | `latest_account_health.json` | gmtrade health probe sidecar | safety guard / operator | `F:\quant_data\Ashare\data\trade_clock\latest_account_health.json` | JSON | latest fresh or cached account/position/order health snapshot fetched via `gmtrade39` |
 | `latest_execution_dispatch.json` | execution gate / trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\latest_execution_dispatch.json` | JSON | latest release-triggered execution dispatch outcome |
 | `latest_execution_dispatch.<namespace>.json` | execution gate / trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\latest_execution_dispatch.<namespace>.json` | JSON | namespace-isolated dispatch result for simulation or shadow execution lines |
+| `intraday_phase_state.json` | intraday state machine | operator / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_phase_state.json` | JSON | latest formal phase, previous phase, namespace, safety mode, midday decision, and integration mode |
+| `symbol_execution_state.csv` | intraday state machine | operator / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\symbol_execution_state.csv` | CSV | symbol-level execution-state view mapped from lifecycle, gap, OMS truth, phase, and safety |
+| `intent_state_daily.csv` | intraday state machine | operator / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intent_state_daily.csv` | CSV | formal OMS-facing intent-state matrix derived from ledgers, continuity, and cancel-replace audits |
+| `intraday_event_log.jsonl` | intraday state machine | operator / portal / replay | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_event_log.jsonl` | JSONL | phase, safety, symbol, and intent transition events in one append-style stream |
+| `intraday_control_summary.json` | intraday state machine | operator / afternoon overlay / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_control_summary.json` | JSON | phase trace, state counts, risk summary, and overlay recommendation for bounded takeover mode |
 | `outputs\automation_runs\YYYYMMDD\run_manifest.json` | trade clock summary packager | operator / debugging / daily audit | `F:\quant_data\Ashare\outputs\automation_runs\YYYYMMDD\run_manifest.json` | JSON | per-day automation bundle manifest with release id, namespaces, report path, and copied phase artifacts |
 | `outputs\automation_runs\YYYYMMDD\daily_report.txt` | trade clock summary packager | operator | `F:\quant_data\Ashare\outputs\automation_runs\YYYYMMDD\daily_report.txt` | Text | plain-language daily automation summary over phase results, release, OMS sidecars, warnings, and critical flags |
 | `execution_report_*.json` | Gmtrade execution bridge | operator / supervisor feedback | `F:\quant_data\Ashare\data\live_execution_bridge\execution_report_*.json` | JSON | execution summary per run |
@@ -1019,6 +1185,13 @@
 | `TRADE_CLOCK_POLL_SECONDS` | `hub_v6/local_settings.py` | `30` | controls the sleeping heartbeat interval of the clock supervisor |
 | `TRADE_CLOCK_EXECUTION_WINDOWS` | `hub_v6/local_settings.py` | `[{label=morning_primary,start=09:30:30,end=10:00:00},{label=afternoon_primary,start=13:00:00,end=14:50:00}]` | defines the currently recognized trading-session windows for `execution_only`; the scheduler phase graph is still separate from this list |
 | `TRADE_CLOCK_SIMULATION_IGNORE_MARKET_PANIC_REDUCE_ONLY` / `TRADE_CLOCK_SHADOW_IGNORE_MARKET_PANIC_REDUCE_ONLY` | `hub_v6/local_settings.py` | `True / True` | allows the trade clock’s simulation and shadow child phases to keep probing new-entry flow even on `PANIC` days instead of being silently forced to sell-only |
+| `ENABLE_INTRADAY_STATE_MACHINE` | `hub_v6/local_settings.py` | `True` | enables the formal intraday state machine sidecar refresh inside the trade-clock flow |
+| `INTRADAY_STATE_MACHINE_SHADOW_MODE` | `hub_v6/local_settings.py` | `True` | when `True`, the intraday state machine writes sidecars only; when `False`, afternoon bounded-takeover overlay is allowed |
+| `INTRADAY_STATE_MACHINE_ENABLE_AFTERNOON_OVERLAY` | `hub_v6/local_settings.py` | `True` | allows `clock_supervisor` to read `intraday_control_summary.json` and constrain the afternoon leg when not in shadow mode |
+| `INTRADAY_STATE_MACHINE_STALE_ORDER_MINUTES` | `hub_v6/local_settings.py` | `20` | default stale threshold used when mapping OMS orders/intents into `stale_pending` / `replace_required` style intraday states |
+| `INTRADAY_STATE_MACHINE_REFRESH_PHASES` | `hub_v6/local_settings.py` | `preopen_gate,simulation,shadow,midday_review,afternoon_execution,afternoon_shadow,summary` | controls which trade-clock phases trigger a sidecar refresh |
+| `ENABLE_AUDIT_SITE_PUBLISH` / `AUDIT_SITE_PUBLISH_RUN_AFTER_SUMMARY` | `hub_v6/local_settings.py` | `True / True` | automatically publishes the latest audit pack and portal pages to the public site after `summary` |
+| `AUDIT_SITE_PUBLISH_REMOTE_HOST` / `AUDIT_SITE_PUBLISH_DOMAIN` | `hub_v6/local_settings.py` | `43.129.28.141 / peng1145141919810.xyz` | defines the SSH publish target and public domain used by the post-summary portal publish step |
 | `manual_halt` / `manual_reduce_only` | `data\\trade_clock\\manual_overrides.json` | `False / False` | operator-facing runtime kill switches; `manual_halt` blocks all new orders, `manual_reduce_only` keeps the bridge sell-only |
 | `ENABLE_INDUSTRY_ROUTER` | `hub_v6/local_settings.py` | `True` | turns the stock/mechanism skeleton and split-backtest sidecar on inside V6 |
 | `INDUSTRY_ROUTER_CONTRACT_ROOT` / `INDUSTRY_ROUTER_OUTPUT_ROOT` | `hub_v6/local_settings.py` | `...\configs\industry_router / data\event_lake_v6\research\industry_router` | separates static contracts from runtime artifacts |
@@ -1064,6 +1237,8 @@
 - `forecast`, `express`, `dividend`, and `stk_holdertrade` are now cheaply updateable, but contract-announcement, in-hand-order, and tender facts still require text extraction from CNINFO / exchange / procurement pages and are not yet landed into formal SQL fact tables.
 - Low-cost commodity and industrial-factor coverage remains partial: Tushare already exposes futures and warehouse-receipt style data, but broad free coverage for industry spot prices, social inventory, and operating-rate series is still incomplete.
 - The trade clock now includes a pre-research affordable data refresh hook; it improves daily freshness for low-cost sources, but it is intentionally non-blocking by default and should not be mistaken for a canonical data-governance gate.
+- The intraday state machine is now structurally complete and automatically refreshed by the trade clock, but standalone `execution_only` and standalone `midday_review_only` are not yet fully gated by the state machine; the bounded takeover currently lives inside the trade-clock afternoon overlay path.
+- `INTRADAY_STATE_MACHINE_SHADOW_MODE` should remain the default until several real trade dates confirm the symbol/intention mappings are stable; switching it off enables only limited afternoon-plan constraints, not full execution ownership.
 
 ## Data Source Governance
 - Canonical rule:
@@ -1187,6 +1362,10 @@
     - Bucket B control feedback for V2A posture pacing
     - Bucket C research meta feedback for aggregated research-side consumption
     - Bucket D narrative feedback for human reading only
+- Decision: the intraday state machine must default to `shadow` and only enter `bounded_takeover` through explicit config.
+  - Reason: the first goal is deterministic state expression and auditability, not hidden execution takeover.
+  - Alternatives considered: let the new intraday layer directly gate all execution branches from day one, or keep it permanently as a portal-only sidecar.
+  - Consequence: trade-clock phases always refresh intraday sidecars, but afternoon overlay constraints only activate when `INTRADAY_STATE_MACHINE_SHADOW_MODE = False`.
 - Decision: execution-side abnormal handling is now fail-closed and centered on one safety truth file plus one incident log.
     - Reason: scattered heartbeat/gate prints were not enough to answer whether the system should still trade after broker, file, or market anomalies.
     - Alternatives considered: keep only `clock_state.json`, or add multiple extra daemons for separate health checking.
@@ -1304,6 +1483,65 @@
 
 ## Change Log
 All timestamps below are local file write times in the current workspace and should be read as Asia/Shanghai local time.
+
+### 2026-03-31 03:58
+- Type:
+  - `feature`
+  - `ops`
+  - `docs`
+- Scope:
+  - `intraday_state_machine`
+  - `trade_clock`
+  - `portal`
+  - `csharp_wrapper`
+- Files:
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+  - `F:\quant_data\AshareC#\docs\INTRADAY_STATE_MACHINE_CN.md`
+  - `F:\quant_data\AshareC#\docs\INTRADAY_PHASE_MATRIX_CN.md`
+  - `F:\quant_data\AshareC#\docs\INTRADAY_SYMBOL_INTENT_MATRIX_CN.md`
+  - `F:\quant_data\AshareC#\docs\SYSTEM_OPERATOR_DAILY_LOOP_GUIDE_CN.md`
+  - `F:\quant_data\AshareC#\scripts\build_audit_site_index.py`
+  - `F:\quant_data\AshareC#\scripts\probe_intraday_state_machine.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\runtime.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Pathing\PathRegistry.cs`
+- Change:
+  - Finished the operator-facing intraday-state-machine delivery: added the Chinese design doc, phase matrix, symbol/intent matrix, and a full daily-loop operator guide.
+  - Fixed a real behavior bug where `INTRADAY_STATE_MACHINE_SHADOW_MODE` existed in config but did not actually stop the afternoon overlay from affecting automatic execution plans.
+  - Formalized the intraday integration truth in code and docs: `shadow` now means sidecar-only, while bounded afternoon-plan takeover only happens when `shadow_mode = False`.
+  - Added a new public portal page `intraday-state.html` that reads the latest formal phase state, symbol state, intent state, control summary, and event timeline.
+  - Fixed the C# path wrapper so OMS ledger artifacts now point at the real `ledgers\*.csv` paths instead of the incorrect root-level file paths.
+  - Updated stable sections in this dev log to record the intraday module, the new docs, the public portal page, and the current Google Drive default root under `H:\我的云端硬盘\AshareCSharp_backups`.
+- Impact:
+  - The daily automatic process now has a documented and inspectable intraday control surface instead of only implicit phase behavior.
+  - Operators can inspect one consistent state-machine truth from sidecar files, daily summary packs, C# path inspection, and the public portal.
+  - Shadow mode is now safe by default again because it no longer silently alters afternoon behavior.
+- Validation:
+  - `python -m py_compile` on:
+    - `scripts\build_audit_site_index.py`
+    - `scripts\probe_intraday_state_machine.py`
+    - `hub_v6\intraday_state_machine\runtime.py`
+    - `hub_v6\clock_supervisor.py`
+  - `python F:\quant_data\AshareC#\scripts\probe_intraday_state_machine.py --source-phase summary`
+    - success
+    - confirmed latest payload now reports `shadow_mode=true` and `integration_mode=shadow`
+  - `dotnet build F:\quant_data\AshareC#\csharp_runtime_skeleton\Ashare.RuntimeSkeleton.sln`
+    - success
+    - `0` warnings, `0` errors
+  - `powershell -ExecutionPolicy Bypass -File F:\quant_data\AshareC#\scripts\publish_audit_report_to_site.ps1 -ReportDir F:\quant_data\AshareC#\outputs\automation_runs\audit_probe_20260330`
+    - success
+  - Public HTTP checks:
+    - `https://peng1145141919810.xyz/` -> `200`
+    - `https://peng1145141919810.xyz/intraday-state.html` -> `200`
+    - `https://peng1145141919810.xyz/audit-center.html` -> `200`
+  - No full integrated pipeline or long end-to-end production cycle was executed.
+- Compatibility:
+  - Backward compatible for normal trade-clock runs.
+  - Default behavior remains conservative because `INTRADAY_STATE_MACHINE_SHADOW_MODE = True` keeps the state machine in sidecar-only mode unless explicitly changed.
+- Rollback:
+  - Set `ENABLE_INTRADAY_STATE_MACHINE = False` to disable the intraday layer completely.
+  - Or keep `ENABLE_INTRADAY_STATE_MACHINE = True` but force `INTRADAY_STATE_MACHINE_SHADOW_MODE = True` to retain sidecar-only behavior.
+  - Revert the touched files above if the new docs/portal/state-machine surface should be removed.
 
 ### 2026-03-25  (local)
 - Type:
@@ -4561,3 +4799,308 @@ All timestamps below are local file write times in the current workspace and sho
   - Existing operator entrypoints remain unchanged.
 - Rollback:
   - Disable `ENABLE_AFFORDABLE_DATA_BUNDLE` or set `AFFORDABLE_DATA_BUNDLE_RUN_BEFORE_RESEARCH = False` to stop the daily pre-research refresh without removing code.
+
+### 2026-03-30 23:40
+- Type:
+  - `strategy_architecture`
+- Scope:
+  - `three_strategy_kernel_formal_integration`
+- Files:
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\three_strategy_kernel.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\orchestrator_v6.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\context_pack.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\research_brief_engine.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_release.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Pathing\PathRegistry.cs`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Program.cs`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Added a formal `three_strategy_kernel` layer so the user-defined three long-term strategies are first-class system artifacts instead of implicit fragments scattered across `industry_router`, `market_state`, and `portfolio_recommendation`.
+  - The kernel now writes:
+    - `data\event_lake_v6\research\three_strategy_kernel\three_strategy_state.json`
+    - `data\event_lake_v6\research\three_strategy_kernel\three_strategy_daily.csv`
+  - `orchestrator_v6` now builds this layer after `market_state`.
+  - `context_pack` and `research_brief_engine` now carry a dedicated `three_strategy` block so LLM planning can read the formal strategy state without being allowed to redefine it.
+  - `portfolio_recommendation` now reads the three-strategy state and applies a bounded `alpha_budget_multiplier` overlay on top of the existing market-state sizing logic.
+  - `portfolio_release` now persists the formal three-strategy artifact into each release package.
+  - The C# path registry and CLI path dump now expose the three-strategy artifact root.
+- Impact:
+  - The three long-term strategies are now formally wired into the system architecture:
+    - strategy 1 via `industry_router`
+    - strategy 2 via affordable earnings-related feeds
+    - strategy 3 via `market_state`
+  - The system now has a deterministic place to express current strategy readiness, sleeve allocation, and LLM boundary policy.
+  - The portfolio layer is no longer purely V5-run-centric; it now has an explicit formal strategy overlay.
+- Validation:
+  - `python -m py_compile` on all touched Python modules
+  - manual probe of `build_three_strategy_artifacts(...)` with workspace paths, confirming artifact creation under `data\event_lake_v6\research\three_strategy_kernel`
+  - `dotnet build F:\quant_data\AshareC#\csharp_runtime_skeleton\Ashare.RuntimeSkeleton.sln -c Debug`
+- Compatibility:
+  - Additive and backward-compatible with the existing V5 run-selection flow.
+  - No full integrated pipeline run was performed.
+  - Current release documents now include additional three-strategy fields and artifacts.
+- Rollback:
+  - Remove `three_strategy_kernel.py`, the associated config keys, and the release/context wiring if the project later replaces this layer with a different formal strategy contract.
+
+### 2026-03-30 23:59
+- Type:
+  - `audit_observability`
+- Scope:
+  - `strategy_audit_pack_and_gdrive_root_refresh`
+- Files:
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\strategy_audit.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `F:\quant_data\AshareC#\scripts\sync_codex_dev_log_to_gdrive.py`
+  - `F:\quant_data\AshareC#\scripts\create_gdrive_script_snapshot.py`
+  - `F:\quant_data\AshareC#\scripts\start_codex_dev_log_sync.ps1`
+  - `F:\quant_data\AshareC#\scripts\export_csharp_runtime_skeleton_to_gdrive.ps1`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Added a dedicated `strategy_audit` artifact pack to the daily summary layer so each run can explain likely profit and loss drivers instead of only dumping raw release files.
+  - The audit pack now writes both machine-readable JSON and a lightweight HTML dashboard with:
+    - formal three-strategy allocation
+    - candidate funnel loss
+    - exposure-fill diagnostics
+    - top-industry concentration
+    - OMS target-vs-actual gap proxy
+    - overfit or paper-to-live mismatch heuristics
+  - Rebuilt `strategy_audit.py` in clean UTF-8-safe text after discovering broken mojibake content and a malformed string in the first draft.
+  - Current operator truth: Google Drive default root has changed to `H:\我的云端硬盘\AshareCSharp_backups`; older `G:\...` references in historical sections are no longer the default.
+- Impact:
+  - The system now has a clearer audit surface for post-run review even before a full realized-PnL attribution ledger is available.
+  - Operators can open `strategy_audit.html` directly after the summary phase and quickly see whether losses were more likely driven by strategy mix, filter friction, insufficient deployment, OMS drift, or possible overfit symptoms.
+  - Future dev-log mirror and snapshot scripts now default to the current `H:` Google Drive mount instead of silently targeting the stale `G:` path.
+- Validation:
+  - targeted file inspection
+  - `python -m py_compile` on touched Python modules
+  - manual probe of `build_strategy_audit_pack(...)` against an existing release manifest
+  - no full integrated pipeline run
+- Compatibility:
+  - additive observability enhancement
+  - existing release and trade-clock contracts remain intact
+  - audit outputs remain best-effort when equity-curve or OMS truth files are missing
+- Rollback:
+  - remove `strategy_audit.py` wiring from `clock_supervisor.py` if the audit layer needs to be disabled
+  - revert the four Google Drive helper scripts if the drive letter changes again
+
+### 2026-03-31 00:12
+- Type:
+  - `audit_ui_enhancement`
+- Scope:
+  - `strategy_audit_visual_upgrade`
+- Files:
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\strategy_audit.py`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Upgraded the audit HTML from a basic diagnostic page into a more readable dashboard with:
+    - system NAV card
+    - live account total-asset and cash card
+    - HS300 benchmark comparison
+    - excess-return fields when overlap data is available
+    - system-vs-benchmark line chart
+  - Added benchmark loading from the configured HS300 daily CSV path.
+  - Added warning suppression around pandas timestamp coercion so old equity-curve files do not emit noisy summary-phase warnings.
+- Impact:
+  - Operators can now open a single HTML file and see both internal strategy/portfolio diagnostics and an external market benchmark context.
+  - The audit page is closer to a real post-run review surface, even though strict realized-PnL attribution is still not fully built.
+- Validation:
+  - `python -m py_compile F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\strategy_audit.py`
+  - manual probe of `build_strategy_audit_pack(...)` using:
+    - an existing release manifest under `F:\quant_data\Ashare\data\trade_release_v1\releases\release_20260325_191843_18c5ee8d`
+    - HS300 path `F:\quant_data\Ashare\data\index_daily_csv\000300_HS300.csv`
+- Compatibility:
+  - additive audit enhancement only
+  - excess-return fields remain optional when the overlap window between equity curve and benchmark is too short
+- Rollback:
+  - revert `strategy_audit.py` to the prior simpler HTML renderer if the dashboard layout needs to be simplified
+
+### 2026-03-31 01:42
+- Type:
+  - `site_publish_automation`
+- Scope:
+  - `audit_site_static_publish_chain`
+- Files:
+  - `F:\quant_data\AshareC#\scripts\build_audit_site_index.py`
+  - `F:\quant_data\AshareC#\scripts\publish_audit_report_to_site.ps1`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Added a static-site index builder for published strategy-audit reports.
+  - Added a PowerShell publish script that:
+    - finds or accepts a local audit report directory
+    - stages it under a local publish workspace
+    - rebuilds the site `index.html`
+    - uploads the report directory and index page to the Tencent Cloud server
+  - Current default publish target:
+    - host: `43.129.28.141`
+    - remote root: `/var/www/peng1145141919810.xyz/site`
+    - domain: `peng1145141919810.xyz`
+  - Current operator boundary:
+    - publish is scriptable now
+    - fully unattended publishing still requires one-time SSH key login setup
+    - password-based `scp` remains interactive until key-based auth is installed
+- Impact:
+  - Daily audit HTML/JSON can now be pushed to the public site with one script instead of manual directory copying and manual homepage edits.
+  - The public homepage can act as a rolling audit-report navigation page.
+- Validation:
+  - `python -m py_compile F:\quant_data\AshareC#\scripts\build_audit_site_index.py`
+  - direct run of `build_audit_site_index.py` against `outputs\automation_runs`, producing `outputs\site_publish_stage\index.html`
+- Compatibility:
+  - additive deployment tooling only
+  - does not change the research, release, execution, or summary runtime contracts
+- Rollback:
+  - remove the two publish scripts if the project later moves from static report publishing to a different web deployment model
+
+### 2026-03-31 01:56
+- Type:
+  - `automation_integration`
+- Scope:
+  - `summary_phase_auto_publish_to_public_site`
+- Files:
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Wired the static audit-site publisher into the `summary` phase as an auxiliary post-summary step.
+  - Added a dedicated runtime config surface `audit_site_publish` with:
+    - enable switch
+    - run-after-summary switch
+    - fail-open switch
+    - PowerShell executable path
+    - remote SSH user/host/root
+    - target domain
+    - timeout
+  - Current production target is the user's public site:
+    - `https://peng1145141919810.xyz/`
+  - The summary result payload now carries the audit-site publish result when it runs.
+- Impact:
+  - Once `summary` finishes building the local audit pack, the system can now automatically publish the latest report to the public website without manual file copying.
+  - Website publishing failures can stay fail-open by default so they do not block the core summary artifact generation.
+- Validation:
+  - `python -m py_compile` on touched Python modules
+  - direct run of `publish_audit_report_to_site.ps1 -ReportDir F:\quant_data\AshareC#\outputs\automation_runs\audit_probe_20260330`
+  - verified remote files:
+    - `/var/www/peng1145141919810.xyz/site/index.html`
+    - `/var/www/peng1145141919810.xyz/site/reports/audit_probe_20260330/strategy_audit.html`
+  - verified public report URL:
+    - `https://peng1145141919810.xyz/reports/audit_probe_20260330/strategy_audit.html`
+- Compatibility:
+  - additive publish automation
+  - requires working SSH key auth to remain fully unattended
+- Rollback:
+  - disable `ENABLE_AUDIT_SITE_PUBLISH` or `AUDIT_SITE_PUBLISH_RUN_AFTER_SUMMARY` to stop public-site publishing without removing code
+
+### 2026-03-31 02:47
+- Type:
+  - `portal_frontend_upgrade`
+- Scope:
+  - `public_site_chinese_static_portal_v1`
+- Files:
+  - `F:\quant_data\AshareC#\scripts\build_audit_site_index.py`
+  - `F:\quant_data\AshareC#\scripts\publish_audit_report_to_site.ps1`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Rebuilt the static site generator from a single audit index into a Chinese multi-page portal.
+  - The portal now generates:
+    - `index.html`
+    - `system-status.html`
+    - `strategy-status.html`
+    - `trade-monitor.html`
+    - `audit-center.html`
+    - `login.html`
+    - `register.html`
+    - `about.html`
+  - The new pages read from current runtime artifacts where available:
+    - latest release
+    - release manifest
+    - latest market state
+    - three strategy state
+    - OMS latest actual portfolio state
+    - trade clock state
+    - incident log
+    - published audit reports
+  - Fixed the PowerShell publish script so `scp` uploads use relative local paths instead of Windows absolute drive-prefixed paths that can be misread as remote-host syntax.
+- Impact:
+  - The public website is no longer just a report directory index; it now acts as a Chinese operator portal with separate views for system, strategy, trade, audit, and future account entry points.
+  - Operators can publish the upgraded site through the same existing SSH chain without manually editing remote HTML files.
+  - Current data truth remains conservative: missing upstream artifacts show placeholders instead of fabricated values.
+- Validation:
+  - `python -m py_compile F:\quant_data\AshareC#\scripts\build_audit_site_index.py`
+  - direct build of the portal into `F:\quant_data\AshareC#\outputs\site_publish_stage`
+  - direct publish:
+    - `powershell -ExecutionPolicy Bypass -File F:\quant_data\AshareC#\scripts\publish_audit_report_to_site.ps1 -ReportDir F:\quant_data\AshareC#\outputs\automation_runs\audit_probe_20260330`
+  - public HTTP `200` probes for:
+    - `https://peng1145141919810.xyz/`
+    - `https://peng1145141919810.xyz/system-status.html`
+    - `https://peng1145141919810.xyz/strategy-status.html`
+    - `https://peng1145141919810.xyz/trade-monitor.html`
+- Compatibility:
+  - additive portal-surface upgrade only
+  - does not change the formal research, release, OMS, or execution contracts
+- Rollback:
+  - revert `build_audit_site_index.py` and `publish_audit_report_to_site.ps1` to the prior single-page audit index if the multi-page portal needs to be simplified
+
+### 2026-03-31 03:12
+- Type:
+  - `portal_backend_and_interaction_upgrade`
+- Scope:
+  - `portal_auth_comments_admin_and_api_proxy`
+- Files:
+  - `F:\quant_data\AshareC#\scripts\portal_backend_server.py`
+  - `F:\quant_data\AshareC#\scripts\deploy_portal_backend_to_server.ps1`
+  - `F:\quant_data\AshareC#\scripts\build_audit_site_index.py`
+  - `F:\quant_data\AshareC#\scripts\publish_audit_report_to_site.ps1`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Added a lightweight Python portal backend using only the standard library:
+    - registration
+    - login / logout
+    - current-user session lookup
+    - page-scoped comments
+    - admin comment moderation
+    - admin summary
+  - Backend storage is a dedicated SQLite file for the portal rather than the research truth stores.
+  - Added a repeatable deployment script that:
+    - uploads the backend to the Tencent Cloud server
+    - writes the server env file
+    - installs a `systemd` unit
+    - patches nginx with a `/api/` reverse proxy
+    - verifies local and public health
+  - Upgraded the static portal pages so they now include:
+    - `comments.html`
+    - `admin.html`
+    - live login and register forms that call `/api`
+    - lightweight bar-chart blocks
+    - lightweight timeline blocks
+  - Fixed two deployment/runtime issues discovered during first deployment:
+    - BOM in the environment file caused `systemd` to ignore `ASHARE_PORTAL_SECRET`
+    - `/api/` proxying required the backend to accept both `/api/...` and stripped `...` paths
+- Impact:
+  - The website is no longer only a static observation shell; it now has a minimal working account/comment/admin layer.
+  - Portal interaction still stays intentionally low-risk and does not expose direct trading actions.
+  - The same SSH-based deployment path now covers both the static portal pages and the backend sidecar.
+- Validation:
+  - `python -m py_compile` on:
+    - `build_audit_site_index.py`
+    - `portal_backend_server.py`
+  - direct local backend-class probe:
+    - register
+    - login
+    - add comment
+    - admin summary
+  - repeated public-site publish through:
+    - `publish_audit_report_to_site.ps1`
+  - successful public health probe:
+    - `https://peng1145141919810.xyz/api/health`
+  - successful public registration and comment-post probe through `/api`
+- Compatibility:
+  - additive portal-side feature only
+  - no change to research, release, OMS, or execution truth contracts
+  - first registered portal user becomes `admin`, which is intentional for the current single-operator stage
+- Rollback:
+  - stop and disable `ashare-portal-backend`
+  - remove the `/api/` nginx proxy block
+  - revert the four touched portal scripts if the site must return to static-read-only mode

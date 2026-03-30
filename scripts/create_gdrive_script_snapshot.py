@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-DEFAULT_BACKUP_ROOT = Path(r"G:\我的云端硬盘\AshareCSharp_backups")
+DEFAULT_BACKUP_ROOT = Path(r"H:\我的云端硬盘\AshareCSharp_backups")
 EXCLUDED_DIR_NAMES = {
     ".git",
     ".idea",
@@ -121,88 +121,51 @@ def append_catalog(
         handle.write(row)
 
 
-def create_snapshot(repo_root: Path, backup_root: Path, label: str) -> dict:
-    script_versions_dir = backup_root / "script_versions"
-    date_text, revision = next_version_parts(script_versions_dir=script_versions_dir)
-    label_slug = slugify_label(label)
-    version_id = f"SCRIPT-{date_text}-R{revision:03d}"
-    snapshot_dir = script_versions_dir / f"AshareCSharp_script_{date_text}_r{revision:03d}_{label_slug}"
-    repo_scripts_dir = snapshot_dir / "repo_scripts"
-    manifest_dir = snapshot_dir / "manifest"
-
-    snapshot_dir.mkdir(parents=True, exist_ok=False)
-    repo_scripts_dir.mkdir(parents=True, exist_ok=False)
-    manifest_dir.mkdir(parents=True, exist_ok=False)
-
-    copied_files = copy_repo_scripts(repo_root=repo_root, destination_root=repo_scripts_dir)
-
-    branch = run_git(["branch", "--show-current"], repo_root=repo_root).strip()
-    head_commit = run_git(["rev-parse", "HEAD"], repo_root=repo_root).strip()
-    write_text(manifest_dir / "git_status.txt", run_git(["status", "--short"], repo_root=repo_root))
-    write_text(manifest_dir / "git_diff_stat.txt", run_git(["diff", "--stat"], repo_root=repo_root))
-    write_text(manifest_dir / "working_tree.patch", run_git(["diff", "--binary"], repo_root=repo_root))
-    subprocess.run(
-        ["git", "bundle", "create", str(manifest_dir / "repo_history.bundle"), "--all"],
-        cwd=str(repo_root),
-        check=True,
-    )
-
-    manifest = {
-        "version_id": version_id,
-        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "label": label,
-        "repo_root": str(repo_root),
-        "backup_root": str(backup_root),
-        "snapshot_dir": str(snapshot_dir),
-        "branch": branch,
-        "head_commit": head_commit,
-        "copied_files": copied_files,
-        "excluded_dir_names": sorted(EXCLUDED_DIR_NAMES),
-        "excluded_file_names": sorted(EXCLUDED_FILE_NAMES),
-        "excluded_suffixes": sorted(EXCLUDED_SUFFIXES),
-    }
-    write_text(manifest_dir / "snapshot_manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
-
-    catalog_path = backup_root / "VERSION_CATALOG.md"
-    append_catalog(
-        catalog_path=catalog_path,
-        version_id=version_id,
-        snapshot_dir=snapshot_dir,
-        label=label,
-        head_commit=head_commit,
-        branch=branch,
-        copied_files=copied_files,
-    )
-    return manifest
-
-
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Create a script-only Google Drive snapshot for the AshareC# workspace.")
-    parser.add_argument(
-        "--repo-root",
-        type=Path,
-        default=Path(__file__).resolve().parents[1],
-        help="Repository root to snapshot.",
-    )
-    parser.add_argument(
-        "--backup-root",
-        type=Path,
-        default=DEFAULT_BACKUP_ROOT,
-        help="Google Drive backup root.",
-    )
-    parser.add_argument(
-        "--label",
-        default="manual",
-        help="Human-readable snapshot label.",
-    )
+    parser = argparse.ArgumentParser(description="Create a Google Drive snapshot of the current AshareC# script workspace.")
+    parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--backup-root", type=Path, default=DEFAULT_BACKUP_ROOT)
+    parser.add_argument("--label", type=str, default="manual")
     return parser
 
 
 def main() -> int:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+
     repo_root = args.repo_root.resolve()
     backup_root = args.backup_root.resolve()
-    manifest = create_snapshot(repo_root=repo_root, backup_root=backup_root, label=str(args.label))
+    label_slug = slugify_label(args.label)
+    script_versions_dir = backup_root / "script_versions"
+    date_text, revision = next_version_parts(script_versions_dir=script_versions_dir)
+    version_id = f"SCRIPT-{date_text}-R{revision:03d}"
+    snapshot_dir = script_versions_dir / f"AshareCSharp_script_{date_text}_r{revision:03d}_{label_slug}"
+    snapshot_dir.mkdir(parents=True, exist_ok=False)
+
+    copied_files = copy_repo_scripts(repo_root=repo_root, destination_root=snapshot_dir)
+    head_commit = run_git(["rev-parse", "HEAD"], repo_root).strip()
+    branch = run_git(["branch", "--show-current"], repo_root).strip()
+
+    manifest = {
+        "version_id": version_id,
+        "label": args.label,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "repo_root": str(repo_root),
+        "snapshot_dir": str(snapshot_dir),
+        "head_commit": head_commit,
+        "branch": branch,
+        "copied_files": copied_files,
+    }
+    write_text(snapshot_dir / "snapshot_manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+    append_catalog(
+        catalog_path=backup_root / "VERSION_CATALOG.md",
+        version_id=version_id,
+        snapshot_dir=snapshot_dir,
+        label=args.label,
+        head_commit=head_commit,
+        branch=branch,
+        copied_files=copied_files,
+    )
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
     return 0
 

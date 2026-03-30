@@ -162,6 +162,11 @@ def build_runtime_config() -> Dict[str, Any]:
             "config_path": str(getattr(LS, "MARKET_STATE_CONFIG_PATH", Path(LS.PROJECT_ROOT) / "configs" / "market_state" / "default.json")),
             "use_router_bias": bool(getattr(LS, "MARKET_STATE_USE_ROUTER_BIAS", True)),
         },
+        "three_strategy_kernel": {
+            "enabled": bool(getattr(LS, "ENABLE_THREE_STRATEGY_KERNEL", True)),
+            "output_root": str(getattr(LS, "THREE_STRATEGY_KERNEL_ROOT", Path(LS.RESEARCH_ROOT) / "three_strategy_kernel")),
+            "portfolio_budget_overlay": bool(getattr(LS, "THREE_STRATEGY_KERNEL_PORTFOLIO_BUDGET_OVERLAY", True)),
+        },
         "industry_router": {
             "enabled": bool(getattr(LS, "ENABLE_INDUSTRY_ROUTER", True)),
             "contract_root": str(getattr(LS, "INDUSTRY_ROUTER_CONTRACT_ROOT", Path(LS.PROJECT_ROOT) / "configs" / "industry_router")),
@@ -238,6 +243,34 @@ def build_runtime_config() -> Dict[str, Any]:
                     ],
                 )
                 or []
+            ),
+        },
+        "audit_site_publish": {
+            "enabled": bool(getattr(LS, "ENABLE_AUDIT_SITE_PUBLISH", True)),
+            "run_after_summary": bool(getattr(LS, "AUDIT_SITE_PUBLISH_RUN_AFTER_SUMMARY", True)),
+            "fail_open": bool(getattr(LS, "AUDIT_SITE_PUBLISH_FAIL_OPEN", True)),
+            "script_path": str(getattr(LS, "AUDIT_SITE_PUBLISH_SCRIPT_PATH", Path(LS.PROJECT_ROOT).parents[1] / "scripts" / "publish_audit_report_to_site.ps1")),
+            "powershell_executable": str(getattr(LS, "AUDIT_SITE_PUBLISH_POWERSHELL", "powershell.exe") or "powershell.exe"),
+            "remote_user": str(getattr(LS, "AUDIT_SITE_PUBLISH_REMOTE_USER", "ubuntu") or "ubuntu"),
+            "remote_host": str(getattr(LS, "AUDIT_SITE_PUBLISH_REMOTE_HOST", "43.129.28.141") or "43.129.28.141"),
+            "remote_root": str(getattr(LS, "AUDIT_SITE_PUBLISH_REMOTE_ROOT", "/var/www/peng1145141919810.xyz/site") or "/var/www/peng1145141919810.xyz/site"),
+            "domain": str(getattr(LS, "AUDIT_SITE_PUBLISH_DOMAIN", "peng1145141919810.xyz") or "peng1145141919810.xyz"),
+            "timeout_minutes": int(getattr(LS, "AUDIT_SITE_PUBLISH_TIMEOUT_MINUTES", 20) or 20),
+        },
+        "intraday_state_machine": {
+            "enabled": bool(getattr(LS, "ENABLE_INTRADAY_STATE_MACHINE", True)),
+            "shadow_mode": bool(getattr(LS, "INTRADAY_STATE_MACHINE_SHADOW_MODE", True)),
+            "fail_open": bool(getattr(LS, "INTRADAY_STATE_MACHINE_FAIL_OPEN", True)),
+            "enable_afternoon_overlay": bool(getattr(LS, "INTRADAY_STATE_MACHINE_ENABLE_AFTERNOON_OVERLAY", True)),
+            "stale_order_minutes": int(getattr(LS, "INTRADAY_STATE_MACHINE_STALE_ORDER_MINUTES", 20) or 20),
+            "artifact_root": str(getattr(LS, "INTRADAY_STATE_MACHINE_ROOT", Path(LS.DATA_ROOT) / "trade_clock" / "intraday_state")),
+            "refresh_on_phase_completion": list(
+                getattr(
+                    LS,
+                    "INTRADAY_STATE_MACHINE_REFRESH_PHASES",
+                    ["preopen_gate", "simulation", "shadow", "midday_review", "afternoon_execution", "afternoon_shadow", "summary"],
+                )
+                or ["preopen_gate", "simulation", "shadow", "midday_review", "afternoon_execution", "afternoon_shadow", "summary"]
             ),
         },
         "portfolio_recommendation": {

@@ -16,7 +16,7 @@ from typing import Optional
 
 
 DEFAULT_POLL_SECONDS = 5.0
-DEFAULT_BACKUP_ROOT = Path(r"G:\我的云端硬盘\AshareCSharp_backups")
+DEFAULT_BACKUP_ROOT = Path(r"H:\我的云端硬盘\AshareCSharp_backups")
 DEFAULT_MIRROR_DIR = DEFAULT_BACKUP_ROOT / "codex_dev_log_mirror"
 WINDOWS_MUTEX_NAME = "Local\\AshareCSharpCodexDevLogSync"
 ERROR_ALREADY_EXISTS = 183
@@ -188,7 +188,6 @@ def main() -> int:
                 if last_snapshot is None or current_snapshot.digest != last_snapshot.digest:
                     sync_log(source, mirror_dir, current_snapshot, verbose=args.verbose)
                 elif current_snapshot.modified_ns != last_snapshot.modified_ns or current_snapshot.size != last_snapshot.size:
-                    # Handle same-content rewrites so the mirror state still reflects the newest metadata.
                     sync_log(source, mirror_dir, current_snapshot, verbose=args.verbose)
                 last_snapshot = current_snapshot
 

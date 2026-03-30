@@ -12,12 +12,13 @@ from .context_pack import build_research_context_pack, save_research_context_pac
 from .data_gap_engine import build_data_gap_report, save_data_gap_report
 from .data_inventory import build_inventory_real, save_inventory
 from .event_extract import extract_events_with_worker, save_event_store
-from .industry_router import build_industry_router_artifacts
 from .event_ingest import ingest_events_real, refresh_market_basics
+from .industry_router import build_industry_router_artifacts
 from .local_augmentations import build_announcement_evidence_cards, build_manual_review_queue
 from .logging_utils import log_line
 from .market_state import build_market_state_artifacts
 from .research_brief_engine import build_research_brief, save_research_brief
+from .three_strategy_kernel import build_three_strategy_artifacts
 from .v5_bridge import build_research_actions, save_bridge_outputs
 
 
@@ -41,7 +42,7 @@ def _v6_stage_labels(mode: str) -> list[str]:
     if mode in {"extract_only", "gap_only", "plan_only", "bridge_only", "full_cycle"}:
         labels.append("事件抽取")
     if mode in {"industry_router_only", "plan_only", "bridge_only", "full_cycle"}:
-        labels.append("分行业研究骨架")
+        labels.append("行业研究骨架")
     if mode in {"plan_only", "bridge_only", "full_cycle"}:
         labels.append("市场状态与资金面总阀门")
     if mode in {"gap_only", "plan_only", "bridge_only", "full_cycle"}:
@@ -72,6 +73,7 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
     stage_idx = 0
     industry_router_payload = {}
     market_state_payload = {}
+    three_strategy_payload = {}
 
     if mode in {"ingest_only", "extract_only", "gap_only", "plan_only", "bridge_only", "full_cycle"}:
         stage_idx += 1
@@ -116,7 +118,7 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
         log_line(
             config,
             f"V6: [{stage_idx}/{len(stage_labels)}] 分行业研究骨架完成 "
-            f"event_instances={industry_router_result.get('summary', {}).get('event_instances', 0)} "
+            f"thesis_count={industry_router_result.get('summary', {}).get('thesis_count', 0)} "
             f"signal_rows={industry_router_result.get('summary', {}).get('signal_rows', 0)} "
             f"summary={industry_router_result.get('summary_path', '')} elapsed={perf_counter() - t0:.1f}s",
         )
@@ -134,6 +136,18 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
             f"style={market_state_payload.get('style_bias', '')} "
             f"mechanism={market_state_payload.get('mechanism_bias', '')} "
             f"elapsed={perf_counter() - t0:.1f}s",
+        )
+        strategy_kernel_result = build_three_strategy_artifacts(
+            config=config,
+            industry_router_payload=industry_router_payload,
+            market_state_payload=market_state_payload,
+        )
+        three_strategy_payload = dict(strategy_kernel_result.get("payload", {}) or {})
+        log_line(
+            config,
+            f"V6: 三策略内核已刷新 primary={three_strategy_payload.get('primary_strategy_key', '')} "
+            f"alpha_budget={dict(three_strategy_payload.get('portfolio_construction', {}) or {}).get('alpha_budget_multiplier', 1.0)} "
+            f"path={strategy_kernel_result.get('latest_path', '')}",
         )
 
     if mode in {"gap_only", "plan_only", "bridge_only", "full_cycle"}:
@@ -166,6 +180,7 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
             evidence_cards=evidence_cards,
             industry_router_payload=industry_router_payload,
             market_state_payload=market_state_payload,
+            three_strategy_payload=three_strategy_payload,
             research_meta_feedback=_load_research_meta_feedback(config=config),
         )
         save_research_context_pack(config=config, pack=context_pack)
@@ -178,7 +193,7 @@ def run_v6_cycle(config_path: Path, mode: str = "full_cycle") -> None:
         save_research_brief(config=config, brief=research_brief)
         log_line(
             config,
-            "研究计划生成完成：mode=%s provider=%s model=%s theses=%s candidate_experiments=%s"
+            "研究计划生成完成，mode=%s provider=%s model=%s theses=%s candidate_experiments=%s"
             % (
                 research_brief.get("generation_mode", "unknown"),
                 research_brief.get("llm_provider", ""),

@@ -14,6 +14,7 @@ from .config_utils import ensure_dir
 from .market_state import load_latest_market_state
 from .portfolio_v2a import build_portfolio_v2a_artifacts
 from .technical_confirmation import build_technical_confirmation_artifacts
+from .three_strategy_kernel import load_latest_three_strategy_state
 
 
 def _sort_score_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -345,6 +346,10 @@ def _load_market_state_summary(config: Dict[str, Any]) -> Dict[str, Any]:
     return dict(load_latest_market_state(config=config, allow_build=True) or {})
 
 
+def _load_three_strategy_summary(config: Dict[str, Any]) -> Dict[str, Any]:
+    return dict(load_latest_three_strategy_state(config=config, allow_build=True) or {})
+
+
 def _normalize_symbol(value: Any) -> str:
     text = str(value or "").strip().upper()
     if not text:
@@ -402,6 +407,16 @@ def _market_adjusted_limits(limits: Dict[str, float], market_state: Dict[str, An
     adjusted["max_names"] = max(1, int(round(float(limits["max_names"]) * max(risk_budget, 0.35))))
     adjusted["single_name_cap"] = min(float(limits["single_name_cap"]), float(limits["total_exposure_cap"]) * max(risk_budget, 0.35))
     adjusted["total_exposure_cap"] = max(0.0, float(limits["total_exposure_cap"]) * max(risk_budget, 0.0))
+    return adjusted
+
+
+def _three_strategy_adjusted_limits(limits: Dict[str, float], strategy_state: Dict[str, Any]) -> Dict[str, float]:
+    construction = dict(strategy_state.get("portfolio_construction", {}) or {})
+    alpha_budget_multiplier = float(construction.get("alpha_budget_multiplier", 1.0) or 1.0)
+    alpha_budget_multiplier = max(0.70, min(1.0, alpha_budget_multiplier))
+    adjusted = dict(limits)
+    adjusted["single_name_cap"] = round(float(adjusted["single_name_cap"]) * alpha_budget_multiplier, 6)
+    adjusted["total_exposure_cap"] = round(float(adjusted["total_exposure_cap"]) * alpha_budget_multiplier, 6)
     return adjusted
 
 
@@ -569,7 +584,10 @@ def build_portfolio_recommendation(config: Dict[str, Any], bridge_root: Path | N
     prev_path = out_root / 'target_positions_prev.csv'
     prev_df = pd.read_csv(prev_path) if prev_path.exists() else pd.DataFrame()
     market_state = _load_market_state_summary(config=config)
+    three_strategy_state = _load_three_strategy_summary(config=config)
     adjusted_limits = _market_adjusted_limits(limits=limits, market_state=market_state) if bool(rec_cfg.get("market_state_aware_sizing", True)) else dict(limits)
+    if bool(config.get("three_strategy_kernel", {}).get("portfolio_budget_overlay", True)):
+        adjusted_limits = _three_strategy_adjusted_limits(limits=adjusted_limits, strategy_state=three_strategy_state)
     max_names = int(adjusted_limits['max_names'])
     single_name_cap = float(adjusted_limits['single_name_cap'])
     total_exposure_cap = float(adjusted_limits['total_exposure_cap'])
@@ -691,10 +709,14 @@ def build_portfolio_recommendation(config: Dict[str, Any], bridge_root: Path | N
         'portfolio_v2a': dict(control_summary.get('portfolio_v2a', {}) or {}),
         'portfolio_posture': dict(control_summary.get('portfolio_posture', {}) or {}),
         'market_state': dict(control_summary.get('market_state', {}) or market_state),
+        'formal_strategy_framework': str(three_strategy_state.get('formal_strategy_framework', 'three_long_term_strategies') or 'three_long_term_strategies'),
+        'primary_strategy_key': str(three_strategy_state.get('primary_strategy_key', '') or ''),
+        'three_strategy_state': dict(three_strategy_state),
         'technical_confirmation': dict(control_summary.get('technical_confirmation', {}) or {}),
         'artifacts': {
             **dict(control_summary.get('artifacts', {}) or {}),
             'market_state_path': str(Path(str(config['paths'].get('market_state_root', '') or '')) / 'latest_market_state.json'),
+            'three_strategy_state_path': str(Path(str(config['paths'].get('research_root', '') or '')) / 'three_strategy_kernel' / 'three_strategy_state.json'),
         },
         'fallback_retained_due_all_filtered': bool(fallback_retained),
         'performance_feedback': feedback,

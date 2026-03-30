@@ -254,6 +254,7 @@ def _compact_context_for_llm(context_pack: Dict[str, Any], max_priority_events: 
         "data_gap_report": _compact_data_gap_report(dict(context_pack.get("data_gap_report", {}) or {}), slim=slim),
         "market_state": dict(context_pack.get("market_state", {}) or {}),
         "industry_router": dict(context_pack.get("industry_router", {}) or {}),
+        "three_strategy": dict(context_pack.get("three_strategy", {}) or {}),
         "recent_experiments": list(context_pack.get("recent_experiments", []) or [])[:6],
         "family_state": dict(context_pack.get("family_state", {}) or {}),
         "research_space": dict(context_pack.get("research_space", {}) or {}),

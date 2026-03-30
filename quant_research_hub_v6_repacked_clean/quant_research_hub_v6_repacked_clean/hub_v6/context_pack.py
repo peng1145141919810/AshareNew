@@ -90,6 +90,7 @@ def build_research_context_pack(
     evidence_cards: List[Dict[str, Any]] | None = None,
     industry_router_payload: Dict[str, Any] | None = None,
     market_state_payload: Dict[str, Any] | None = None,
+    three_strategy_payload: Dict[str, Any] | None = None,
     research_meta_feedback: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """构建研究证据包。"""
@@ -99,6 +100,7 @@ def build_research_context_pack(
     compact_evidence_cards = [_compact_evidence_card(x) for x in list(evidence_cards or [])[:4] if isinstance(x, dict)]
     industry_router_payload = dict(industry_router_payload or {})
     market_state_payload = dict(market_state_payload or {})
+    three_strategy_payload = dict(three_strategy_payload or {})
     research_meta_feedback = dict(research_meta_feedback or {})
 
     source_type_counter = Counter(_safe_text(x.get("source_type")) or "unknown" for x in structured_events)
@@ -185,9 +187,19 @@ def build_research_context_pack(
         },
         "industry_router": {
             "latest_date": _safe_text(industry_router_payload.get("latest_date")),
-            "mechanism_overview": list(industry_router_payload.get("mechanism_overview", []) or []),
+            "active_theses": list(industry_router_payload.get("active_theses", []) or [])[:8],
+            "theme_overview": list(industry_router_payload.get("theme_overview", []) or [])[:10],
             "top_stock_signals": list(industry_router_payload.get("top_stock_signals", []) or [])[:8],
-            "source_overview": list(industry_router_payload.get("source_overview", []) or [])[:6],
+            "evidence_overview": list(industry_router_payload.get("evidence_overview", []) or [])[:12],
+            "mechanism_overview": list(industry_router_payload.get("mechanism_overview", []) or [])[:6],
+        },
+        "three_strategy": {
+            "formal_strategy_framework": _safe_text(three_strategy_payload.get("formal_strategy_framework") or "three_long_term_strategies"),
+            "primary_strategy_key": _safe_text(three_strategy_payload.get("primary_strategy_key")),
+            "strategy_allocations": dict(three_strategy_payload.get("strategy_allocations", {}) or {}),
+            "portfolio_construction": dict(three_strategy_payload.get("portfolio_construction", {}) or {}),
+            "strategies": dict(three_strategy_payload.get("strategies", {}) or {}),
+            "llm_operating_model": dict(three_strategy_payload.get("llm_operating_model", {}) or {}),
         },
         "execution_meta_feedback": {
             "generated_at": _safe_text(research_meta_feedback.get("generated_at")),
@@ -213,6 +225,7 @@ def save_research_context_pack(config: Dict[str, Any], pack: Dict[str, Any]) -> 
         "data_gap_report": pack.get("data_gap_report", {}),
         "market_state": pack.get("market_state", {}),
         "industry_router": pack.get("industry_router", {}),
+        "three_strategy": pack.get("three_strategy", {}),
         "execution_meta_feedback": pack.get("execution_meta_feedback", {}),
         "research_space": pack.get("research_space", {}),
     }, ensure_ascii=False, indent=2), encoding="utf-8")

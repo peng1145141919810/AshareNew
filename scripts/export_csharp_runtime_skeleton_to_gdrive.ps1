@@ -1,6 +1,6 @@
 param(
     [string]$SourceRoot = "F:\quant_data\AshareCSharp-runtime-skeleton",
-    [string]$BackupRoot = "G:\我的云端硬盘\AshareCSharp_backups\runtime_skeleton_versions",
+    [string]$BackupRoot = "H:\我的云端硬盘\AshareCSharp_backups\runtime_skeleton_versions",
     [string]$Label = "bootstrap_runtime_skeleton"
 )
 

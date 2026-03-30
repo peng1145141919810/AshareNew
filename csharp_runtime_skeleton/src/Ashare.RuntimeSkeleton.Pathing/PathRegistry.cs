@@ -13,6 +13,13 @@ public sealed record PathRegistry
     public string MainResearchRunnerPath { get; init; } = string.Empty;
     public string TradeClockServicePath { get; init; } = string.Empty;
     public string AffordableDataBundleScriptPath { get; init; } = string.Empty;
+    public string ThreeStrategyKernelRoot { get; init; } = string.Empty;
+    public string IntradayStateRoot { get; init; } = string.Empty;
+    public string IntradayPhaseStatePath { get; init; } = string.Empty;
+    public string IntradaySymbolStatePath { get; init; } = string.Empty;
+    public string IntradayIntentStatePath { get; init; } = string.Empty;
+    public string IntradayEventLogPath { get; init; } = string.Empty;
+    public string IntradayControlSummaryPath { get; init; } = string.Empty;
     public string ExternalTradeReleaseRoot { get; init; } = string.Empty;
     public string ExternalTradeClockRoot { get; init; } = string.Empty;
     public string ExternalOmsRoot { get; init; } = string.Empty;
@@ -53,6 +60,13 @@ public sealed record PathRegistry
             MainResearchRunnerPath = Path.Combine(normalizedRoot, "main_research_runner.py"),
             TradeClockServicePath = Path.Combine(normalizedRoot, "trade_clock_service.py"),
             AffordableDataBundleScriptPath = Path.Combine(normalizedRoot, "scripts", "update_affordable_data_bundle.py"),
+            ThreeStrategyKernelRoot = Path.Combine(externalDataRoot, "event_lake_v6", "research", "three_strategy_kernel"),
+            IntradayStateRoot = Path.Combine(localDataRoot, "trade_clock", "intraday_state"),
+            IntradayPhaseStatePath = Path.Combine(localDataRoot, "trade_clock", "intraday_state", "latest", "intraday_phase_state.json"),
+            IntradaySymbolStatePath = Path.Combine(localDataRoot, "trade_clock", "intraday_state", "latest", "symbol_execution_state.csv"),
+            IntradayIntentStatePath = Path.Combine(localDataRoot, "trade_clock", "intraday_state", "latest", "intent_state_daily.csv"),
+            IntradayEventLogPath = Path.Combine(localDataRoot, "trade_clock", "intraday_state", "latest", "intraday_event_log.jsonl"),
+            IntradayControlSummaryPath = Path.Combine(localDataRoot, "trade_clock", "intraday_state", "latest", "intraday_control_summary.json"),
             ExternalTradeReleaseRoot = Path.Combine(externalDataRoot, "trade_release_v1"),
             ExternalTradeClockRoot = Path.Combine(externalDataRoot, "trade_clock"),
             ExternalOmsRoot = Path.Combine(externalDataRoot, "live_execution_bridge", "oms_v1"),
@@ -86,9 +100,9 @@ public sealed record PathRegistry
         [
             new() { Name = "ActualState", Path = Path.Combine(ExternalOmsRoot, "snapshots", "latest_actual_portfolio_state.json"), Purpose = "OMS actual-state truth." },
             new() { Name = "OmsSummary", Path = Path.Combine(ExternalOmsRoot, "snapshots", "oms_summary.json"), Purpose = "OMS summary snapshot." },
-            new() { Name = "IntentLedger", Path = Path.Combine(ExternalOmsRoot, "intent_ledger_latest.csv"), Purpose = "Current OMS intent ledger." },
-            new() { Name = "OrderLedger", Path = Path.Combine(ExternalOmsRoot, "order_ledger_latest.csv"), Purpose = "Current OMS order ledger." },
-            new() { Name = "FillLedger", Path = Path.Combine(ExternalOmsRoot, "fill_ledger_latest.csv"), Purpose = "Current OMS fill ledger." }
+            new() { Name = "IntentLedger", Path = Path.Combine(ExternalOmsRoot, "ledgers", "intent_ledger_latest.csv"), Purpose = "Current OMS intent ledger." },
+            new() { Name = "OrderLedger", Path = Path.Combine(ExternalOmsRoot, "ledgers", "order_ledger_latest.csv"), Purpose = "Current OMS order ledger." },
+            new() { Name = "FillLedger", Path = Path.Combine(ExternalOmsRoot, "ledgers", "fill_ledger_latest.csv"), Purpose = "Current OMS fill ledger." }
         ];
     }
 }

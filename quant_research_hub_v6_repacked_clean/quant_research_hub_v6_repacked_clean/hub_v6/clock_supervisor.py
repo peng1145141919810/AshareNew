@@ -14,9 +14,11 @@ from typing import Any, Dict, Iterable
 
 from .config_utils import ensure_dir, load_config
 from .execution_manager import assess_execution_gate
+from .intraday_state_machine import refresh_intraday_state_machine
 from .portfolio_release import load_latest_release, load_release_by_id
 from .safety_guard import assess_system_safety
 from .sql_store import ensure_schema, load_runtime_json_artifact, resolve_sqlite_path, sql_store_enabled, sqlite_connection, upsert_runtime_json_artifact
+from .strategy_audit import build_strategy_audit_pack
 from .trading_clock import clock_now, is_trading_day, next_trading_day, trading_clock_snapshot
 
 PHASE_SEQUENCE = (
@@ -442,6 +444,94 @@ def _affordable_bundle_cfg(config: Dict[str, Any]) -> Dict[str, Any]:
     return dict(config.get("affordable_data_bundle", {}) or {})
 
 
+def _audit_site_publish_cfg(config: Dict[str, Any]) -> Dict[str, Any]:
+    return dict(config.get("audit_site_publish", {}) or {})
+
+
+def _intraday_state_cfg(config: Dict[str, Any]) -> Dict[str, Any]:
+    return dict(config.get("intraday_state_machine", {}) or {})
+
+
+def _intraday_state_root(config: Dict[str, Any]) -> Path:
+    cfg = _intraday_state_cfg(config)
+    default_root = _trade_clock_root(config) / "intraday_state"
+    return ensure_dir(Path(str(cfg.get("artifact_root", default_root) or default_root)).resolve())
+
+
+def _latest_intraday_manifest_path(config: Dict[str, Any]) -> Path:
+    return _intraday_state_root(config) / "latest" / "intraday_state_manifest.json"
+
+
+def _latest_intraday_control_summary(config: Dict[str, Any]) -> Dict[str, Any]:
+    return _load_json(_intraday_state_root(config) / "latest" / "intraday_control_summary.json", default={})
+
+
+def _run_intraday_state_refresh(
+    config: Dict[str, Any],
+    trade_date: str,
+    source_phase: str,
+    cycle_state: Dict[str, Any],
+) -> Dict[str, Any]:
+    cfg = _intraday_state_cfg(config)
+    if not bool(cfg.get("enabled", True)):
+        return {"ran": False, "ok": True, "message": "intraday_state_machine_disabled"}
+    refresh_phases = {
+        str(item).strip()
+        for item in list(
+            cfg.get(
+                "refresh_on_phase_completion",
+                ["preopen_gate", "simulation", "shadow", "midday_review", "afternoon_execution", "afternoon_shadow", "summary"],
+            )
+            or []
+        )
+        if str(item).strip()
+    }
+    if refresh_phases and str(source_phase or "").strip() not in refresh_phases:
+        return {"ran": False, "ok": True, "message": "phase_not_selected"}
+    return refresh_intraday_state_machine(
+        config=config,
+        trade_date=str(trade_date or ""),
+        source_phase=str(source_phase or ""),
+        cycle_state=cycle_state,
+    )
+
+
+def _apply_intraday_afternoon_overlay(
+    config: Dict[str, Any],
+    phase_name: str,
+    plan: Dict[str, Any],
+) -> Dict[str, Any]:
+    if phase_name not in {"afternoon_execution", "afternoon_shadow"}:
+        return dict(plan or {})
+    cfg = _intraday_state_cfg(config)
+    if (
+        not bool(cfg.get("enabled", True))
+        or bool(cfg.get("shadow_mode", True))
+        or not bool(cfg.get("enable_afternoon_overlay", True))
+    ):
+        return dict(plan or {})
+    summary = _latest_intraday_control_summary(config)
+    overlay = dict(summary.get("overlay_recommendation", {}) or {})
+    if not overlay:
+        return dict(plan or {})
+    updated = dict(plan or {})
+    midday_action = str(summary.get("midday_action", "") or "")
+    updated["intraday_overlay"] = overlay
+    updated["midday_action"] = midday_action
+    if bool(overlay.get("allow_unfinished_orders_reconcile", False)):
+        updated["allow_unfinished_orders_reconcile"] = True
+    if bool(overlay.get("block_new_entries", False)):
+        updated["ignore_market_panic_reduce_only"] = False
+        if midday_action == "abort_new_entries" and int(dict(summary.get("risk_summary", {}) or {}).get("open_intents_after", 0) or 0) <= 0:
+            updated["should_run"] = False
+            updated["reason"] = str(updated.get("reason", "") or "intraday_abort_new_entries")
+    if bool(overlay.get("force_reconcile_only", False)):
+        updated["allow_unfinished_orders_reconcile"] = True
+        updated["should_run"] = True
+        updated["reason"] = str(updated.get("reason", "") or "intraday_force_reconcile_only")
+    return updated
+
+
 def _auxiliary_runtime_log_paths(config: Dict[str, Any], trade_date: str, name: str) -> Dict[str, Path]:
     root = _phase_runtime_dir(config, trade_date)
     return {
@@ -557,6 +647,53 @@ def _run_affordable_data_refresh(config: Dict[str, Any], trade_date: str) -> Dic
         "result_payload": dict(raw.get("result_payload", {}) or {}),
     }
 
+
+def _run_audit_site_publish(config: Dict[str, Any], trade_date: str, report_dir: Path) -> Dict[str, Any]:
+    publish_cfg = _audit_site_publish_cfg(config)
+    if not bool(publish_cfg.get("enabled", True)) or not bool(publish_cfg.get("run_after_summary", True)):
+        return {"enabled": False, "ran": False, "ok": True, "message": "disabled"}
+    script_path = Path(str(publish_cfg.get("script_path", "") or "")).resolve()
+    if not script_path.exists():
+        return {"enabled": True, "ran": False, "ok": False, "message": f"missing_script:{script_path}"}
+    if not report_dir.exists():
+        return {"enabled": True, "ran": False, "ok": False, "message": f"missing_report_dir:{report_dir}"}
+    powershell_exe = str(publish_cfg.get("powershell_executable", "powershell.exe") or "powershell.exe").strip() or "powershell.exe"
+    command = [
+        powershell_exe,
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(script_path),
+        "-ReportDir",
+        str(report_dir.resolve()),
+        "-RemoteUser",
+        str(publish_cfg.get("remote_user", "ubuntu") or "ubuntu"),
+        "-RemoteHost",
+        str(publish_cfg.get("remote_host", "43.129.28.141") or "43.129.28.141"),
+        "-RemoteRoot",
+        str(publish_cfg.get("remote_root", "/var/www/peng1145141919810.xyz/site") or "/var/www/peng1145141919810.xyz/site"),
+        "-Domain",
+        str(publish_cfg.get("domain", "peng1145141919810.xyz") or "peng1145141919810.xyz"),
+    ]
+    raw = _subprocess_auxiliary(
+        config=config,
+        trade_date=trade_date,
+        name="audit_site_publish",
+        command=command,
+        timeout_minutes=int(publish_cfg.get("timeout_minutes", 20) or 20),
+    )
+    return {
+        "enabled": True,
+        "ran": True,
+        "ok": bool(raw.get("ok", False)),
+        "fail_open": bool(publish_cfg.get("fail_open", True)),
+        "message": str(raw.get("error_message", "") or ""),
+        "stdout_log": str(raw.get("stdout_log", "") or ""),
+        "stderr_log": str(raw.get("stderr_log", "") or ""),
+        "warning_count": int(raw.get("warning_count", 0) or 0),
+        "result_payload": dict(raw.get("result_payload", {}) or {}),
+    }
+
 def _latest_release_safe(config: Dict[str, Any]) -> Dict[str, Any]:
     try:
         return load_latest_release(config)
@@ -628,12 +765,12 @@ def _midday_plan_payload(cycle_state: Dict[str, Any]) -> Dict[str, Any]:
     return dict(dict(cycle_state.get("phases", {}).get("midday_review", {}) or {}).get("result_payload", {}) or {})
 
 
-def _phase_execution_plan(cycle_state: Dict[str, Any], phase_name: str) -> Dict[str, Any]:
+def _phase_execution_plan(config: Dict[str, Any], cycle_state: Dict[str, Any], phase_name: str) -> Dict[str, Any]:
     midday_plan = _midday_plan_payload(cycle_state)
     if phase_name == "afternoon_execution":
-        return dict(midday_plan.get("real_execution", {}) or {})
+        return _apply_intraday_afternoon_overlay(config=config, phase_name=phase_name, plan=dict(midday_plan.get("real_execution", {}) or {}))
     if phase_name == "afternoon_shadow":
-        return dict(midday_plan.get("shadow_execution", {}) or {})
+        return _apply_intraday_afternoon_overlay(config=config, phase_name=phase_name, plan=dict(midday_plan.get("shadow_execution", {}) or {}))
     return {}
 
 
@@ -729,7 +866,7 @@ def _phase_command(
             extra.extend(["--release-id", release_id])
         return command + extra
     if phase_name in {"afternoon_execution", "afternoon_shadow"}:
-        plan = _phase_execution_plan(cycle_state, phase_name)
+        plan = _phase_execution_plan(config, cycle_state, phase_name)
         release_id = str(plan.get("release_id", "") or cycle_state.get("release_id", "") or "")
         namespace = str(plan.get("namespace", "") or scheduler.get("simulation_namespace", "simulation") or "simulation")
         execution_mode = str(plan.get("execution_mode", scheduler.get("simulation_execution_mode", "precision")) or "precision")
@@ -897,6 +1034,19 @@ def _market_state_summary(release_doc: Dict[str, Any]) -> Dict[str, Any]:
         return {"available": False}
     market_state["available"] = True
     return market_state
+
+
+def _three_strategy_summary(release_doc: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(release_doc.get("three_strategy_state", {}) or {})
+    if not payload:
+        return {"available": False}
+    return {
+        "available": True,
+        "formal_strategy_framework": str(payload.get("formal_strategy_framework", "three_long_term_strategies") or "three_long_term_strategies"),
+        "primary_strategy_key": str(payload.get("primary_strategy_key", "") or ""),
+        "strategy_allocations": dict(payload.get("strategy_allocations", {}) or {}),
+        "portfolio_construction": dict(payload.get("portfolio_construction", {}) or {}),
+    }
 
 
 def _oms_root_for_namespace(config: Dict[str, Any], namespace: str) -> Path:
@@ -1144,6 +1294,7 @@ def _build_daily_pack(
     release_doc = _release_by_id_safe(config, str(pack_state.get("release_id", "") or "")) or _latest_release_for_trade_date(config, trade_date)
     release_summary = _daily_release_summary(release_doc)
     market_summary = _market_state_summary(release_doc)
+    three_strategy_summary = _three_strategy_summary(release_doc)
     v2a_summary = _portfolio_v2a_summary(release_doc)
     scheduler = _scheduler_cfg(config)
     midday_plan = _midday_plan_payload(pack_state)
@@ -1166,6 +1317,9 @@ def _build_daily_pack(
     simulation_gap_analysis = _gap_diagnostics(simulation_oms)
     shadow_gap_analysis = _gap_diagnostics(shadow_oms)
     safety_state = _load_json(_trade_clock_root(config) / "system_safety_state.json", default={})
+    intraday_manifest = _load_json(_latest_intraday_manifest_path(config), default={})
+    intraday_phase_state = _load_json(Path(str(intraday_manifest.get("phase_state_path", "") or "")).resolve(), default={}) if str(intraday_manifest.get("phase_state_path", "") or "").strip() else {}
+    intraday_control_summary = _load_json(Path(str(intraday_manifest.get("control_summary_path", "") or "")).resolve(), default={}) if str(intraday_manifest.get("control_summary_path", "") or "").strip() else {}
     phase_status_path = _phase_state_path(config, trade_date)
     warnings: list[Dict[str, Any]] = []
     critical_flags: list[Dict[str, Any]] = []
@@ -1236,13 +1390,30 @@ def _build_daily_pack(
     _write_json(pack_dir / "phase_status.json", pack_state)
     _write_json(pack_dir / "daily_release_summary.json", release_summary)
     _write_json(pack_dir / "market_state_summary.json", market_summary)
+    _write_json(pack_dir / "three_strategy_summary.json", three_strategy_summary)
     _write_json(pack_dir / "portfolio_v2a_summary.json", v2a_summary)
     _write_json(pack_dir / "oms_summary_simulation.json", simulation_oms)
     _write_json(pack_dir / "oms_summary_shadow.json", shadow_oms)
     _write_json(pack_dir / "gap_analysis_simulation.json", simulation_gap_analysis)
     _write_json(pack_dir / "gap_analysis_shadow.json", shadow_gap_analysis)
+    _write_json(pack_dir / "intraday_phase_state.json", intraday_phase_state)
+    _write_json(pack_dir / "intraday_control_summary.json", intraday_control_summary)
     _write_json(pack_dir / "warnings.json", {"count": len(warnings), "items": warnings})
     _write_json(pack_dir / "critical_flags.json", {"count": len(critical_flags), "items": critical_flags})
+    for manifest_key, target_name in (
+        ("symbol_state_path", "symbol_execution_state.csv"),
+        ("intent_state_path", "intent_state_daily.csv"),
+        ("event_log_path", "intraday_event_log.jsonl"),
+    ):
+        source = Path(str(intraday_manifest.get(manifest_key, "") or "")).resolve() if str(intraday_manifest.get(manifest_key, "") or "").strip() else Path()
+        if source.exists():
+            shutil.copy2(source, pack_dir / target_name)
+    strategy_audit = build_strategy_audit_pack(
+        config=config,
+        trade_date=trade_date,
+        release_doc=release_doc,
+        pack_dir=pack_dir,
+    )
     if phase_status_path.exists():
         shutil.copy2(phase_status_path, pack_dir / "phase_status.source.json")
 
@@ -1256,6 +1427,7 @@ def _build_daily_pack(
         f"研究档位: {profile}",
         f"release_id: {release_summary.get('release_id', '') or '无'}",
         f"market_regime: {market_summary.get('market_regime', '') or 'unknown'}",
+        f"primary_strategy: {three_strategy_summary.get('primary_strategy_key', '') or 'unknown'}",
         f"style_bias: {market_summary.get('style_bias', '') or 'unknown'}",
         f"V2A posture: {v2a_summary.get('rebalance_mode', '') or 'unknown'}",
         f"目标持仓数: {target_count}",
@@ -1264,9 +1436,12 @@ def _build_daily_pack(
         f"midday_review: {phase_overview.get('midday_review', '') or 'queued'}",
         f"afternoon_execution: {phase_overview.get('afternoon_execution', '') or 'queued'}",
         f"afternoon_shadow: {phase_overview.get('afternoon_shadow', '') or 'queued'}",
+        f"intraday_phase: {intraday_phase_state.get('current_phase', '') or 'unknown'}",
+        f"intraday_midday_action: {intraday_control_summary.get('midday_action', '') or 'unknown'}",
         f"OMS gap(simulation): {simulation_oms.get('gap', {}).get('n_gap_symbols', 0) if simulation_oms.get('available', False) else 'n/a'}",
         f"OMS gap(shadow): {shadow_oms.get('gap', {}).get('n_gap_symbols', 0) if shadow_oms.get('available', False) else 'n/a'}",
         f"simulation gap primary_cause: {simulation_gap_analysis.get('primary_cause', 'unknown')}",
+        f"overfit_risk: {dict(strategy_audit.get('payload', {}) or {}).get('overfit_risk', {}).get('risk_level', 'unknown')}",
         f"shadow data_state: {shadow_oms.get('unavailable_reason', 'fresh') if not shadow_oms.get('available', False) else 'fresh'}",
         "Top warnings:",
     ]
@@ -1284,12 +1459,16 @@ def _build_daily_pack(
         "release_id": str(release_summary.get("release_id", "") or ""),
         "pack_dir": str(pack_dir),
         "phase_status_path": str(pack_dir / "phase_status.json"),
+        "intraday_phase_state_path": str(pack_dir / "intraday_phase_state.json"),
+        "intraday_control_summary_path": str(pack_dir / "intraday_control_summary.json"),
         "simulation_namespace": simulation_namespace,
         "shadow_namespace": shadow_namespace,
         "phase_overview": phase_overview,
         "warning_count": len(warnings),
         "critical_count": len(critical_flags),
         "report_path": str(pack_dir / "daily_report.txt"),
+        "strategy_audit_json_path": str(strategy_audit.get("json_path", "") or ""),
+        "strategy_audit_html_path": str(strategy_audit.get("html_path", "") or ""),
     }
     _write_json(pack_dir / "run_manifest.json", manifest)
     return manifest
@@ -1318,7 +1497,16 @@ def _run_summary_phase(
             "result_payload": {},
         }
     try:
-        manifest = _build_daily_pack(config=config, trade_date=trade_date, profile=profile, cycle_state=cycle_state)
+        current_cycle_state = _ensure_cycle_state(config, trade_date, profile)
+        intraday_refresh = _run_intraday_state_refresh(config=config, trade_date=trade_date, source_phase="summary", cycle_state=current_cycle_state)
+        manifest = _build_daily_pack(config=config, trade_date=trade_date, profile=profile, cycle_state=current_cycle_state)
+        if intraday_refresh.get("ran", False):
+            manifest["intraday_state_machine"] = intraday_refresh
+        publish_result = _run_audit_site_publish(config=config, trade_date=trade_date, report_dir=Path(str(manifest.get("pack_dir", "") or "")).resolve())
+        if publish_result.get("ran", False):
+            manifest["audit_site_publish"] = publish_result
+        if publish_result.get("ran", False) and not publish_result.get("ok", False) and not publish_result.get("fail_open", True):
+            raise RuntimeError(publish_result.get("message", "") or "audit_site_publish_failed")
         text = (
             f"summary_success trade_date={trade_date} "
             f"release_id={manifest.get('release_id', '')} "
@@ -1400,6 +1588,14 @@ def _mark_phase_complete(
         state["summary_pack_dir"] = str(phase_result["result_payload"].get("pack_dir", "") or "")
     state["current_phase"] = ""
     _save_cycle_state(config, state)
+    intraday_refresh = _run_intraday_state_refresh(config=config, trade_date=trade_date, source_phase=phase_name, cycle_state=state)
+    if intraday_refresh.get("ran", False):
+        phase_entry = dict(state.get("phases", {}).get(phase_name, {}) or {})
+        phase_entry["intraday_state_machine"] = intraday_refresh
+        state["phases"][phase_name] = phase_entry
+        if isinstance(intraday_refresh.get("manifest"), dict):
+            state["latest_intraday_state_manifest"] = dict(intraday_refresh.get("manifest", {}) or {})
+        _save_cycle_state(config, state)
     return state
 
 
@@ -1521,7 +1717,7 @@ def _run_phase(
         if phase_name in {"afternoon_execution", "afternoon_shadow"}:
             midday_entry = dict(cycle_state.get("phases", {}).get("midday_review", {}) or {})
             midday_status = str(midday_entry.get("status", "") or "")
-            midday_plan = _phase_execution_plan(cycle_state, phase_name)
+            midday_plan = _phase_execution_plan(config, cycle_state, phase_name)
             if midday_status != "success":
                 result = {
                     "status": "skipped",
