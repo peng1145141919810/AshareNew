@@ -53,17 +53,79 @@
     - `9` `.csproj` files
     - `1` `.sln` file
 - Migration-assessment scan baseline:
-  - Python files scanned: `178`
-  - runtime Python lines scanned: `23317`
+  - current workspace code files scanned:
+    - `.py`: `1405`
+    - `.cs`: `94`
+    - total code files: `1499`
+  - current workspace code lines scanned:
+    - `.py`: `474049`
+    - `.cs`: `4943`
+    - total code lines: `478992`
 
 ## Latest Stable Snapshot
-- Snapshot date: `2026-03-26`
+- Snapshot date: `2026-03-30`
 - Workspace operator mirror: `F:\quant_data\AshareC#\launch_canonical.py`
 - Workspace trade-clock service mirror: `F:\quant_data\AshareC#\trade_clock_service.py`
 - Workspace business root mirror: `F:\quant_data\AshareC#\main_research_runner.py`
 - Current live operator repo still: `F:\quant_data\Ashare`
 - Default mode: `integrated_supervisor`
 - Default profile: `quick_test`
+- Source-truth governance:
+  - from `2026-03-30` onward, no new field may enter a production or canonical table unless its source class is explicitly labeled as one of:
+    - `official_truth`
+    - `exchange_truth`
+    - `issuer_disclosure_truth`
+    - `derived_from_truth`
+  - any field based on heuristic extraction, proxy logic, or model inference must not be written into a truth-like canonical field name or used as a final index/signal input by default
+  - proxy and inferred fields are allowed only if they are:
+    - clearly named as proxy/inferred/research-only
+    - stored outside the truth layer
+    - documented with source lineage before use
+- Immediate operator rule:
+  - before adding or backfilling any new dataset, first produce a field-level source map and confirm whether each field is free-official, free-nonofficial, or paid-required
+- Current approved source hierarchy:
+  - tier 1:
+    - PRC regulator / exchange / official statistics / issuer disclosure platforms
+  - tier 2:
+    - exchange-owned or regulator-designated service platforms
+  - tier 3:
+    - commercial vendors used only when tier 1/2 cannot provide the required field with sufficient truth quality
+- Current budget constraint:
+  - default future work must assume:
+    - no Wind
+    - no iFinD
+    - no CSMAR
+    - no exchange bulk license purchases
+  - affordable paid fallback currently means Tushare only, with present `2000` points and possible future `8000` points
+  - current standalone affordable update bundle:
+    - script: `F:\quant_data\AshareC#\scripts\update_affordable_data_bundle.py`
+    - sqlite target: `F:\quant_data\AshareC#\data\sql_store\affordable_data_v1.sqlite3`
+    - snapshot root: `F:\quant_data\AshareC#\data\affordable_feeds\latest`
+    - current formal write-in status as of `2026-03-30 22:58`:
+      - `stock_basic`: `5815`
+      - `daily`: `16435`
+      - `adj_factor`: `16485`
+      - `daily_basic`: `16435`
+      - `forecast`: `29`
+      - `express`: `70`
+      - `dividend`: `738`
+      - `stk_holdertrade`: `746`
+      - `ggt_daily`: `2`
+      - `moneyflow_hsgt`: `3`
+      - `hk_hold`: `1838`
+      - `margin`: `6`
+      - `margin_detail`: `8658`
+      - `moneyflow`: `15532`
+      - `stk_limit`: `22544`
+      - `customs_summary`: `2`
+  - affordable bundle hard limitations:
+    - it is a standalone low-cost update layer, not the canonical truth store
+    - current default run only covers low-cost updateable sources and does not include the previously deleted heavy non-price pipeline
+    - `customs_summary` is summary-only from `gov.cn`, not customs detail tables
+    - analyst consensus / `expectation_revision_daily` is still not implemented under the current `2000`-point Tushare tier
+    - `fina_indicator` is supported only as targeted refresh with explicit `--ts-code`, not full-universe default ingestion
+    - industry-level price / inventory / warehouse-receipt / operating-rate factor layer is still source-discovery stage and not yet materialized into SQL tables
+    - announcement / contract / backlog / tender raw sources are identified, but structured fact-layer ingestion is still pending
 - Formal run-trace root:
   - `F:\quant_data\AshareC#\outputs\canonical_runs`
 - Root layout note:
@@ -201,6 +263,7 @@
   - `python F:\quant_data\AshareC#\launch_canonical.py --mode execution_only --profile quick_test --execution-mode precision --precision-trade off --gate-only`
   - `python F:\quant_data\AshareC#\launch_canonical.py --mode execution_only --profile quick_test --execution-mode precision --precision-trade on`
   - `python F:\quant_data\AshareC#\launch_canonical.py --mode execution_only --profile daily_production --execution-mode precision --precision-trade on --execution-namespace <morning_namespace> --allow-unfinished-orders-reconcile on --ignore-market-panic-reduce-only on`
+  - `C:\Users\Administrator\PyCharmMiscProject\.venv\Scripts\python.exe F:\quant_data\AshareC#\scripts\update_affordable_data_bundle.py`
   - `python F:\quant_data\AshareC#\trade_clock_service.py --profile daily_production --once`
   - `powershell -ExecutionPolicy Bypass -File F:\quant_data\AshareC#\scripts\start_trade_clock.ps1 -Profile daily_production`
   - `powershell -ExecutionPolicy Bypass -File F:\quant_data\AshareC#\scripts\stop_trade_clock.ps1`
@@ -975,6 +1038,42 @@
 - OpenAI upstream network resets can still happen occasionally; the client now retries transient failures and auto-drops unsupported `reasoning.effort`.
 - Tushare news can still return zero rows when upstream quota is exhausted even after local quota guarding.
 - V5.1 runtime exposes sparse heartbeat artifacts while a cycle is running; operators often need to infer progress from candidate file timestamps.
+- The repo previously tolerated research-side proxy features being shaped too similarly to truth tables; future work must keep truth fields and proxy/research fields physically and semantically separated.
+- For several desired datasets, especially analyst consensus / EPS revision history and licensed historical exchange data, free official sources may be incomplete or unavailable; do not silently substitute scraped or heuristic proxies into canonical truth fields.
+- The current affordable bundle intentionally writes into `affordable_data_v1.sqlite3` instead of `research_data_v1.sqlite3`; until field lineage and source contracts are finalized, do not treat those rows as canonical production truth.
+- `affordable_data_v1.sqlite3` currently contains mostly recent-window refreshes for daily-style datasets and not full-history backfills.
+- `customs_summary` in the affordable bundle is sourced from official `gov.cn` release pages and therefore only covers national summary statements, not `hs_code / region / amount / volume` detail tables.
+- `forecast`, `express`, `dividend`, and `stk_holdertrade` are now cheaply updateable, but contract-announcement, in-hand-order, and tender facts still require text extraction from CNINFO / exchange / procurement pages and are not yet landed into formal SQL fact tables.
+- Low-cost commodity and industrial-factor coverage remains partial: Tushare already exposes futures and warehouse-receipt style data, but broad free coverage for industry spot prices, social inventory, and operating-rate series is still incomplete.
+
+## Data Source Governance
+- Canonical rule:
+  - every canonical field must carry one source class and one primary upstream authority before implementation.
+- Allowed source classes:
+  - `official_truth`
+  - `exchange_truth`
+  - `issuer_disclosure_truth`
+  - `derived_from_truth`
+  - `research_proxy`
+  - `model_inferred`
+- Hard constraints:
+  - `research_proxy` and `model_inferred` are forbidden in canonical truth tables.
+  - `research_proxy` and `model_inferred` are forbidden from being named as if they were official indices, consensus values, or exchange facts.
+  - if a required field lacks a trustworthy free source, leave the field absent or mark the dataset blocked; do not fill with heuristics by default.
+- Minimum documentation before shipping a dataset:
+  - field name
+  - upstream source URL or contract
+  - source class
+  - refresh cadence
+  - licensing status:
+    - free official
+    - free but nonofficial
+    - paid required
+  - whether the field is raw truth or a deterministic derivation from truth
+- Current working sourcing matrix:
+  - see `F:\quant_data\AshareC#\docs\DATA_SOURCE_GOVERNANCE.md`
+  - affordable implementation roadmap:
+    - `F:\quant_data\AshareC#\docs\AFFORDABLE_SOURCE_ROADMAP.md`
 - The new local evidence-card, review-router, runtime-explainer, and V5-review layers are additive sidecars; if local Ollama is unavailable, they now fail fast and their artifacts can be empty or stale without blocking the main chain.
 - The deepened three-mechanism router still uses a hand-curated seed pool, not a full-market automatic stock master.
 - The current event taxonomy and mapping rules are intentionally conservative and still vulnerable to routing edge cases; the new three-mechanism modules are structurally complete but not yet production-grade in coverage.
@@ -1017,6 +1116,10 @@
 - Add message-derived features deeper into downstream data construction if they are not already present.
 
 ## Decision Log
+- Decision: no future canonical data backfill may use proxy, heuristic, or inferred values as substitute truth without explicit user sign-off.
+  - Reason: the user requires field-level authenticity and does not want research proxies to masquerade as final or official indices.
+  - Alternatives considered: continue using provisional proxy fields with naming caveats, or silently mix truth and research features in one layer.
+  - Consequence: some datasets will remain intentionally incomplete until an official or otherwise defensible upstream source is secured.
 - Decision: `launch_canonical.py` is the formal operator entry while `main_research_runner.py` remains the wrapped business root.
   - Reason: the project needed a single operator-facing entry without rewriting the existing business chain.
   - Alternatives considered: keep `main_research_runner.py` as both operator entry and business root, or refactor the core call chain directly.
@@ -4194,3 +4297,216 @@ All timestamps below are local file write times in the current workspace and sho
   - No scheduler phase, profile, or C# control-plane contract changed in this step.
 - Rollback:
   - Revert the two touched execution files if needed.
+
+### 2026-03-30 16:10
+- Type:
+  - `data_governance`
+- Scope:
+  - `source_truth_policy`
+- Files:
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+  - `F:\quant_data\AshareC#\docs\DATA_SOURCE_GOVERNANCE.md`
+- Change:
+  - Elevated field-level source authenticity into a stable operator rule.
+  - Added a source-governance section and a first sourcing matrix covering:
+    - exchange market data
+    - issuer disclosures
+    - official macro data
+    - customs aggregate data
+    - analyst-consensus gaps
+  - Explicitly blocked future canonical truth backfills from using heuristic, proxy, or model-inferred substitutes without explicit user sign-off.
+- Impact:
+  - Future data ingestion work must document source class and licensing before implementation.
+  - Some desired datasets will intentionally remain absent until an official or commercially licensed source is secured.
+- Validation:
+  - Manual review of the updated stable sections and sourcing matrix.
+  - Online source check against official / vendor websites during this session.
+- Compatibility:
+  - Governance and documentation change only.
+  - No runtime entrypoint or execution behavior changed in this step.
+- Rollback:
+  - Revert the updated dev log and sourcing document if the project intentionally chooses a looser data-quality policy later.
+
+### 2026-03-30 16:45
+- Type:
+  - `source_investigation`
+- Scope:
+  - `customs_data`
+- Files:
+  - `F:\quant_data\AshareC#\tools\probe_customs_source.py`
+  - `F:\quant_data\AshareC#\docs\CUSTOMS_SOURCE_FINDINGS.md`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Confirmed through the National Bureau of Statistics methodology note that `stats.customs.gov.cn` is the official free monthly customs query endpoint and is intended to expose 2017+ formal monthly data by country, commodity code, trade mode, and province.
+  - Added a repeatable local diagnostic probe for customs source accessibility.
+  - Confirmed current environment behavior:
+    - direct HTTP requests to `stats.customs.gov.cn` hit a `412` JS challenge page
+    - HTTPS requests hit gateway failure in this environment
+    - headless-browser probing acquires anti-bot cookies but still does not yield usable query content
+    - `online.customs.gov.cn` remains reachable but is not a substitute for successful stats-query ingestion
+- Impact:
+  - Customs aggregate monthly data is now classified as:
+    - official source exists
+    - automatic ingestion currently blocked by access mechanics
+  - Future work should prefer:
+    - manual browser export from the official stats site
+    - or validated non-headless browser automation
+    - rather than using nonofficial substitutes
+- Validation:
+  - `python F:\quant_data\AshareC#\tools\probe_customs_source.py`
+  - Selenium/browser probe and direct request probe both executed locally in this session.
+- Compatibility:
+  - Diagnostic and documentation only.
+  - No production runtime path changed here.
+- Rollback:
+  - Remove the probe script and findings note if a different official customs ingestion path supersedes them later.
+
+### 2026-03-30 17:05
+- Type:
+  - `source_investigation`
+- Scope:
+  - `customs_direct_release_path`
+- Files:
+  - `F:\quant_data\AshareC#\docs\CUSTOMS_SOURCE_FINDINGS.md`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Tested the direct-release path that bypasses `stats.customs.gov.cn` by targeting official English customs statistics pages under `english.customs.gov.cn/Statics/...`.
+  - Confirmed that search-engine indexed official pages exist for monthly trade tables and quarterly trade reviews, which means an official direct-release path likely exists in principle.
+  - Confirmed that this machine still receives gateway failure when directly requesting those official English stat pages, so the path is not yet locally automatable.
+- Impact:
+  - Customs sourcing now has two confirmed official paths:
+    - online query path
+    - direct-release stat-page path
+  - Both remain blocked in the current environment for unattended local ingestion.
+- Validation:
+  - Targeted direct-request probes against `english.customs.gov.cn/Statics/...`
+  - Search-engine verification of indexed official `Statics` pages
+- Compatibility:
+  - Documentation only.
+- Rollback:
+  - Remove this note if a later session fully validates one direct-release path and supersedes the blocked status.
+
+### 2026-03-30 17:30
+- Type:
+  - `source_implementation`
+- Scope:
+  - `customs_summary_alternative_source`
+- Files:
+  - `F:\quant_data\AshareC#\tools\fetch_customs_summary_gov_cn.py`
+  - `F:\quant_data\AshareC#\docs\CUSTOMS_SOURCE_FINDINGS.md`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Switched the first practical customs implementation path from the blocked query site to `gov.cn` official release pages.
+  - Added a lightweight extractor for customs monthly / cumulative summary fields from government release pages.
+  - Confirmed the alternative source is suitable for a summary truth layer but not for full customs detail tables.
+- Impact:
+  - Customs data is no longer fully blocked:
+    - summary-level official truth can now be fetched automatically from `gov.cn`
+  - Detailed customs tables remain blocked pending a stable official detailed-source path.
+- Validation:
+  - `python F:\quant_data\AshareC#\tools\fetch_customs_summary_gov_cn.py`
+  - `python -m py_compile F:\quant_data\AshareC#\tools\fetch_customs_summary_gov_cn.py`
+- Compatibility:
+  - Additive tool only.
+  - No production runtime path changed yet.
+- Rollback:
+  - Remove the tool and the summary-source note if the project later standardizes on a different official customs source.
+
+### 2026-03-30 17:45
+- Type:
+  - `source_governance`
+- Scope:
+  - `affordable_data_plan`
+- Files:
+  - `F:\quant_data\AshareC#\docs\AFFORDABLE_SOURCE_ROADMAP.md`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Formalized an affordable-source plan for this repo under the user’s budget constraint.
+  - Default future sourcing now assumes:
+    - free official sources first
+    - Tushare as the only realistic paid supplement
+    - no dependence on commercial terminal/databank products
+  - Captured the practical split between:
+    - what is usable now with Tushare `2000` points
+    - what becomes available after Tushare `8000` points, especially `report_rc`
+- Impact:
+  - Future implementation work should bias toward CNINFO/SSE/SZSE/gov.cn plus Tushare instead of repeatedly designing around unaffordable commercial datasets.
+  - Analyst-forecast work remains constrained until Tushare is upgraded or another affordable source is validated.
+- Validation:
+  - Manual review of the roadmap and stable governance section.
+  - Cross-checked against the user-provided budget constraint in this session.
+- Compatibility:
+  - Documentation and planning only.
+- Rollback:
+  - Revert the roadmap and stable-note additions if the project budget or procurement assumptions change later.
+
+### 2026-03-30 22:40
+- Type:
+  - `source_implementation`
+- Scope:
+  - `affordable_update_bundle`
+- Files:
+  - `F:\quant_data\AshareC#\scripts\update_affordable_data_bundle.py`
+  - `F:\quant_data\AshareC#\docs\AFFORDABLE_UPDATEABLE_SOURCES.md`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Added a standalone affordable-source updater that writes into its own SQLite store and emits per-dataset progress heartbeats.
+  - The current bundle supports these updateable datasets:
+    - `stock_basic`
+    - `daily`
+    - `adj_factor`
+    - `daily_basic`
+    - `forecast`
+    - `express`
+    - `dividend`
+    - `stk_holdertrade`
+    - `ggt_daily`
+    - `moneyflow_hsgt`
+    - `hk_hold`
+    - `margin`
+    - `margin_detail`
+    - `moneyflow`
+    - `stk_limit`
+    - `customs_summary`
+  - Added targeted optional support for `fina_indicator` when explicit `--ts-code` values are supplied.
+  - The updater now stores:
+    - normalized metadata rows in `affordable_dataset_rows`
+    - run history in `affordable_source_runs`
+    - latest CSV snapshots under `data\affordable_feeds\latest`
+- Impact:
+  - The repo now has a low-cost, repeatable ingestion path for many missing updateable sources without reintroducing the deleted heavy non-price pipeline.
+  - Default usage is intentionally separate from `research_data_v1.sqlite3` so source expansion can continue without contaminating the main canonical store.
+- Validation:
+  - `python -m py_compile F:\quant_data\AshareC#\scripts\update_affordable_data_bundle.py`
+  - `C:\Users\Administrator\PyCharmMiscProject\.venv\Scripts\python.exe F:\quant_data\AshareC#\scripts\update_affordable_data_bundle.py --db-path F:\quant_data\AshareC#\data\sql_store\affordable_data_test.sqlite3 --snapshot-root F:\quant_data\AshareC#\data\affordable_feeds\test_latest --dataset stock_basic --dataset daily --dataset forecast --dataset customs_summary --start-date 20260327 --end-date 20260327 --ann-start-date 20260327 --ann-end-date 20260327`
+  - `C:\Users\Administrator\PyCharmMiscProject\.venv\Scripts\python.exe F:\quant_data\AshareC#\scripts\update_affordable_data_bundle.py --db-path F:\quant_data\AshareC#\data\sql_store\affordable_data_test.sqlite3 --snapshot-root F:\quant_data\AshareC#\data\affordable_feeds\test_latest --dataset hk_hold --dataset moneyflow_hsgt --dataset margin --start-date 20260327 --end-date 20260327`
+- Compatibility:
+  - Additive only.
+  - No formal operator entrypoint or integrated scheduler behavior changed in this step.
+- Rollback:
+  - Remove the bundle script, the guide document, and this log entry if the project later standardizes on a different ingestion surface.
+
+### 2026-03-30 23:10
+- Type:
+  - `source_operations`
+- Scope:
+  - `affordable_bundle_formal_writein`
+- Files:
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+  - `F:\quant_data\AshareC#\data\sql_store\affordable_data_v1.sqlite3`
+- Change:
+  - Ran the standalone affordable update bundle against the formal low-cost SQLite target and refreshed the stable section with current row counts.
+  - Refreshed the stable scan baseline to reflect current whole-workspace code size instead of the older inherited runtime-only estimate.
+  - Added explicit stable limitations for the affordable bundle so future sessions do not confuse it with canonical truth coverage.
+- Impact:
+  - The repo now has a real persisted low-cost data bundle under `affordable_data_v1.sqlite3`.
+  - Future work on announcements, contracts, tender orders, industrial factors, and expectation sources can build incrementally on this standalone store without touching `research_data_v1.sqlite3`.
+- Validation:
+  - `C:\Users\Administrator\PyCharmMiscProject\.venv\Scripts\python.exe F:\quant_data\AshareC#\scripts\update_affordable_data_bundle.py`
+  - SQLite row-count probe on `affordable_dataset_rows`
+  - Process-level confirmation that the updater completed and exited
+- Compatibility:
+  - Additive data-store refresh only.
+  - No canonical production store schema or operator entrypoint changed.
+- Rollback:
+  - Delete `affordable_data_v1.sqlite3` if this low-cost bundle needs to be rebuilt from scratch later; code/documentation rollback remains separate.
