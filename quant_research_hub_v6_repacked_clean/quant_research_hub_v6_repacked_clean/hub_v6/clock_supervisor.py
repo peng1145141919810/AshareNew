@@ -16,6 +16,7 @@ from .config_utils import ensure_dir, load_config
 from .execution_manager import assess_execution_gate
 from .portfolio_release import load_latest_release, load_release_by_id
 from .safety_guard import assess_system_safety
+from .sql_store import ensure_schema, load_runtime_json_artifact, resolve_sqlite_path, sql_store_enabled, sqlite_connection, upsert_runtime_json_artifact
 from .trading_clock import clock_now, is_trading_day, next_trading_day, trading_clock_snapshot
 
 PHASE_SEQUENCE = (
@@ -101,6 +102,17 @@ def _lock_path(config: Dict[str, Any], lock_name: str) -> Path:
 
 def _load_json(path: Path, default: Dict[str, Any] | None = None) -> Dict[str, Any]:
     fallback = dict(default or {})
+    config = getattr(_load_json, "_active_config", None)
+    if isinstance(config, dict) and sql_store_enabled(config):
+        db_path = resolve_sqlite_path(config)
+        if db_path.exists():
+            try:
+                with sqlite_connection(db_path) as conn:
+                    payload = load_runtime_json_artifact(conn, path)
+                if isinstance(payload, dict) and payload:
+                    return payload
+            except Exception:
+                pass
     if not path.exists():
         return fallback
     try:
@@ -110,6 +122,11 @@ def _load_json(path: Path, default: Dict[str, Any] | None = None) -> Dict[str, A
 
 
 def _write_json(path: Path, payload: Dict[str, Any]) -> Path:
+    config = getattr(_write_json, "_active_config", None)
+    if isinstance(config, dict) and sql_store_enabled(config):
+        with sqlite_connection(resolve_sqlite_path(config)) as conn:
+            ensure_schema(conn)
+            upsert_runtime_json_artifact(conn, path, payload)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -185,6 +202,8 @@ def _empty_phase_state() -> Dict[str, Any]:
 
 
 def _ensure_cycle_state(config: Dict[str, Any], trade_date: str, profile: str) -> Dict[str, Any]:
+    _load_json._active_config = config
+    _write_json._active_config = config
     path = _phase_state_path(config, trade_date)
     state = _load_json(path, default={})
     phases = dict(state.get("phases", {}) or {})
@@ -210,6 +229,7 @@ def _ensure_cycle_state(config: Dict[str, Any], trade_date: str, profile: str) -
 
 
 def _save_cycle_state(config: Dict[str, Any], state: Dict[str, Any]) -> Path:
+    _write_json._active_config = config
     state["updated_at"] = clock_now().isoformat(timespec="seconds")
     return _write_json(_phase_state_path(config, str(state.get("date", "") or "")), state)
 
@@ -416,6 +436,126 @@ def _subprocess_phase(
         }
     finally:
         _release_lock(config, _phase_specs(config)[phase_name].lock_name)
+
+
+def _affordable_bundle_cfg(config: Dict[str, Any]) -> Dict[str, Any]:
+    return dict(config.get("affordable_data_bundle", {}) or {})
+
+
+def _auxiliary_runtime_log_paths(config: Dict[str, Any], trade_date: str, name: str) -> Dict[str, Path]:
+    root = _phase_runtime_dir(config, trade_date)
+    return {
+        "root": root,
+        "stdout": root / f"{name}.stdout.log",
+        "stderr": root / f"{name}.stderr.log",
+    }
+
+
+def _subprocess_auxiliary(
+    config: Dict[str, Any],
+    trade_date: str,
+    name: str,
+    command: list[str],
+    timeout_minutes: int,
+) -> Dict[str, Any]:
+    logs = _auxiliary_runtime_log_paths(config, trade_date, name)
+    timed_out = False
+    process: subprocess.Popen[str] | None = None
+    with logs["stdout"].open("w", encoding="utf-8") as stdout_handle, logs["stderr"].open("w", encoding="utf-8") as stderr_handle:
+        process = subprocess.Popen(
+            command,
+            cwd=str(_repo_root()),
+            stdout=stdout_handle,
+            stderr=stderr_handle,
+            text=True,
+        )
+        deadline = time.time() + max(int(timeout_minutes or 0), 1) * 60
+        while True:
+            return_code = process.poll()
+            if return_code is not None:
+                break
+            if time.time() >= deadline:
+                timed_out = True
+                process.terminate()
+                try:
+                    process.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=10)
+                break
+            time.sleep(5)
+    stdout_tail = _tail_lines(logs["stdout"], int(_scheduler_cfg(config).get("log_tail_lines", 30) or 30))
+    stderr_tail = _tail_lines(logs["stderr"], int(_scheduler_cfg(config).get("log_tail_lines", 30) or 30))
+    stdout_text = logs["stdout"].read_text(encoding="utf-8", errors="ignore") if logs["stdout"].exists() else ""
+    return_code = process.returncode if process is not None else None
+    payload: Dict[str, Any] = {}
+    try:
+        first = stdout_text.find("{")
+        last = stdout_text.rfind("}")
+        if first >= 0 and last > first:
+            payload = json.loads(stdout_text[first : last + 1])
+    except Exception:
+        payload = {}
+    error_message = ""
+    if timed_out:
+        error_message = f"timeout_after_{int(timeout_minutes or 0)}m"
+    elif return_code not in (0, None):
+        error_message = "\n".join(stderr_tail[-3:]).strip() or f"child_exit_{return_code}"
+    return {
+        "ok": (not timed_out) and return_code == 0,
+        "timed_out": timed_out,
+        "return_code": return_code,
+        "error_message": error_message,
+        "stdout_log": str(logs["stdout"]),
+        "stderr_log": str(logs["stderr"]),
+        "stdout_tail": stdout_tail,
+        "stderr_tail": stderr_tail,
+        "result_payload": payload,
+        "warning_count": _count_warning_lines(list(stdout_tail) + list(stderr_tail)),
+    }
+
+
+def _run_affordable_data_refresh(config: Dict[str, Any], trade_date: str) -> Dict[str, Any]:
+    bundle_cfg = _affordable_bundle_cfg(config)
+    if not bool(bundle_cfg.get("enabled", True)) or not bool(bundle_cfg.get("run_before_research", True)):
+        return {"enabled": False, "ran": False, "ok": True, "message": "disabled"}
+    script_path = Path(str(bundle_cfg.get("script_path", "") or "")).resolve()
+    if not script_path.exists():
+        return {"enabled": True, "ran": False, "ok": False, "message": f"missing_script:{script_path}"}
+    command = [
+        sys.executable,
+        str(script_path),
+        "--db-path",
+        str(Path(str(bundle_cfg.get("sqlite_path", "") or "")).resolve()),
+        "--snapshot-root",
+        str(Path(str(bundle_cfg.get("snapshot_root", "") or "")).resolve()),
+        "--daily-lookback",
+        str(int(bundle_cfg.get("daily_lookback", 3) or 3)),
+        "--announcement-lookback",
+        str(int(bundle_cfg.get("announcement_lookback", 30) or 30)),
+    ]
+    for dataset in list(bundle_cfg.get("datasets", []) or []):
+        text = str(dataset or "").strip()
+        if text:
+            command.extend(["--dataset", text])
+    raw = _subprocess_auxiliary(
+        config=config,
+        trade_date=trade_date,
+        name="affordable_data_refresh",
+        command=command,
+        timeout_minutes=int(bundle_cfg.get("timeout_minutes", 120) or 120),
+    )
+    return {
+        "enabled": True,
+        "ran": True,
+        "ok": bool(raw.get("ok", False)),
+        "fail_open": bool(bundle_cfg.get("fail_open", True)),
+        "message": str(raw.get("error_message", "") or ""),
+        "stdout_log": str(raw.get("stdout_log", "") or ""),
+        "stderr_log": str(raw.get("stderr_log", "") or ""),
+        "warning_count": int(raw.get("warning_count", 0) or 0),
+        "result_payload": dict(raw.get("result_payload", {}) or {}),
+    }
 
 def _latest_release_safe(config: Dict[str, Any]) -> Dict[str, Any]:
     try:
@@ -1334,6 +1474,7 @@ def _run_phase(
     cycle_state = _adopt_external_release_for_trade_date(config, trade_date, profile)
     specs = _phase_specs(config)
     _mark_phase_running(config, trade_date, profile, phase_name, scheduled_for=scheduled_at.isoformat(timespec="seconds"))
+    affordable_refresh: Dict[str, Any] = {}
     if phase_name == "release":
         research_status = str(dict(cycle_state.get("phases", {}).get("research", {}) or {}).get("status", "") or "")
         if research_status in {"failed", "timeout"}:
@@ -1414,6 +1555,23 @@ def _run_phase(
     if phase_name == "summary":
         result = _run_summary_phase(config=config, trade_date=trade_date, profile=profile, cycle_state=cycle_state)
         return _mark_phase_complete(config, trade_date, profile, phase_name, result)
+    if phase_name == "research":
+        affordable_refresh = _run_affordable_data_refresh(config=config, trade_date=trade_date)
+        if affordable_refresh.get("ran", False) and not affordable_refresh.get("ok", False) and not affordable_refresh.get("fail_open", True):
+            result = {
+                "status": "failed",
+                "return_code": None,
+                "release_id": "",
+                "warning_count": int(affordable_refresh.get("warning_count", 0) or 0),
+                "error_message": str(affordable_refresh.get("message", "") or "affordable_data_refresh_failed"),
+                "stdout_log": str(affordable_refresh.get("stdout_log", "") or ""),
+                "stderr_log": str(affordable_refresh.get("stderr_log", "") or ""),
+                "stdout_tail": [],
+                "stderr_tail": [],
+                "result_status": "affordable_data_refresh_failed",
+                "result_payload": {"affordable_data_refresh": affordable_refresh},
+            }
+            return _mark_phase_complete(config, trade_date, profile, phase_name, result)
     raw = _subprocess_phase(
         config=config,
         trade_date=trade_date,
@@ -1422,6 +1580,12 @@ def _run_phase(
         timeout_minutes=specs[phase_name].timeout_minutes,
     )
     result = _normalise_phase_result(config, phase_name, trade_date, raw)
+    if phase_name == "research":
+        payload = dict(result.get("result_payload", {}) or {})
+        payload["affordable_data_refresh"] = affordable_refresh
+        result["result_payload"] = payload
+        if affordable_refresh.get("ran", False) and not affordable_refresh.get("ok", False):
+            result["warning_count"] = int(result.get("warning_count", 0) or 0) + int(affordable_refresh.get("warning_count", 0) or 0) + 1
     return _mark_phase_complete(config, trade_date, profile, phase_name, result)
 
 
@@ -1501,6 +1665,8 @@ def run_trade_clock(
     once: bool = False,
 ) -> Dict[str, Any]:
     config = load_config(config_path)
+    _load_json._active_config = config
+    _write_json._active_config = config
     scheduler = _scheduler_cfg(config)
     sleep_seconds = int(poll_seconds if poll_seconds is not None else dict(config.get("trade_clock", {}) or {}).get("poll_seconds", 30) or 30)
     _sync_runtime_state(
@@ -1516,6 +1682,8 @@ def run_trade_clock(
     )
     while True:
         config = load_config(config_path)
+        _load_json._active_config = config
+        _write_json._active_config = config
         now = clock_now(str(dict(config.get("trade_clock", {}) or {}).get("timezone", "Asia/Shanghai") or "Asia/Shanghai"))
         _clear_owned_locks(config)
         heartbeat = _scheduler_heartbeat_state(config=config, profile=profile, now=now)

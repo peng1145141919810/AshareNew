@@ -250,6 +250,9 @@ switch (command)
         Console.WriteLine($"uses_legacy_fallback: {registry.UsesLegacyDataFallback}");
         Console.WriteLine($"launch_canonical_path: {registry.LaunchCanonicalPath}");
         Console.WriteLine($"trade_clock_service_path: {registry.TradeClockServicePath}");
+        Console.WriteLine($"affordable_data_bundle_script_path: {registry.AffordableDataBundleScriptPath}");
+        Console.WriteLine($"affordable_sql_store_path: {registry.AffordableSqlStorePath}");
+        Console.WriteLine($"affordable_snapshot_root: {registry.AffordableSnapshotRoot}");
         break;
     }
     case "authority":

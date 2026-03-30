@@ -12,10 +12,14 @@ public sealed record PathRegistry
     public string LaunchCanonicalPath { get; init; } = string.Empty;
     public string MainResearchRunnerPath { get; init; } = string.Empty;
     public string TradeClockServicePath { get; init; } = string.Empty;
+    public string AffordableDataBundleScriptPath { get; init; } = string.Empty;
     public string ExternalTradeReleaseRoot { get; init; } = string.Empty;
     public string ExternalTradeClockRoot { get; init; } = string.Empty;
     public string ExternalOmsRoot { get; init; } = string.Empty;
     public string ExternalDataRoot { get; init; } = string.Empty;
+    public string ResearchSqlStorePath { get; init; } = string.Empty;
+    public string AffordableSqlStorePath { get; init; } = string.Empty;
+    public string AffordableSnapshotRoot { get; init; } = string.Empty;
     public string LegacyDataRoot { get; init; } = string.Empty;
     public bool UsesLegacyDataFallback { get; init; }
 
@@ -48,10 +52,14 @@ public sealed record PathRegistry
             LaunchCanonicalPath = Path.Combine(normalizedRoot, "launch_canonical.py"),
             MainResearchRunnerPath = Path.Combine(normalizedRoot, "main_research_runner.py"),
             TradeClockServicePath = Path.Combine(normalizedRoot, "trade_clock_service.py"),
+            AffordableDataBundleScriptPath = Path.Combine(normalizedRoot, "scripts", "update_affordable_data_bundle.py"),
             ExternalTradeReleaseRoot = Path.Combine(externalDataRoot, "trade_release_v1"),
             ExternalTradeClockRoot = Path.Combine(externalDataRoot, "trade_clock"),
             ExternalOmsRoot = Path.Combine(externalDataRoot, "live_execution_bridge", "oms_v1"),
             ExternalDataRoot = externalDataRoot,
+            ResearchSqlStorePath = Path.Combine(externalDataRoot, "sql_store", "research_data_v1.sqlite3"),
+            AffordableSqlStorePath = Path.Combine(externalDataRoot, "sql_store", "affordable_data_v1.sqlite3"),
+            AffordableSnapshotRoot = Path.Combine(externalDataRoot, "affordable_feeds", "latest"),
             LegacyDataRoot = legacyDataRoot,
             UsesLegacyDataFallback = !useLocalData
         };

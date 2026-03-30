@@ -64,6 +64,8 @@ def build_runtime_config() -> Dict[str, Any]:
             "industry_router_output_root": str(getattr(LS, "INDUSTRY_ROUTER_OUTPUT_ROOT", Path(LS.RESEARCH_ROOT) / "industry_router")),
             "technical_confirmation_root": str(getattr(LS, "TECHNICAL_CONFIRMATION_ROOT", Path(LS.RESEARCH_ROOT) / "technical_confirmation")),
             "oms_output_root": str(getattr(LS, "OMS_OUTPUT_ROOT", Path(LS.LIVE_EXECUTION_ROOT) / "oms_v1")),
+            "affordable_sqlite_path": str(getattr(LS, "AFFORDABLE_SQLITE_PATH", Path(LS.DATA_ROOT) / "sql_store" / "affordable_data_v1.sqlite3")),
+            "affordable_snapshot_root": str(getattr(LS, "AFFORDABLE_SNAPSHOT_ROOT", Path(LS.DATA_ROOT) / "affordable_feeds" / "latest")),
         },
         "providers": {
             "tushare": {
@@ -201,6 +203,42 @@ def build_runtime_config() -> Dict[str, Any]:
             "train_append_lookback_rows": LS.TRAIN_APPEND_LOOKBACK_ROWS,
             "train_append_prefix": LS.TRAIN_APPEND_PREFIX,
             "sync_tushare_missing_days": LS.SYNC_TUSHARE_MISSING_DAYS,
+        },
+        "affordable_data_bundle": {
+            "enabled": bool(getattr(LS, "ENABLE_AFFORDABLE_DATA_BUNDLE", True)),
+            "run_before_research": bool(getattr(LS, "AFFORDABLE_DATA_BUNDLE_RUN_BEFORE_RESEARCH", True)),
+            "fail_open": bool(getattr(LS, "AFFORDABLE_DATA_BUNDLE_FAIL_OPEN", True)),
+            "script_path": str(getattr(LS, "AFFORDABLE_DATA_BUNDLE_SCRIPT_PATH", Path(LS.PROJECT_ROOT).parents[1] / "scripts" / "update_affordable_data_bundle.py")),
+            "sqlite_path": str(getattr(LS, "AFFORDABLE_SQLITE_PATH", Path(LS.DATA_ROOT) / "sql_store" / "affordable_data_v1.sqlite3")),
+            "snapshot_root": str(getattr(LS, "AFFORDABLE_SNAPSHOT_ROOT", Path(LS.DATA_ROOT) / "affordable_feeds" / "latest")),
+            "daily_lookback": int(getattr(LS, "AFFORDABLE_DATA_BUNDLE_DAILY_LOOKBACK", 3) or 3),
+            "announcement_lookback": int(getattr(LS, "AFFORDABLE_DATA_BUNDLE_ANNOUNCEMENT_LOOKBACK", 30) or 30),
+            "timeout_minutes": int(getattr(LS, "AFFORDABLE_DATA_BUNDLE_TIMEOUT_MINUTES", 120) or 120),
+            "datasets": list(
+                getattr(
+                    LS,
+                    "AFFORDABLE_DATA_BUNDLE_DATASETS",
+                    [
+                        "stock_basic",
+                        "daily",
+                        "adj_factor",
+                        "daily_basic",
+                        "forecast",
+                        "express",
+                        "dividend",
+                        "stk_holdertrade",
+                        "ggt_daily",
+                        "moneyflow_hsgt",
+                        "hk_hold",
+                        "margin",
+                        "margin_detail",
+                        "moneyflow",
+                        "stk_limit",
+                        "customs_summary",
+                    ],
+                )
+                or []
+            ),
         },
         "portfolio_recommendation": {
             "enabled": LS.ENABLE_PORTFOLIO_RECOMMENDATION,

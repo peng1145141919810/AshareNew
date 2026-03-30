@@ -13,6 +13,14 @@
   - `F:\quant_data\AshareC#\data\sql_store\affordable_data_v1.sqlite3`
 - Default CSV snapshots:
   - `F:\quant_data\AshareC#\data\affordable_feeds\latest`
+- Daily automation:
+  - the trade clock research phase now triggers this bundle automatically before `research_only`
+  - runtime logs:
+    - `F:\quant_data\AshareC#\data\trade_clock\runtime\<trade_date>\affordable_data_refresh.stdout.log`
+    - `F:\quant_data\AshareC#\data\trade_clock\runtime\<trade_date>\affordable_data_refresh.stderr.log`
+  - behavior:
+    - default `fail_open`
+    - if low-cost refresh fails, research can continue unless the operator explicitly changes the setting to fail-closed
 
 ## Datasets Supported Now
 

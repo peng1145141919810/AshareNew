@@ -101,6 +101,12 @@
     - script: `F:\quant_data\AshareC#\scripts\update_affordable_data_bundle.py`
     - sqlite target: `F:\quant_data\AshareC#\data\sql_store\affordable_data_v1.sqlite3`
     - snapshot root: `F:\quant_data\AshareC#\data\affordable_feeds\latest`
+    - daily automation:
+      - the trade clock now runs the affordable bundle before the `research` phase by default
+      - runtime logs land under:
+        - `F:\quant_data\AshareC#\data\trade_clock\runtime\<trade_date>\affordable_data_refresh.stdout.log`
+        - `F:\quant_data\AshareC#\data\trade_clock\runtime\<trade_date>\affordable_data_refresh.stderr.log`
+      - default behavior is `fail_open`
     - current formal write-in status as of `2026-03-30 22:58`:
       - `stock_basic`: `5815`
       - `daily`: `16435`
@@ -126,6 +132,18 @@
     - `fina_indicator` is supported only as targeted refresh with explicit `--ts-code`, not full-universe default ingestion
     - industry-level price / inventory / warehouse-receipt / operating-rate factor layer is still source-discovery stage and not yet materialized into SQL tables
     - announcement / contract / backlog / tender raw sources are identified, but structured fact-layer ingestion is still pending
+  - three-strategy coverage assessment:
+    - strategy 1 `industry chain expectation gap`:
+      - partially ready
+      - industrial evidence sources now include tender, customs summary, futures, warehouse receipts, northbound/margin proxies, and announcement-driven evidence, but broad free coverage for spot price, social inventory, and operating-rate series is still incomplete
+    - strategy 2 `earnings expectation gap`:
+      - partially ready
+      - announcement / forecast / express / indicator inputs are available, but broad analyst-consensus revision data is still missing under current budget constraints
+    - strategy 3 `asset allocation / risk parity`:
+      - structurally ready earlier than the first two because it depends more on market-state and risk-control layers than on the missing hard datasets
+    - operator conclusion:
+      - current low-cost data is enough to start integrating all three strategies into the system skeleton
+      - current low-cost data is not enough to claim all three are fully completed or fully data-complete
 - Formal run-trace root:
   - `F:\quant_data\AshareC#\outputs\canonical_runs`
 - Root layout note:
@@ -1045,6 +1063,7 @@
 - `customs_summary` in the affordable bundle is sourced from official `gov.cn` release pages and therefore only covers national summary statements, not `hs_code / region / amount / volume` detail tables.
 - `forecast`, `express`, `dividend`, and `stk_holdertrade` are now cheaply updateable, but contract-announcement, in-hand-order, and tender facts still require text extraction from CNINFO / exchange / procurement pages and are not yet landed into formal SQL fact tables.
 - Low-cost commodity and industrial-factor coverage remains partial: Tushare already exposes futures and warehouse-receipt style data, but broad free coverage for industry spot prices, social inventory, and operating-rate series is still incomplete.
+- The trade clock now includes a pre-research affordable data refresh hook; it improves daily freshness for low-cost sources, but it is intentionally non-blocking by default and should not be mistaken for a canonical data-governance gate.
 
 ## Data Source Governance
 - Canonical rule:
@@ -4510,3 +4529,35 @@ All timestamps below are local file write times in the current workspace and sho
   - No canonical production store schema or operator entrypoint changed.
 - Rollback:
   - Delete `affordable_data_v1.sqlite3` if this low-cost bundle needs to be rebuilt from scratch later; code/documentation rollback remains separate.
+
+### 2026-03-30 23:20
+- Type:
+  - `automation_integration`
+- Scope:
+  - `daily_affordable_refresh_and_csharp_pathing`
+- Files:
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Pathing\PathRegistry.cs`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Program.cs`
+  - `F:\quant_data\AshareC#\docs\AFFORDABLE_UPDATEABLE_SOURCES.md`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Added a formal `affordable_data_bundle` runtime config section with dataset list, target paths, lookback windows, timeout, and fail-open behavior.
+  - Integrated the low-cost updater into the trade clock so the daily `research` phase runs an affordable data refresh first by default.
+  - Added dedicated runtime stdout/stderr logs for the pre-research affordable refresh.
+  - Exposed the affordable updater script path, SQL store path, and snapshot root through the C# path registry and CLI path dump.
+- Impact:
+  - Daily automation now keeps the low-cost source bundle fresher without requiring a separate manual command.
+  - The C# control-plane layer can now discover and surface the affordable data paths directly.
+  - Fail-open remains the default so low-cost-source problems do not hard-stop the formal research / release / execution schedule.
+- Validation:
+  - `C:\Users\Administrator\PyCharmMiscProject\.venv\Scripts\python.exe -m py_compile ...config_builder.py ...clock_supervisor.py ...update_affordable_data_bundle.py`
+  - direct helper probe of `_run_affordable_data_refresh(...)` with a small config and isolated probe SQLite target
+  - `dotnet build F:\quant_data\AshareC#\csharp_runtime_skeleton\Ashare.RuntimeSkeleton.sln -c Debug`
+- Compatibility:
+  - Additive runtime automation enhancement.
+  - Existing operator entrypoints remain unchanged.
+- Rollback:
+  - Disable `ENABLE_AFFORDABLE_DATA_BUNDLE` or set `AFFORDABLE_DATA_BUNDLE_RUN_BEFORE_RESEARCH = False` to stop the daily pre-research refresh without removing code.

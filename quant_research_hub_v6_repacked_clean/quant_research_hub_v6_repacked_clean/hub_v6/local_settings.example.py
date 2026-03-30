@@ -177,6 +177,30 @@ TRADE_CLOCK_SIMULATION_IGNORE_MARKET_PANIC_REDUCE_ONLY = True
 TRADE_CLOCK_SHADOW_IGNORE_MARKET_PANIC_REDUCE_ONLY = True
 TRADE_CLOCK_SIMULATION_ALLOW_UNFINISHED_ORDERS_RECONCILE = False
 TRADE_CLOCK_SHADOW_ALLOW_UNFINISHED_ORDERS_RECONCILE = False
+ENABLE_AFFORDABLE_DATA_BUNDLE = True
+AFFORDABLE_DATA_BUNDLE_RUN_BEFORE_RESEARCH = True
+AFFORDABLE_DATA_BUNDLE_FAIL_OPEN = True
+AFFORDABLE_DATA_BUNDLE_DAILY_LOOKBACK = 3
+AFFORDABLE_DATA_BUNDLE_ANNOUNCEMENT_LOOKBACK = 30
+AFFORDABLE_DATA_BUNDLE_TIMEOUT_MINUTES = 120
+AFFORDABLE_DATA_BUNDLE_DATASETS = [
+    "stock_basic",
+    "daily",
+    "adj_factor",
+    "daily_basic",
+    "forecast",
+    "express",
+    "dividend",
+    "stk_holdertrade",
+    "ggt_daily",
+    "moneyflow_hsgt",
+    "hk_hold",
+    "margin",
+    "margin_detail",
+    "moneyflow",
+    "stk_limit",
+    "customs_summary",
+]
 ENABLE_SAFETY_LAYER = True
 SAFETY_HEALTH_PROBE_INTERVAL_SECONDS = 300
 SAFETY_ACCOUNT_STATE_MAX_AGE_SECONDS = 900
@@ -233,6 +257,9 @@ TRADING_CALENDAR_CACHE_PATH = str(DATA_ROOT / "market_state_v6" / "trading_calen
 INDUSTRY_ROUTER_OUTPUT_ROOT = str(Path(RESEARCH_ROOT) / "industry_router")
 TECHNICAL_CONFIRMATION_ROOT = str(Path(RESEARCH_ROOT) / "technical_confirmation")
 OMS_OUTPUT_ROOT = str(Path(LIVE_EXECUTION_ROOT) / "oms_v1")
+AFFORDABLE_SQLITE_PATH = str(DATA_ROOT / "sql_store" / "affordable_data_v1.sqlite3")
+AFFORDABLE_SNAPSHOT_ROOT = str(DATA_ROOT / "affordable_feeds" / "latest")
+AFFORDABLE_DATA_BUNDLE_SCRIPT_PATH = str(REPO_ROOT / "scripts" / "update_affordable_data_bundle.py")
 TRAIN_APPEND_LOOKBACK_ROWS = 160
 TRAIN_APPEND_PREFIX = "part_live_append"
 SYNC_TUSHARE_MISSING_DAYS = True
