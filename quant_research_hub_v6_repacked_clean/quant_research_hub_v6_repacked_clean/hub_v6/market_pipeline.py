@@ -12,6 +12,7 @@ import pandas as pd
 
 from .config_utils import ensure_dir
 from .logging_utils import log_line
+from .sql_store import ensure_schema, fetch_enriched_history, resolve_sqlite_path, sql_store_enabled, sqlite_connection
 from .tushare_client import TushareClient
 
 
@@ -130,6 +131,117 @@ def _write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _sql_path(config: Dict[str, Any]) -> Path:
+    return resolve_sqlite_path(config)
+
+
+def _upsert_enriched_rows_sql(config: Dict[str, Any], frame: pd.DataFrame) -> int:
+    if frame.empty or not sql_store_enabled(config):
+        return 0
+    db_path = _sql_path(config)
+    rows = frame.copy()
+    rows["code"] = rows["code"].map(_normalize_code)
+    rows["ts_code"] = rows["code"].map(_normalize_ts_code)
+    rows["trade_date"] = pd.to_datetime(rows["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    rows = rows.dropna(subset=["trade_date"])
+    records = []
+    for _, row in rows.iterrows():
+        records.append(
+            (
+                row.get("code", ""),
+                row.get("ts_code", ""),
+                row.get("name", ""),
+                row.get("adjust", "qfq"),
+                row.get("trade_date", ""),
+                row.get("open", ""),
+                row.get("close", ""),
+                row.get("high", ""),
+                row.get("low", ""),
+                row.get("amount", ""),
+                row.get("pre_close", ""),
+                row.get("pct_chg", ""),
+                row.get("turnover_rate", ""),
+                row.get("turnover_rate_f", ""),
+                row.get("volume_ratio", ""),
+                row.get("pe", ""),
+                row.get("pb", ""),
+                row.get("ps", ""),
+                row.get("dv_ratio", ""),
+                row.get("total_share", ""),
+                row.get("float_share", ""),
+                row.get("free_share", ""),
+                row.get("total_mv", ""),
+                row.get("circ_mv", ""),
+            )
+        )
+    if not records:
+        return 0
+    with sqlite_connection(db_path) as conn:
+        ensure_schema(conn)
+        conn.executemany(
+            """
+            INSERT INTO market_enriched_daily (
+                code, ts_code, name, adjust, trade_date, open, close, high, low, amount,
+                pre_close, pct_chg, turnover_rate, turnover_rate_f, volume_ratio, pe, pb, ps,
+                dv_ratio, total_share, float_share, free_share, total_mv, circ_mv
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(code, trade_date) DO UPDATE SET
+                ts_code=excluded.ts_code,
+                name=excluded.name,
+                adjust=excluded.adjust,
+                open=excluded.open,
+                close=excluded.close,
+                high=excluded.high,
+                low=excluded.low,
+                amount=excluded.amount,
+                pre_close=excluded.pre_close,
+                pct_chg=excluded.pct_chg,
+                turnover_rate=excluded.turnover_rate,
+                turnover_rate_f=excluded.turnover_rate_f,
+                volume_ratio=excluded.volume_ratio,
+                pe=excluded.pe,
+                pb=excluded.pb,
+                ps=excluded.ps,
+                dv_ratio=excluded.dv_ratio,
+                total_share=excluded.total_share,
+                float_share=excluded.float_share,
+                free_share=excluded.free_share,
+                total_mv=excluded.total_mv,
+                circ_mv=excluded.circ_mv
+            """,
+            records,
+        )
+    return len(records)
+
+
+def _load_recent_enriched_sql(config: Dict[str, Any], code: str, limit: int) -> pd.DataFrame:
+    if not sql_store_enabled(config):
+        return pd.DataFrame()
+    db_path = _sql_path(config)
+    if not db_path.exists():
+        return pd.DataFrame()
+    try:
+        with sqlite_connection(db_path) as conn:
+            return fetch_enriched_history(
+                conn=conn,
+                code=code,
+                limit=limit,
+                columns=[
+                    "trade_date AS date",
+                    "code",
+                    "close",
+                    "pre_close",
+                    "pct_chg",
+                    "amount",
+                    "turnover_rate",
+                    "total_mv",
+                    "circ_mv",
+                ],
+            )
+    except Exception:
+        return pd.DataFrame()
+
+
 def _load_stock_universe(path: Path) -> pd.DataFrame:
     cols = ["code", "name", "industry", "board", "last_date", "keep_flag", "ts_code"]
     df = pd.read_csv(path, usecols=lambda c: c in cols)
@@ -222,6 +334,32 @@ def _latest_trade_dates(client: TushareClient, start_date: str, end_date: str) -
     return sorted(cal["cal_date"].tolist())
 
 
+def _empty_snapshot_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "date",
+            "time",
+            "code",
+            "ts_code",
+            "price",
+            "close",
+            "pre_close",
+            "open",
+            "high",
+            "low",
+            "vwap",
+            "volume",
+            "amount",
+            "pct_chg",
+            "turnover_rate",
+            "total_mv",
+            "circ_mv",
+            "snapshot_source",
+            "snapshot_quality",
+        ]
+    )
+
+
 def _load_market_panel_from_tushare(client: TushareClient, trade_dates: Iterable[str]) -> pd.DataFrame:
     frames: List[pd.DataFrame] = []
     for trade_date in trade_dates:
@@ -240,6 +378,87 @@ def _load_market_panel_from_tushare(client: TushareClient, trade_dates: Iterable
         return pd.DataFrame()
     out = pd.concat(frames, ignore_index=True)
     return out.sort_values(["ts_code", "trade_date"]).reset_index(drop=True)
+
+
+def _latest_available_market_panel(client: TushareClient, trade_dates: Iterable[str]) -> tuple[pd.DataFrame, str]:
+    ordered = [str(item or "").strip() for item in list(trade_dates or []) if str(item or "").strip()]
+    for trade_date in reversed(ordered):
+        panel = _load_market_panel_from_tushare(client=client, trade_dates=[trade_date])
+        if not panel.empty:
+            return panel, trade_date
+    return pd.DataFrame(), ""
+
+
+def _normalize_snapshot_ts_code(value: Any) -> str:
+    return _normalize_ts_code(value)
+
+
+def _load_realtime_quote_frame(
+    client: TushareClient,
+    ts_codes: Iterable[str],
+    *,
+    src: str,
+    batch_size: int,
+) -> pd.DataFrame:
+    batches: list[pd.DataFrame] = []
+    codes = [str(item or "").strip().upper() for item in ts_codes if str(item or "").strip()]
+    for start in range(0, len(codes), max(int(batch_size or 0), 1)):
+        batch_codes = codes[start : start + max(int(batch_size or 0), 1)]
+        frame = client.realtime_quote(ts_codes=batch_codes, src=src)
+        if frame is None or frame.empty:
+            continue
+        batches.append(frame.copy())
+    if not batches:
+        return pd.DataFrame()
+    out = pd.concat(batches, ignore_index=True)
+    columns = {str(col).strip().upper(): col for col in out.columns}
+    rename_map = {}
+    for expected in ("TS_CODE", "DATE", "TIME", "OPEN", "PRE_CLOSE", "PRICE", "HIGH", "LOW", "VOLUME", "AMOUNT"):
+        source_col = columns.get(expected)
+        if source_col:
+            rename_map[source_col] = expected.lower()
+    out = out.rename(columns=rename_map)
+    if "ts_code" not in out.columns:
+        return pd.DataFrame()
+    out["ts_code"] = out["ts_code"].map(_normalize_snapshot_ts_code)
+    out = out.loc[out["ts_code"].astype(str) != ""].copy()
+    if out.empty:
+        return pd.DataFrame()
+    out["code"] = out["ts_code"].map(lambda x: x.split(".", 1)[0] if "." in x else _normalize_code(x))
+    for column in ("open", "pre_close", "price", "high", "low", "volume", "amount"):
+        if column not in out.columns:
+            out[column] = pd.NA
+        out[column] = pd.to_numeric(out[column], errors="coerce")
+    if "date" not in out.columns:
+        out["date"] = ""
+    if "time" not in out.columns:
+        out["time"] = ""
+    out["date"] = out["date"].astype(str).str.replace("/", "-", regex=False).str.slice(0, 10)
+    out["time"] = out["time"].astype(str).str.slice(0, 8)
+    out["vwap"] = out["amount"] / out["volume"].replace(0, pd.NA)
+    out["pct_chg"] = (out["price"] / out["pre_close"] - 1.0) * 100.0
+    out["snapshot_source"] = f"tushare_realtime:{src}"
+    out["snapshot_quality"] = "realtime_quote"
+    out = out.sort_values(["ts_code"]).drop_duplicates(subset=["ts_code"], keep="last")
+    return out[
+        [
+            "date",
+            "time",
+            "code",
+            "ts_code",
+            "open",
+            "pre_close",
+            "price",
+            "high",
+            "low",
+            "volume",
+            "amount",
+            "vwap",
+            "pct_chg",
+            "snapshot_source",
+            "snapshot_quality",
+        ]
+    ].copy()
 
 
 def _sync_hs300_index(config: Dict[str, Any], client: TushareClient) -> Dict[str, Any]:
@@ -306,6 +525,7 @@ def sync_enriched_daily_from_tushare(config: Dict[str, Any], client: TushareClie
 
     updated_rows = 0
     updated_files = 0
+    updated_sql_rows = 0
     touched_dates: Dict[str, pd.Timestamp] = {}
 
     for ts_code, g in panel.groupby("ts_code"):
@@ -359,6 +579,7 @@ def sync_enriched_daily_from_tushare(config: Dict[str, Any], client: TushareClie
         merged = merged[ENRICHED_COLUMNS].copy()
         merged["date"] = merged["date"].dt.strftime("%Y-%m-%d")
         merged.to_csv(file_path, index=False, encoding="utf-8-sig")
+        updated_sql_rows += _upsert_enriched_rows_sql(config=config, frame=out)
         updated_rows += int(len(out))
         updated_files += 1
         touched_dates[ts_code] = _to_ts(pd.Series(out["date"])).max()
@@ -373,6 +594,7 @@ def sync_enriched_daily_from_tushare(config: Dict[str, Any], client: TushareClie
     return {
         "updated_files": updated_files,
         "updated_rows": updated_rows,
+        "updated_sql_rows": updated_sql_rows,
         "missing_trade_dates": missing_trade_dates,
     }
 
@@ -388,31 +610,94 @@ def build_daily_price_snapshot(config: Dict[str, Any], client: TushareClient) ->
     )
     if not trade_dates:
         return {"path": str(out_path), "rows": 0, "trade_date": ""}
-    latest_trade_date = trade_dates[-1]
-    panel = _load_market_panel_from_tushare(client=client, trade_dates=[latest_trade_date])
+    panel, latest_trade_date = _latest_available_market_panel(client=client, trade_dates=trade_dates)
     if panel.empty:
-        return {"path": str(out_path), "rows": 0, "trade_date": latest_trade_date}
+        empty = _empty_snapshot_frame()
+        empty.to_csv(out_path, index=False, encoding="utf-8-sig")
+        return {"path": str(out_path), "rows": 0, "trade_date": latest_trade_date, "snapshot_source": "", "snapshot_quality": "empty"}
     out = panel[
+        ["trade_date", "code", "ts_code", "close", "pre_close", "pct_chg", "amount", "turnover_rate", "total_mv", "circ_mv"]
+    ].copy()
+    out = out.rename(columns={"trade_date": "date"})
+    out["date"] = pd.to_datetime(out["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    out["time"] = ""
+    out["code"] = out["code"].map(_normalize_code)
+    out["price"] = pd.to_numeric(out["close"], errors="coerce")
+    out["open"] = pd.NA
+    out["high"] = pd.NA
+    out["low"] = pd.NA
+    out["vwap"] = pd.NA
+    out["volume"] = pd.NA
+    out["snapshot_source"] = f"tushare_daily:{latest_trade_date}"
+    out["snapshot_quality"] = "daily_fallback"
+    realtime_enabled = bool(market_cfg.get("realtime_quote_enabled", False))
+    realtime_source = str(market_cfg.get("realtime_quote_source", "sina") or "sina")
+    realtime_batch_size = int(market_cfg.get("realtime_quote_batch_size", 200) or 200)
+    realtime_quote = (
+        _load_realtime_quote_frame(
+            client=client,
+            ts_codes=out["ts_code"].tolist(),
+            src=realtime_source,
+            batch_size=realtime_batch_size,
+        )
+        if realtime_enabled
+        else pd.DataFrame()
+    )
+    snapshot_source = str(out["snapshot_source"].iloc[0] if not out.empty else "")
+    snapshot_quality = str(out["snapshot_quality"].iloc[0] if not out.empty else "")
+    realtime_rows = 0
+    if not realtime_quote.empty:
+        realtime_rows = int(len(realtime_quote))
+        out = out.merge(
+            realtime_quote.add_prefix("rt_"),
+            how="left",
+            left_on="ts_code",
+            right_on="rt_ts_code",
+        )
+        for column in ("date", "time", "open", "pre_close", "price", "high", "low", "volume", "amount", "vwap", "pct_chg"):
+            rt_col = f"rt_{column}"
+            if rt_col in out.columns:
+                out[column] = out[rt_col].combine_first(out[column])
+        if "rt_snapshot_source" in out.columns:
+            out["snapshot_source"] = out["rt_snapshot_source"].combine_first(out["snapshot_source"])
+        if "rt_snapshot_quality" in out.columns:
+            out["snapshot_quality"] = out["rt_snapshot_quality"].combine_first(out["snapshot_quality"])
+        out["close"] = out["price"].combine_first(out["close"])
+        snapshot_source = str(out["snapshot_source"].iloc[0] if not out.empty else snapshot_source)
+        snapshot_quality = str(out["snapshot_quality"].iloc[0] if not out.empty else snapshot_quality)
+    out = out[
         [
-            "trade_date",
+            "date",
+            "time",
             "code",
             "ts_code",
+            "price",
             "close",
             "pre_close",
-            "pct_chg",
+            "open",
+            "high",
+            "low",
+            "vwap",
+            "volume",
             "amount",
+            "pct_chg",
             "turnover_rate",
             "total_mv",
             "circ_mv",
+            "snapshot_source",
+            "snapshot_quality",
         ]
     ].copy()
-    out = out.rename(columns={"trade_date": "date"})
-    out["date"] = pd.to_datetime(out["date"]).dt.strftime("%Y-%m-%d")
-    out["code"] = out["code"].map(_normalize_code)
-    out["price"] = pd.to_numeric(out["close"], errors="coerce")
     out = out.sort_values("code")
     out.to_csv(out_path, index=False, encoding="utf-8-sig")
-    return {"path": str(out_path), "rows": int(len(out)), "trade_date": latest_trade_date}
+    return {
+        "path": str(out_path),
+        "rows": int(len(out)),
+        "trade_date": latest_trade_date,
+        "snapshot_source": snapshot_source,
+        "snapshot_quality": snapshot_quality,
+        "realtime_rows": realtime_rows,
+    }
 
 
 def _compute_train_max_date(train_dir: Path) -> pd.Timestamp | None:
@@ -476,7 +761,8 @@ def append_train_table_incremental(config: Dict[str, Any]) -> Dict[str, Any]:
     hs300_membership_path = Path(str(market_cfg["hs300_membership_history_path"]))
     listing_path = Path(str(market_cfg["listing_master_path"]))
     stock_universe_path = Path(str(market_cfg["stock_universe_path"]))
-    if (not train_dir.exists()) or (not enriched_dir.exists()) or (not hs300_path.exists()) or (not listing_path.exists()) or (not stock_universe_path.exists()):
+    sql_ready = sql_store_enabled(config) and _sql_path(config).exists()
+    if (not train_dir.exists()) or ((not enriched_dir.exists()) and (not sql_ready)) or (not hs300_path.exists()) or (not listing_path.exists()) or (not stock_universe_path.exists()):
         return {"appended_rows": 0, "output_path": ""}
 
     train_max_date = _compute_train_max_date(train_dir)
@@ -498,26 +784,28 @@ def append_train_table_incremental(config: Dict[str, Any]) -> Dict[str, Any]:
     append_frames: List[pd.DataFrame] = []
 
     for code in new_codes:
-        file_path = enriched_dir / f"{code}.csv"
-        if not file_path.exists():
-            continue
-        try:
-            df = pd.read_csv(
-                file_path,
-                usecols=[
-                    "date",
-                    "code",
-                    "close",
-                    "pre_close",
-                    "pct_chg",
-                    "amount",
-                    "turnover_rate",
-                    "total_mv",
-                    "circ_mv",
-                ],
-            )
-        except Exception:
-            continue
+        df = _load_recent_enriched_sql(config=config, code=code, limit=lookback_rows + 260)
+        if df.empty:
+            file_path = enriched_dir / f"{code}.csv"
+            if not file_path.exists():
+                continue
+            try:
+                df = pd.read_csv(
+                    file_path,
+                    usecols=[
+                        "date",
+                        "code",
+                        "close",
+                        "pre_close",
+                        "pct_chg",
+                        "amount",
+                        "turnover_rate",
+                        "total_mv",
+                        "circ_mv",
+                    ],
+                )
+            except Exception:
+                continue
         if df.empty:
             continue
         df["date"] = _to_ts(df["date"])

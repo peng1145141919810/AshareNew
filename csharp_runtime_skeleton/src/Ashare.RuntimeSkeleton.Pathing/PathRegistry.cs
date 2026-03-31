@@ -13,6 +13,7 @@ public sealed record PathRegistry
     public string MainResearchRunnerPath { get; init; } = string.Empty;
     public string TradeClockServicePath { get; init; } = string.Empty;
     public string AffordableDataBundleScriptPath { get; init; } = string.Empty;
+    public string LivePriceSnapshotPath { get; init; } = string.Empty;
     public string ThreeStrategyKernelRoot { get; init; } = string.Empty;
     public string IntradayStateRoot { get; init; } = string.Empty;
     public string IntradayPhaseStatePath { get; init; } = string.Empty;
@@ -60,6 +61,7 @@ public sealed record PathRegistry
             MainResearchRunnerPath = Path.Combine(normalizedRoot, "main_research_runner.py"),
             TradeClockServicePath = Path.Combine(normalizedRoot, "trade_clock_service.py"),
             AffordableDataBundleScriptPath = Path.Combine(normalizedRoot, "scripts", "update_affordable_data_bundle.py"),
+            LivePriceSnapshotPath = Path.Combine(externalDataRoot, "live_execution_bridge", "daily_price_snapshot.csv"),
             ThreeStrategyKernelRoot = Path.Combine(externalDataRoot, "event_lake_v6", "research", "three_strategy_kernel"),
             IntradayStateRoot = Path.Combine(localDataRoot, "trade_clock", "intraday_state"),
             IntradayPhaseStatePath = Path.Combine(localDataRoot, "trade_clock", "intraday_state", "latest", "intraday_phase_state.json"),

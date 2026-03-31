@@ -182,6 +182,7 @@ def build_site(reports_root: Path, output_dir: Path, domain: str, repo_root: Pat
     clock = j(repo_root / "data" / "trade_clock" / "clock_state.json")
     safety = j(repo_root / "data" / "trade_clock" / "system_safety_state.json")
     health = j(repo_root / "data" / "trade_clock" / "latest_account_health.json")
+    live_snapshot_rows = csv_rows(repo_root / "data" / "live_execution_bridge" / "daily_price_snapshot.csv", 4)
     intraday_root = repo_root / "data" / "trade_clock" / "intraday_state" / "latest"
     intraday_phase = j(intraday_root / "intraday_phase_state.json")
     intraday_control = j(intraday_root / "intraday_control_summary.json")
@@ -207,6 +208,7 @@ def build_site(reports_root: Path, output_dir: Path, domain: str, repo_root: Pat
         (t(x.get("timestamp") or x.get("time") or x.get("at")), t(x.get("level"), "-"), t(x.get("event") or x.get("kind") or x.get("message"), t(x.get("raw"))))
         for x in reversed(incidents[:6])
     ])
+    live_snapshot_meta = live_snapshot_rows[0] if live_snapshot_rows else {}
 
     home = shell("量化系统门户", domain, "index", f"""
     <div class='section-title'><h2>首页总览</h2><div class='sub'>先看系统姿态、策略主导权和最新发布</div></div>
@@ -238,6 +240,7 @@ def build_site(reports_root: Path, output_dir: Path, domain: str, repo_root: Pat
       <article class='card wide'><div class='label'>运行细节</div>{kv([("最近心跳", clock.get("last_heartbeat_at")), ("服务状态", (clock.get("runtime") or {}).get("service_status")), ("最后阶段", (clock.get("runtime") or {}).get("last_phase")), ("最后阶段状态", (clock.get("runtime") or {}).get("last_phase_status")), ("下一阶段", clock.get("next_due_phase")), ("下一时间", clock.get("next_due_at")), ("当前发布", latest_release.get("release_id")), ("发布交易日", latest_release.get("trade_date"))])}</article>
       <article class='card wide'><div class='label'>市场状态快照</div>{kv([("市场 regime", market.get("market_regime")), ("风格偏向", market.get("style_bias")), ("机制偏向", market.get("mechanism_bias")), ("风险预算倍数", n(market.get("risk_budget_multiplier"))), ("换手倍数", n(market.get("turnover_multiplier"))), ("建仓策略", market.get("new_position_policy")), ("去风险提示", market.get("de_risk_hint")), ("生成时间", market.get("generated_at"))])}</article>
       <article class='card'><div class='label'>账户健康</div><div class='metric'>{html.escape(t(health.get("status"), "未生成"))}</div><p class='muted'>如果这里长期为空，说明账户健康快照尚未接入当前副本。</p></article>
+      <article class='card'><div class='label'>实时快照</div><div class='metric'>{html.escape(t(live_snapshot_meta.get("snapshot_quality"), "未生成"))}</div>{badge(t(live_snapshot_meta.get("snapshot_source"), "unknown"))}<p class='muted'>日期 {html.escape(t(live_snapshot_meta.get("date")))} 时间 {html.escape(t(live_snapshot_meta.get("time"), "-"))}</p></article>
       <article class='card'><div class='label'>发布约束</div><div class='metric'>{p((manifest.get("constraints") or {}).get("total_exposure_cap"), 1)}</div><p class='muted'>单票上限 {p((manifest.get("constraints") or {}).get("single_name_cap"), 1)}，最大目标数 {html.escape(t(manifest.get("target_count")))}。</p></article>
       <article class='card'><div class='label'>账户结构图</div>{account_bars}</article>
       <article class='card wide'><div class='label'>盘中控制摘要</div>{kv([("integration_mode", intraday_control.get("integration_mode")), ("midday_action", intraday_control.get("midday_action")), ("timing_window", intraday_control.get("timing_window")), ("buy_ready_count", intraday_control.get("buy_ready_count")), ("sell_ready_count", intraday_control.get("sell_ready_count")), ("t_eligible_symbols", intraday_control.get("t_eligible_symbols")), ("t_triggered_symbols", intraday_control.get("t_triggered_symbols")), ("详情页", "./intraday-state.html")])}</article>

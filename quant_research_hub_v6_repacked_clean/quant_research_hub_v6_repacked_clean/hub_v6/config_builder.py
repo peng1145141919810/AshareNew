@@ -206,6 +206,9 @@ def build_runtime_config() -> Dict[str, Any]:
             "listing_master_path": LS.LISTING_MASTER_PATH,
             "stock_universe_path": LS.STOCK_UNIVERSE_CLEAN_PATH,
             "price_snapshot_path": LS.LIVE_PRICE_SNAPSHOT_PATH,
+            "realtime_quote_enabled": bool(getattr(LS, "ENABLE_TUSHARE_REALTIME_QUOTE", True)),
+            "realtime_quote_source": str(getattr(LS, "TUSHARE_REALTIME_QUOTE_SOURCE", "sina") or "sina"),
+            "realtime_quote_batch_size": int(getattr(LS, "TUSHARE_REALTIME_QUOTE_BATCH_SIZE", 200) or 200),
             "train_append_lookback_rows": LS.TRAIN_APPEND_LOOKBACK_ROWS,
             "train_append_prefix": LS.TRAIN_APPEND_PREFIX,
             "sync_tushare_missing_days": LS.SYNC_TUSHARE_MISSING_DAYS,
@@ -455,6 +458,26 @@ def build_runtime_config() -> Dict[str, Any]:
                 "shadow_ignore_market_panic_reduce_only": bool(getattr(LS, "TRADE_CLOCK_SHADOW_IGNORE_MARKET_PANIC_REDUCE_ONLY", True)),
                 "simulation_allow_unfinished_orders_reconcile": bool(getattr(LS, "TRADE_CLOCK_SIMULATION_ALLOW_UNFINISHED_ORDERS_RECONCILE", False)),
                 "shadow_allow_unfinished_orders_reconcile": bool(getattr(LS, "TRADE_CLOCK_SHADOW_ALLOW_UNFINISHED_ORDERS_RECONCILE", False)),
+                "morning_research_refresh_enabled": bool(getattr(LS, "TRADE_CLOCK_MORNING_RESEARCH_REFRESH_ENABLED", True)),
+                "morning_release_refresh_enabled": bool(getattr(LS, "TRADE_CLOCK_MORNING_RELEASE_REFRESH_ENABLED", True)),
+                "live_snapshot_refresh_enabled": bool(getattr(LS, "TRADE_CLOCK_LIVE_SNAPSHOT_REFRESH_ENABLED", True)),
+                "live_snapshot_refresh_fail_open": bool(getattr(LS, "TRADE_CLOCK_LIVE_SNAPSHOT_REFRESH_FAIL_OPEN", True)),
+                "live_snapshot_refresh_phases": list(
+                    getattr(
+                        LS,
+                        "TRADE_CLOCK_LIVE_SNAPSHOT_REFRESH_PHASES",
+                        [
+                            "preopen_gate",
+                            "simulation",
+                            "shadow",
+                            "midday_review",
+                            "afternoon_execution",
+                            "afternoon_shadow",
+                            "summary",
+                        ],
+                    )
+                    or []
+                ),
                 "phases": {
                     "research": {
                         "time": str(getattr(LS, "TRADE_CLOCK_PHASE_RESEARCH_TIME", "15:05:00") or "15:05:00"),
@@ -463,6 +486,14 @@ def build_runtime_config() -> Dict[str, Any]:
                     "release": {
                         "time": str(getattr(LS, "TRADE_CLOCK_PHASE_RELEASE_TIME", "15:10:00") or "15:10:00"),
                         "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_RELEASE_TIMEOUT_MINUTES", 30) or 30),
+                    },
+                    "research_refresh": {
+                        "time": str(getattr(LS, "TRADE_CLOCK_PHASE_RESEARCH_REFRESH_TIME", "08:35:00") or "08:35:00"),
+                        "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_RESEARCH_REFRESH_TIMEOUT_MINUTES", 120) or 120),
+                    },
+                    "release_refresh": {
+                        "time": str(getattr(LS, "TRADE_CLOCK_PHASE_RELEASE_REFRESH_TIME", "08:55:00") or "08:55:00"),
+                        "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_RELEASE_REFRESH_TIMEOUT_MINUTES", 20) or 20),
                     },
                     "preopen_gate": {
                         "time": str(getattr(LS, "TRADE_CLOCK_PHASE_PREOPEN_GATE_TIME", "09:20:00") or "09:20:00"),

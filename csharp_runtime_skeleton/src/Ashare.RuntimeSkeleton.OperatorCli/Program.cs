@@ -251,6 +251,7 @@ switch (command)
         Console.WriteLine($"launch_canonical_path: {registry.LaunchCanonicalPath}");
         Console.WriteLine($"trade_clock_service_path: {registry.TradeClockServicePath}");
         Console.WriteLine($"affordable_data_bundle_script_path: {registry.AffordableDataBundleScriptPath}");
+        Console.WriteLine($"live_price_snapshot_path: {registry.LivePriceSnapshotPath}");
         Console.WriteLine($"three_strategy_kernel_root: {registry.ThreeStrategyKernelRoot}");
         Console.WriteLine($"intraday_state_root: {registry.IntradayStateRoot}");
         Console.WriteLine($"intraday_phase_state_path: {registry.IntradayPhaseStatePath}");

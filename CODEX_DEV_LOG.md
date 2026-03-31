@@ -129,6 +129,7 @@
     - current default run only covers low-cost updateable sources and does not include the previously deleted heavy non-price pipeline
     - `customs_summary` is summary-only from `gov.cn`, not customs detail tables
     - analyst consensus / `expectation_revision_daily` is still not implemented under the current `2000`-point Tushare tier
+    - Tushare `moneyflow` is already covered as a daily low-cost dataset but does not solve intraday tick / realtime snapshot gaps
     - `fina_indicator` is supported only as targeted refresh with explicit `--ts-code`, not full-universe default ingestion
     - industry-level price / inventory / warehouse-receipt / operating-rate factor layer is still source-discovery stage and not yet materialized into SQL tables
     - announcement / contract / backlog / tender raw sources are identified, but structured fact-layer ingestion is still pending
@@ -189,6 +190,8 @@
     - current timing / T truth:
       - timing layer now evaluates formal intraday windows, timing scores, timing states, and T overlay states inside the same sidecar refresh
       - the timing layer is still honest about data quality and writes `feature_quality_tier` instead of fabricating minute-bar truth
+      - `daily_price_snapshot.csv` now prefers `Tushare realtime_quote` (`doc_id=315`) for live `open/high/low/price/volume/amount` and falls back to the latest available daily panel when realtime is unavailable
+      - the older daily `moneyflow` source (`doc_id=170`) remains useful for end-of-day flow features only and is not treated as a realtime substitute
       - current public portal page:
         - `https://peng1145141919810.xyz/intraday-state.html`
     - runtime truth:
@@ -196,6 +199,10 @@
       - `bounded_takeover` mode allows `clock_supervisor` to read the latest intraday control summary and apply a limited afternoon overlay
     - current bounded integration:
       - intraday sidecars refresh on selected trade-clock phase completions
+      - the trade clock now performs a live snapshot refresh before `preopen_gate`, `simulation`, `shadow`, `midday_review`, `afternoon_execution`, `afternoon_shadow`, and `summary`
+      - the default automatic loop now runs two research rounds for a trading date:
+        - post-close `research/release` for the next trade date
+        - morning `research_refresh/release_refresh` for the current trade date before `preopen_gate`
       - `summary` copies the latest intraday artifacts into each daily automation pack
       - `afternoon_execution` and `afternoon_shadow` only read `overlay_recommendation` when `INTRADAY_STATE_MACHINE_SHADOW_MODE = False`
     - current documentation set:
@@ -5244,3 +5251,63 @@ All timestamps below are local file write times in the current workspace and sho
     - `ENABLE_EXECUTION_TIMING_LAYER = False`
     - `ENABLE_T_OVERLAY = False`
   - leaving those switches off restores the older intraday sidecar behavior without removing the base state machine
+
+### [2026-03-31 15:08] Type: runtime/data-source/scheduler
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\tushare_client.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\market_pipeline.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Pathing\PathRegistry.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Program.cs`
+  - `scripts\build_audit_site_index.py`
+  - `docs\SYSTEM_OPERATOR_DAILY_LOOP_GUIDE_CN.md`
+- What changed:
+  - Evaluated the two candidate Tushare sources requested by the user:
+    - `doc_id=315` (`realtime_quote`) is now treated as the formal low-cost realtime snapshot source
+    - `doc_id=170` is daily `moneyflow` only and was explicitly not used as a realtime substitute
+  - Added direct `realtime_quote` support into `TushareClient`.
+  - Rebuilt `build_daily_price_snapshot()` so it:
+    - finds the latest available daily panel instead of assuming the latest open calendar date already has `daily/daily_basic`
+    - merges `realtime_quote` over the daily panel to populate live `date/time/open/high/low/price/volume/amount/vwap`
+    - writes `snapshot_source` and `snapshot_quality` into `daily_price_snapshot.csv`
+  - Added automatic live snapshot refresh into `clock_supervisor` before:
+    - `preopen_gate`
+    - `simulation`
+    - `shadow`
+    - `midday_review`
+    - `afternoon_execution`
+    - `afternoon_shadow`
+    - `summary`
+  - Added two new scheduler phases for the fully automatic loop:
+    - `research_refresh` at `08:35`
+    - `release_refresh` at `08:55`
+  - Kept the existing post-close loop:
+    - `research` at `15:05` for the next trade date
+    - `release` at `15:10` for the next trade date
+  - Extended the C# wrapper path registry to expose `LivePriceSnapshotPath`.
+  - Updated the portal generator so the system page shows the current live snapshot quality/source/date/time.
+- Impact:
+  - The timing layer can now consume real intraday OHLC/price/amount/volume fields when Tushare realtime is available.
+  - The old bug where intraday snapshot generation could go empty because today's daily panel was not yet published is fixed.
+  - The automatic loop is now more practical for a live trading day:
+    - one post-close research/release round for tomorrow
+    - one preopen refresh round for today
+  - The C# control-plane side can now see the live price snapshot path explicitly.
+- Validation:
+  - `python -m py_compile` on all touched Python files
+  - mock probe on `build_daily_price_snapshot()`:
+    - verified realtime merge, `snapshot_source=tushare_realtime:sina`, `snapshot_quality=realtime_quote`
+  - `dotnet build F:\quant_data\AshareC#\csharp_runtime_skeleton\Ashare.RuntimeSkeleton.sln`
+- Compatibility:
+  - additive and fail-open by default
+  - `daily_price_snapshot.csv` path stays unchanged
+  - existing intraday feature readers continue to work and simply see richer columns when available
+- Rollback:
+  - disable realtime snapshot refresh with:
+    - `ENABLE_TUSHARE_REALTIME_QUOTE = False`
+    - `TRADE_CLOCK_LIVE_SNAPSHOT_REFRESH_ENABLED = False`
+  - disable preopen same-day reruns with:
+    - `TRADE_CLOCK_MORNING_RESEARCH_REFRESH_ENABLED = False`
+    - `TRADE_CLOCK_MORNING_RELEASE_REFRESH_ENABLED = False`

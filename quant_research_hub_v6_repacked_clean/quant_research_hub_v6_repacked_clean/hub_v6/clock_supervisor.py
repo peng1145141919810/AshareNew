@@ -15,15 +15,19 @@ from typing import Any, Dict, Iterable
 from .config_utils import ensure_dir, load_config
 from .execution_manager import assess_execution_gate
 from .intraday_state_machine import refresh_intraday_state_machine
+from .market_pipeline import build_daily_price_snapshot
 from .portfolio_release import load_latest_release, load_release_by_id
 from .safety_guard import assess_system_safety
 from .sql_store import ensure_schema, load_runtime_json_artifact, resolve_sqlite_path, sql_store_enabled, sqlite_connection, upsert_runtime_json_artifact
 from .strategy_audit import build_strategy_audit_pack
+from .tushare_client import TushareClient
 from .trading_clock import clock_now, is_trading_day, next_trading_day, trading_clock_snapshot
 
 PHASE_SEQUENCE = (
     "research",
     "release",
+    "research_refresh",
+    "release_refresh",
     "preopen_gate",
     "simulation",
     "shadow",
@@ -164,6 +168,8 @@ def _scheduler_bool(scheduler: Dict[str, Any], primary_key: str, legacy_key: str
 def _phase_specs(config: Dict[str, Any]) -> Dict[str, PhaseSpec]:
     research_cfg = _scheduler_phase_cfg(config, "research")
     release_cfg = _scheduler_phase_cfg(config, "release")
+    research_refresh_cfg = _scheduler_phase_cfg(config, "research_refresh")
+    release_refresh_cfg = _scheduler_phase_cfg(config, "release_refresh")
     preopen_cfg = _scheduler_phase_cfg(config, "preopen_gate")
     simulation_cfg = _scheduler_phase_cfg(config, "simulation")
     shadow_cfg = _scheduler_phase_cfg(config, "shadow")
@@ -174,6 +180,8 @@ def _phase_specs(config: Dict[str, Any]) -> Dict[str, PhaseSpec]:
     return {
         "research": PhaseSpec("research", "research", str(research_cfg.get("time", "15:05:00") or "15:05:00"), int(research_cfg.get("timeout_minutes", 420) or 420)),
         "release": PhaseSpec("release", "release", str(release_cfg.get("time", "15:10:00") or "15:10:00"), int(release_cfg.get("timeout_minutes", 30) or 30)),
+        "research_refresh": PhaseSpec("research_refresh", "research", str(research_refresh_cfg.get("time", "08:35:00") or "08:35:00"), int(research_refresh_cfg.get("timeout_minutes", 120) or 120)),
+        "release_refresh": PhaseSpec("release_refresh", "release", str(release_refresh_cfg.get("time", "08:55:00") or "08:55:00"), int(release_refresh_cfg.get("timeout_minutes", 20) or 20)),
         "preopen_gate": PhaseSpec("preopen_gate", "execution", str(preopen_cfg.get("time", "09:20:00") or "09:20:00"), int(preopen_cfg.get("timeout_minutes", 15) or 15)),
         "simulation": PhaseSpec("simulation", "simulation", str(simulation_cfg.get("time", "09:30:35") or "09:30:35"), int(simulation_cfg.get("timeout_minutes", 45) or 45)),
         "shadow": PhaseSpec("shadow", "shadow", str(shadow_cfg.get("time", "09:35:00") or "09:35:00"), int(shadow_cfg.get("timeout_minutes", 30) or 30)),
@@ -660,6 +668,43 @@ def _run_affordable_data_refresh(config: Dict[str, Any], trade_date: str) -> Dic
     }
 
 
+def _run_live_snapshot_refresh(config: Dict[str, Any], trade_date: str, phase_name: str) -> Dict[str, Any]:
+    scheduler = _scheduler_cfg(config)
+    if not bool(scheduler.get("live_snapshot_refresh_enabled", True)):
+        return {"enabled": False, "ran": False, "ok": True, "message": "disabled"}
+    refresh_phases = {
+        str(item or "").strip()
+        for item in list(scheduler.get("live_snapshot_refresh_phases", []) or [])
+        if str(item or "").strip()
+    }
+    if refresh_phases and str(phase_name or "").strip() not in refresh_phases:
+        return {"enabled": True, "ran": False, "ok": True, "message": "phase_not_selected"}
+    try:
+        client = TushareClient(dict(config.get("providers", {}).get("tushare", {}) or {}))
+        result = build_daily_price_snapshot(config=config, client=client)
+        return {
+            "enabled": True,
+            "ran": True,
+            "ok": bool(int(result.get("rows", 0) or 0) > 0),
+            "fail_open": bool(scheduler.get("live_snapshot_refresh_fail_open", True)),
+            "message": "ok" if int(result.get("rows", 0) or 0) > 0 else "empty_snapshot",
+            "phase_name": str(phase_name or ""),
+            "trade_date": str(trade_date or ""),
+            "result_payload": result,
+        }
+    except Exception as exc:
+        return {
+            "enabled": True,
+            "ran": True,
+            "ok": False,
+            "fail_open": bool(scheduler.get("live_snapshot_refresh_fail_open", True)),
+            "message": str(exc),
+            "phase_name": str(phase_name or ""),
+            "trade_date": str(trade_date or ""),
+            "result_payload": {},
+        }
+
+
 def _run_audit_site_publish(config: Dict[str, Any], trade_date: str, report_dir: Path) -> Dict[str, Any]:
     publish_cfg = _audit_site_publish_cfg(config)
     if not bool(publish_cfg.get("enabled", True)) or not bool(publish_cfg.get("run_after_summary", True)):
@@ -814,6 +859,10 @@ def _phase_command(
             if str(fallback.get("target_positions_path", "") or "").strip():
                 extra.extend(["--source-target-positions-path", str(fallback.get("target_positions_path", "")).strip()])
         return command + ["--mode", "release_only", "--release-source-mode", release_source_mode, "--release-note", release_note] + extra
+    if phase_name == "research_refresh":
+        return command + ["--mode", "research_only"]
+    if phase_name == "release_refresh":
+        return command + ["--mode", "release_only", "--release-source-mode", "normal", "--release-note", "preopen_refresh"]
     if phase_name == "preopen_gate":
         release_id = str(cycle_state.get("release_id", "") or "")
         extra = ["--mode", "execution_only", "--gate-only", "--ignore-window"]
@@ -939,7 +988,7 @@ def _normalise_phase_result(
     result_payload = dict(raw_result.get("result_payload", {}) or {})
     if bool(raw_result.get("timed_out", False)):
         phase_status = "timeout"
-    elif phase_name in {"research", "release", "midday_review"}:
+    elif phase_name in {"research", "release", "research_refresh", "release_refresh", "midday_review"}:
         phase_status = "success" if bool(raw_result.get("ok", False)) else "failed"
     elif phase_name in {"preopen_gate", "simulation", "shadow", "afternoon_execution", "afternoon_shadow"}:
         phase_status = _phase_outcome_from_execution_payload(phase_name, result_payload)
@@ -948,9 +997,9 @@ def _normalise_phase_result(
     else:
         phase_status = "failed"
     release_id = ""
-    if phase_name == "release":
+    if phase_name in {"release", "release_refresh"}:
         release_id = str(result_payload.get("release_id", "") or "")
-    elif phase_name == "research":
+    elif phase_name in {"research", "research_refresh"}:
         latest_release = _latest_release_safe(config)
         if str(latest_release.get("trade_date", "") or "") == str(trade_date):
             release_id = str(latest_release.get("release_id", "") or "")
@@ -1649,6 +1698,8 @@ def _candidate_phases(config: Dict[str, Any], profile: str, now: datetime) -> li
         )
     if current_trade_date:
         current_candidates = [
+            {"trade_date": current_trade_date, "phase_name": "research_refresh", "scheduled_at": _scheduled_wallclock(now, specs["research_refresh"].scheduled_time)},
+            {"trade_date": current_trade_date, "phase_name": "release_refresh", "scheduled_at": _scheduled_wallclock(now, specs["release_refresh"].scheduled_time)},
             {"trade_date": current_trade_date, "phase_name": "preopen_gate", "scheduled_at": _scheduled_wallclock(now, specs["preopen_gate"].scheduled_time)},
             {"trade_date": current_trade_date, "phase_name": "simulation", "scheduled_at": _scheduled_wallclock(now, specs["simulation"].scheduled_time)},
             {"trade_date": current_trade_date, "phase_name": "midday_review", "scheduled_at": _scheduled_wallclock(now, specs["midday_review"].scheduled_time)},
@@ -1656,6 +1707,10 @@ def _candidate_phases(config: Dict[str, Any], profile: str, now: datetime) -> li
             {"trade_date": current_trade_date, "phase_name": "summary", "scheduled_at": _scheduled_wallclock(now, specs["summary"].scheduled_time)},
         ]
         scheduler = _scheduler_cfg(config)
+        if not bool(scheduler.get("morning_research_refresh_enabled", True)):
+            current_candidates = [item for item in current_candidates if item["phase_name"] != "research_refresh"]
+        if not bool(scheduler.get("morning_release_refresh_enabled", True)):
+            current_candidates = [item for item in current_candidates if item["phase_name"] != "release_refresh"]
         if bool(scheduler.get("shadow_enabled", False)):
             current_candidates.append({"trade_date": current_trade_date, "phase_name": "shadow", "scheduled_at": _scheduled_wallclock(now, specs["shadow"].scheduled_time)})
         if bool(scheduler.get("afternoon_shadow_enabled", False)):
@@ -1710,6 +1765,23 @@ def _run_phase(
         else:
             cycle_state["fallback"] = {"active": False}
             _save_cycle_state(config, cycle_state)
+    elif phase_name == "release_refresh":
+        refresh_status = str(dict(cycle_state.get("phases", {}).get("research_refresh", {}) or {}).get("status", "") or "")
+        if refresh_status not in {"success", "skipped"}:
+            result = {
+                "status": "skipped",
+                "return_code": None,
+                "release_id": str(cycle_state.get("release_id", "") or ""),
+                "warning_count": 0,
+                "error_message": "research_refresh_not_ready",
+                "stdout_log": "",
+                "stderr_log": "",
+                "stdout_tail": [],
+                "stderr_tail": [],
+                "result_status": "research_refresh_not_ready",
+                "result_payload": {},
+            }
+            return _mark_phase_complete(config, trade_date, profile, phase_name, result)
     elif phase_name in {"simulation", "shadow", "midday_review", "afternoon_execution", "afternoon_shadow"}:
         if not str(cycle_state.get("release_id", "") or "").strip():
             result = {
@@ -1760,10 +1832,34 @@ def _run_phase(
                     "result_payload": midday_plan,
                 }
                 return _mark_phase_complete(config, trade_date, profile, phase_name, result)
+    live_snapshot_refresh: Dict[str, Any] = {}
+    if phase_name in {"preopen_gate", "simulation", "shadow", "midday_review", "afternoon_execution", "afternoon_shadow", "summary"}:
+        live_snapshot_refresh = _run_live_snapshot_refresh(config=config, trade_date=trade_date, phase_name=phase_name)
+        if live_snapshot_refresh.get("ran", False) and not live_snapshot_refresh.get("ok", False) and not live_snapshot_refresh.get("fail_open", True):
+            result = {
+                "status": "failed",
+                "return_code": None,
+                "release_id": str(cycle_state.get("release_id", "") or ""),
+                "warning_count": 1,
+                "error_message": str(live_snapshot_refresh.get("message", "") or "live_snapshot_refresh_failed"),
+                "stdout_log": "",
+                "stderr_log": "",
+                "stdout_tail": [],
+                "stderr_tail": [],
+                "result_status": "live_snapshot_refresh_failed",
+                "result_payload": {"live_snapshot_refresh": live_snapshot_refresh},
+            }
+            return _mark_phase_complete(config, trade_date, profile, phase_name, result)
     if phase_name == "summary":
         result = _run_summary_phase(config=config, trade_date=trade_date, profile=profile, cycle_state=cycle_state)
+        if live_snapshot_refresh.get("ran", False):
+            payload = dict(result.get("result_payload", {}) or {})
+            payload["live_snapshot_refresh"] = live_snapshot_refresh
+            result["result_payload"] = payload
+            if not live_snapshot_refresh.get("ok", False):
+                result["warning_count"] = int(result.get("warning_count", 0) or 0) + 1
         return _mark_phase_complete(config, trade_date, profile, phase_name, result)
-    if phase_name == "research":
+    if phase_name in {"research", "research_refresh"}:
         affordable_refresh = _run_affordable_data_refresh(config=config, trade_date=trade_date)
         if affordable_refresh.get("ran", False) and not affordable_refresh.get("ok", False) and not affordable_refresh.get("fail_open", True):
             result = {
@@ -1788,12 +1884,18 @@ def _run_phase(
         timeout_minutes=specs[phase_name].timeout_minutes,
     )
     result = _normalise_phase_result(config, phase_name, trade_date, raw)
-    if phase_name == "research":
+    if phase_name in {"research", "research_refresh"}:
         payload = dict(result.get("result_payload", {}) or {})
         payload["affordable_data_refresh"] = affordable_refresh
         result["result_payload"] = payload
         if affordable_refresh.get("ran", False) and not affordable_refresh.get("ok", False):
             result["warning_count"] = int(result.get("warning_count", 0) or 0) + int(affordable_refresh.get("warning_count", 0) or 0) + 1
+    if live_snapshot_refresh.get("ran", False):
+        payload = dict(result.get("result_payload", {}) or {})
+        payload["live_snapshot_refresh"] = live_snapshot_refresh
+        result["result_payload"] = payload
+        if not live_snapshot_refresh.get("ok", False):
+            result["warning_count"] = int(result.get("warning_count", 0) or 0) + 1
     return _mark_phase_complete(config, trade_date, profile, phase_name, result)
 
 

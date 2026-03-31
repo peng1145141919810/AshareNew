@@ -163,16 +163,33 @@ powershell -ExecutionPolicy Bypass -File F:\quant_data\AshareC#\scripts\show_tra
 
 1. `research`
 2. `release`
-3. `preopen_gate`
-4. `simulation`
-5. `midday_review`
-6. `afternoon_execution`
-7. `summary`
+3. `research_refresh`
+4. `release_refresh`
+5. `preopen_gate`
+6. `simulation`
+7. `midday_review`
+8. `afternoon_execution`
+9. `summary`
+
+### 当前默认日程
+
+1. `15:05` 跑次日 `research`
+2. `15:10` 跑次日 `release`
+3. `08:35` 跑当日 `research_refresh`
+4. `08:55` 跑当日 `release_refresh`
+5. `09:20` 跑 `preopen_gate`
+6. `09:30:35` 跑 `simulation`
+7. `11:35` 跑 `midday_review`
+8. `13:05` 跑 `afternoon_execution`
+9. `15:20` 跑 `summary`
 
 ### 这条链里现在已经自动做的额外动作
 
 - `research` 前：
   - affordable data bundle 先刷新
+- `preopen_gate` / `simulation` / `midday_review` / `afternoon_execution` / `summary` 前：
+  - `daily_price_snapshot.csv` 尝试用 `Tushare realtime_quote` 刷新
+  - 快照会诚实写入 `snapshot_source` 和 `snapshot_quality`
 - 每个关键 phase 完成后：
   - intraday state machine 刷新 latest sidecar
 - `summary` 内：

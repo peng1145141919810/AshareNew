@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 import pandas as pd
 
@@ -37,6 +37,7 @@ class TushareClient:
         self.retry_on_rate_limit = bool(self.cfg.get("retry_on_rate_limit", False))
         self.last_call_at = 0.0
         self.last_error = ""
+        self.raw_ts = ts
         self.pro = ts.pro_api(self.token) if (self.token and ts is not None) else None
 
     def enabled(self) -> bool:
@@ -102,6 +103,43 @@ class TushareClient:
                 self._mark_call()
                 if self._is_rate_limit_error(exc) and not self.retry_on_rate_limit:
                     break
+                sleep_seconds = self.retry_sleep_seconds * (i + 1)
+                if self._is_rate_limit_error(exc):
+                    sleep_seconds = max(sleep_seconds, self.rate_limit_backoff_seconds * (i + 1))
+                time.sleep(sleep_seconds)
+        if last_exc:
+            return pd.DataFrame()
+        return pd.DataFrame()
+
+    def realtime_quote(
+        self,
+        *,
+        ts_codes: Iterable[str] | None = None,
+        src: str = "sina",
+    ) -> pd.DataFrame:
+        """Fetch realtime quote snapshots from the public crawler endpoint."""
+        if not bool(self.cfg.get("enabled", True)) or self.raw_ts is None or not self.token:
+            return pd.DataFrame()
+        fn = getattr(self.raw_ts, "realtime_quote", None)
+        if fn is None:
+            return pd.DataFrame()
+        code_items = [str(item or "").strip().upper() for item in list(ts_codes or []) if str(item or "").strip()]
+        kwargs: Dict[str, Any] = {"src": str(src or "sina").strip() or "sina"}
+        if code_items:
+            kwargs["ts_code"] = ",".join(code_items)
+        last_exc: Optional[Exception] = None
+        for i in range(self.max_retry):
+            try:
+                self._respect_rate_limit()
+                self.raw_ts.set_token(self.token)
+                df = fn(**kwargs)
+                self._mark_call()
+                self.last_error = ""
+                return df if df is not None else pd.DataFrame()
+            except Exception as exc:
+                last_exc = exc
+                self.last_error = f"realtime_quote: {exc}"
+                self._mark_call()
                 sleep_seconds = self.retry_sleep_seconds * (i + 1)
                 if self._is_rate_limit_error(exc):
                     sleep_seconds = max(sleep_seconds, self.rate_limit_backoff_seconds * (i + 1))
