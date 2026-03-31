@@ -40,6 +40,9 @@
 - `margin_detail`
 - `moneyflow`
 - `stk_limit`
+- `ccgp_bid_awards`
+- `ppi_market_digest`
+- `internal_expectation`
 
 ### Tushare Optional
 - `fina_indicator`
@@ -67,6 +70,28 @@
   - research-only internal expected-profit / revision layer
   - not analyst consensus
   - not canonical truth
+
+### Procurement And Supply-Chain Raw Additions
+- `ccgp_bid_awards`
+  - Source:
+    - `https://www.ccgp.gov.cn/cggg/zygg/zbgg/`
+  - Current output:
+    - latest central-government procurement bid-award list items
+    - title
+    - publish time
+    - region
+    - purchaser
+    - source URL
+- `ppi_market_digest`
+  - Source:
+    - `https://www.100ppi.com/`
+  - Current output:
+    - latest homepage focus / forecast digest items
+    - title
+    - source URL
+    - digest type
+  - Current implementation note:
+    - the script first solves the lightweight `HW_CHECK` cookie challenge before parsing the homepage
 
 ## What Gets Stored
 - Table:
@@ -144,6 +169,8 @@ C:\Users\Administrator\PyCharmMiscProject\.venv\Scripts\python.exe F:\quant_data
 - `fina_indicator` is targeted, not full-universe by default.
 - `customs_summary` is summary only and comes from `gov.cn` release pages.
 - `internal_expectation` is an internal model layer and must not be renamed or consumed as analyst-consensus truth.
+- `ccgp_bid_awards` is a raw public-procurement feed, not a normalized supplier-chain fact table yet.
+- `ppi_market_digest` is a headline/digest raw layer, not a structured full commodity price panel yet.
 - This bundle is a low-cost update layer, not an exchange-licensed institutional truth store.
 
 ## Current Supply-Chain Alternatives To The Gated CNEPTP Platform
@@ -159,3 +186,7 @@ C:\Users\Administrator\PyCharmMiscProject\.venv\Scripts\python.exe F:\quant_data
 - Current operating truth:
   - these are usable substitute discovery sources after `cneptp` was judged permission-gated for a personal operator
   - they are not a one-for-one replacement for the full `cneptp` risk/price/supplier database
+  - current environment status:
+    - `ccgp` is directly fetchable
+    - `100ppi` is fetchable after lightweight challenge-cookie handling
+    - `cebpubservice` is still blocked by `403` in the current environment and is not yet in the automatic bundle

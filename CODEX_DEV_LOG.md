@@ -125,6 +125,8 @@
       - `stk_limit`: `22544`
       - `customs_summary`: `2`
       - `internal_expectation`: `4289`
+      - `ccgp_bid_awards`: `20`
+      - `ppi_market_digest`: `5`
   - affordable bundle hard limitations:
     - it is a standalone low-cost update layer, not the canonical truth store
     - current default run only covers low-cost updateable sources and does not include the previously deleted heavy non-price pipeline
@@ -208,6 +210,9 @@
       - `https://www.stats.gov.cn/`
     - operator truth:
       - `cneptp` remains strategically valuable but is currently permission-gated for a personal operator and must not be assumed usable by default
+      - `ccgp` is now formally ingested into the affordable bundle as a latest bid-award raw feed
+      - `100ppi` is now formally ingested into the affordable bundle as a latest commodity digest raw feed
+      - `cebpubservice` remains blocked by `403` in the current environment and is not yet in the automatic bundle
     - runtime truth:
       - `shadow` mode writes formalized sidecars only and does not rewrite afternoon execution plans
       - `bounded_takeover` mode allows `clock_supervisor` to read the latest intraday control summary and apply a limited afternoon overlay
@@ -5423,3 +5428,59 @@ All timestamps below are local file write times in the current workspace and sho
   - remove `internal_expectation` from `DATASET_SPECS`
   - delete rows with `dataset='internal_expectation'` from `affordable_dataset_rows`
   - remove `internal_expectation.csv` snapshot if the layer must be withdrawn
+
+### [2026-03-31 23:10] Type: data-source/sql/supply-chain
+- Scope:
+  - `scripts\update_affordable_data_bundle.py`
+  - `docs\AFFORDABLE_UPDATEABLE_SOURCES.md`
+- What changed:
+  - Added two new low-cost supply-chain raw datasets into the affordable bundle:
+    - `ccgp_bid_awards`
+    - `ppi_market_digest`
+  - `ccgp_bid_awards` now scrapes the latest central-government procurement bid-award list from:
+    - `https://www.ccgp.gov.cn/cggg/zygg/zbgg/`
+    - current extracted fields:
+      - `title`
+      - `published_at`
+      - `region`
+      - `purchaser`
+      - `source_url`
+  - `ppi_market_digest` now scrapes the latest homepage digest items from:
+    - `https://www.100ppi.com/`
+    - current extracted fields:
+      - `title`
+      - `source_url`
+      - `digest_type`
+      - `as_of_date`
+  - Added lightweight `HW_CHECK` challenge-cookie handling for `100ppi` so the bundle can access the real homepage content instead of the security-check stub page.
+  - Logged the current environment reality for `cebpubservice`:
+    - still `403` blocked
+    - not yet automated
+- Impact:
+  - The supply-chain strategy layer now has actual incremental raw feeds instead of only a source wish-list.
+  - The affordable standalone store now contains:
+    - public procurement award flow
+    - commodity commentary / commodity focus digest flow
+    - the previously added internal expectation layer
+  - Future default affordable-bundle runs now refresh these new feeds automatically.
+- Validation:
+  - `python -m py_compile` on `scripts\update_affordable_data_bundle.py`
+  - executed:
+    - `python F:\quant_data\AshareC#\scripts\update_affordable_data_bundle.py --dataset ccgp_bid_awards`
+    - `python F:\quant_data\AshareC#\scripts\update_affordable_data_bundle.py --dataset ppi_market_digest`
+  - results:
+    - `ccgp_bid_awards = 20` rows
+    - `ppi_market_digest = 5` rows
+    - snapshots written to:
+      - `F:\quant_data\AshareC#\data\affordable_feeds\latest\ccgp_bid_awards.csv`
+      - `F:\quant_data\AshareC#\data\affordable_feeds\latest\ppi_market_digest.csv`
+- Compatibility:
+  - additive only
+  - both are raw/discovery layers and do not claim to be canonical truth tables
+  - no C# wrapper change was required because the affordable bundle contract did not change shape
+- Rollback:
+  - remove the two dataset specs and fetch helpers from `update_affordable_data_bundle.py`
+  - delete rows with:
+    - `dataset='ccgp_bid_awards'`
+    - `dataset='ppi_market_digest'`
+  - delete the matching snapshot CSV files if these feeds must be withdrawn

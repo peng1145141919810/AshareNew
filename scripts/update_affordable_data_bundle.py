@@ -5,13 +5,17 @@ import importlib.util
 import json
 import os
 import sqlite3
+import ssl
 import sys
 import time
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from html import unescape
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Tuple
+from urllib.parse import urljoin
+from urllib.request import Request, urlopen
 
 import pandas as pd
 
@@ -45,6 +49,7 @@ def _load_customs_helper() -> tuple[list[str], Callable[[str], Dict[str, Any]]]:
 
 
 CUSTOMS_DEFAULT_URLS, FETCH_CUSTOMS_ONE = _load_customs_helper()
+UNVERIFIED_SSL_CONTEXT = ssl._create_unverified_context()
 
 
 @dataclass(frozen=True)
@@ -206,6 +211,20 @@ DATASET_SPECS: Dict[str, DatasetSpec] = {
         source_name="local_model",
         mode="internal_expectation",
         key_fields=("ts_code", "as_of_date"),
+        primary_date_fields=("as_of_date",),
+    ),
+    "ccgp_bid_awards": DatasetSpec(
+        name="ccgp_bid_awards",
+        source_name="ccgp",
+        mode="ccgp_bid_awards",
+        key_fields=("source_url",),
+        primary_date_fields=("published_at",),
+    ),
+    "ppi_market_digest": DatasetSpec(
+        name="ppi_market_digest",
+        source_name="100ppi",
+        mode="ppi_market_digest",
+        key_fields=("source_url",),
         primary_date_fields=("as_of_date",),
     ),
 }
@@ -574,6 +593,103 @@ def fetch_customs_summary(urls: List[str], *, started_at: float) -> pd.DataFrame
     return pd.DataFrame(records).fillna("") if records else pd.DataFrame()
 
 
+def fetch_html(url: str, *, cookie: str = "") -> str:
+    headers = {"User-Agent": "Mozilla/5.0"}
+    if cookie:
+        headers["Cookie"] = cookie
+    request = Request(url, headers=headers)
+    with urlopen(request, timeout=20, context=UNVERIFIED_SSL_CONTEXT) as response:
+        return response.read().decode("utf-8", errors="ignore")
+
+
+def _clean_html_text(value: str) -> str:
+    text = unescape(str(value or ""))
+    text = text.replace("&nbsp;", " ")
+    return " ".join(text.split())
+
+
+def fetch_ccgp_bid_awards(*, started_at: float) -> pd.DataFrame:
+    import re
+
+    url = "https://www.ccgp.gov.cn/cggg/zygg/zbgg/"
+    log_event(started_at, "dataset_batch_start", dataset="ccgp_bid_awards", url=url)
+    html = fetch_html(url)
+    pattern = re.compile(
+        r'<li>\s*<a href="(?P<href>[^"]+)"[^>]*title="(?P<title>[^"]*)">.*?</a>\s*发布时间：<em>(?P<published_at>[^<]*)</em>\s*地域：<em>(?P<region>[^<]*)</em>\s*采购人：<em>(?P<purchaser>[^<]*)</em>',
+        re.S,
+    )
+    records: List[Dict[str, Any]] = []
+    as_of_date = datetime.now().strftime("%Y%m%d")
+    for match in pattern.finditer(html):
+        href = _clean_html_text(match.group("href"))
+        title = _clean_html_text(match.group("title"))
+        if not href or not title:
+            continue
+        records.append(
+            {
+                "title": title,
+                "published_at": _clean_html_text(match.group("published_at")),
+                "region": _clean_html_text(match.group("region")),
+                "purchaser": _clean_html_text(match.group("purchaser")),
+                "source_url": urljoin(url, href),
+                "source_site": "ccgp",
+                "notice_type": "bid_award",
+                "as_of_date": as_of_date,
+            }
+        )
+    log_event(started_at, "dataset_batch_done", dataset="ccgp_bid_awards", rows=len(records), url=url)
+    return pd.DataFrame(records).fillna("") if records else pd.DataFrame()
+
+
+def fetch_ppi_market_digest(*, started_at: float) -> pd.DataFrame:
+    import re
+
+    url = "https://www.100ppi.com/"
+    log_event(started_at, "dataset_batch_start", dataset="ppi_market_digest", url=url)
+    challenge_html = fetch_html(url)
+    token_match = re.search(r'var\s+_0x2\s*=\s*"([0-9a-f]+)"', challenge_html)
+    cookie = f"HW_CHECK={token_match.group(1)}" if token_match else ""
+    html = fetch_html(url, cookie=cookie)
+    as_of_date = datetime.now().strftime("%Y%m%d")
+    records: List[Dict[str, Any]] = []
+    seen_urls: set[str] = set()
+
+    focus_pattern = re.compile(r'<a href="(?P<href>/focus/\d+\.html)"[^>]*title="(?P<title>[^"]+)"', re.S)
+    for match in focus_pattern.finditer(html):
+        source_url = urljoin(url, _clean_html_text(match.group("href")))
+        if source_url in seen_urls:
+            continue
+        seen_urls.add(source_url)
+        records.append(
+            {
+                "title": _clean_html_text(match.group("title")),
+                "source_url": source_url,
+                "source_site": "100ppi",
+                "digest_type": "focus",
+                "as_of_date": as_of_date,
+            }
+        )
+
+    forecast_pattern = re.compile(r'<a href="(?P<href>/forecast/detail-[^"]+)"\s+target="_blank"\s+title="(?P<title>[^"]+)"', re.S)
+    for match in forecast_pattern.finditer(html):
+        source_url = urljoin(url, _clean_html_text(match.group("href")))
+        if source_url in seen_urls:
+            continue
+        seen_urls.add(source_url)
+        records.append(
+            {
+                "title": _clean_html_text(match.group("title")),
+                "source_url": source_url,
+                "source_site": "100ppi",
+                "digest_type": "forecast",
+                "as_of_date": as_of_date,
+            }
+        )
+
+    log_event(started_at, "dataset_batch_done", dataset="ppi_market_digest", rows=len(records), url=url)
+    return pd.DataFrame(records).fillna("") if records else pd.DataFrame()
+
+
 def _coerce_float(value: Any) -> float | None:
     if value is None:
         return None
@@ -832,6 +948,10 @@ def execute_dataset(
             frame = fetch_customs_summary(urls, started_at=started_at)
         elif spec.mode == "internal_expectation":
             frame = build_internal_expectation(conn, started_at=started_at)
+        elif spec.mode == "ccgp_bid_awards":
+            frame = fetch_ccgp_bid_awards(started_at=started_at)
+        elif spec.mode == "ppi_market_digest":
+            frame = fetch_ppi_market_digest(started_at=started_at)
         else:
             raise RuntimeError(f"unsupported dataset mode: {spec.mode}")
 
