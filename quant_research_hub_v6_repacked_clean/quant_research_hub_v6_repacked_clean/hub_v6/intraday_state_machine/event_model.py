@@ -25,6 +25,14 @@ EVENT_TYPES = [
     "cancel_confirmed",
     "manual_override_applied",
     "midday_plan_published",
+    "timing_window_refreshed",
+    "timing_buy_ready",
+    "timing_sell_ready",
+    "timing_frozen",
+    "t_armed",
+    "t_transition",
+    "t_completed",
+    "t_frozen",
     "close_reconcile_started",
     "archive_completed",
 ]
@@ -79,6 +87,16 @@ def build_intraday_events(
         add("account_health_restored", now_ts.isoformat(timespec="seconds"))
     if str(phase_state.get("midday_decision", "") or "").strip():
         add("midday_plan_published", str(phase_state.get("updated_at", "") or now_ts.isoformat(timespec="seconds")), payload={"decision": str(phase_state.get("midday_decision", "") or "")})
+    if str(phase_state.get("timing_window", "") or "").strip():
+        add(
+            "timing_window_refreshed",
+            str(phase_state.get("updated_at", "") or now_ts.isoformat(timespec="seconds")),
+            payload={
+                "timing_window": str(phase_state.get("timing_window", "") or ""),
+                "projected_afternoon_window": str(phase_state.get("projected_afternoon_window", "") or ""),
+                "integration_mode": str(phase_state.get("integration_mode", "") or ""),
+            },
+        )
 
     if intent_frame is not None and not intent_frame.empty:
         for _, row in intent_frame.iterrows():
@@ -106,8 +124,93 @@ def build_intraday_events(
 
     if symbol_frame is not None and not symbol_frame.empty:
         for _, row in symbol_frame.iterrows():
+            stock_code = str(row.get("stock_code", "") or "")
+            ts = str(row.get("updated_at", "") or now_ts.isoformat(timespec="seconds"))
             if str(row.get("freeze_reason", "") or "").strip():
-                add("manual_override_applied", str(row.get("updated_at", "") or now_ts.isoformat(timespec="seconds")), str(row.get("stock_code", "") or ""), {"freeze_reason": str(row.get("freeze_reason", "") or ""), "symbol_state": str(row.get("symbol_state", "") or "")})
+                add(
+                    "manual_override_applied",
+                    ts,
+                    stock_code,
+                    {
+                        "freeze_reason": str(row.get("freeze_reason", "") or ""),
+                        "symbol_state": str(row.get("symbol_state", "") or ""),
+                    },
+                )
+            timing_state = str(row.get("timing_state", "") or "").strip()
+            if timing_state in {"buy_ready", "dual_ready"}:
+                add(
+                    "timing_buy_ready",
+                    ts,
+                    stock_code,
+                    {
+                        "timing_state": timing_state,
+                        "timing_window": str(row.get("timing_window", "") or phase_state.get("timing_window", "") or ""),
+                        "buy_timing_score": row.get("buy_timing_score", 0.0),
+                    },
+                )
+            if timing_state in {"sell_ready", "dual_ready"}:
+                add(
+                    "timing_sell_ready",
+                    ts,
+                    stock_code,
+                    {
+                        "timing_state": timing_state,
+                        "timing_window": str(row.get("timing_window", "") or phase_state.get("timing_window", "") or ""),
+                        "sell_timing_score": row.get("sell_timing_score", 0.0),
+                    },
+                )
+            if timing_state == "timing_frozen":
+                add(
+                    "timing_frozen",
+                    ts,
+                    stock_code,
+                    {
+                        "timing_window": str(row.get("timing_window", "") or phase_state.get("timing_window", "") or ""),
+                        "reason": str(row.get("timing_freeze_reason", "") or ""),
+                    },
+                )
+            t_state = str(row.get("t_overlay_state", "") or "").strip()
+            if t_state == "t_armed":
+                add(
+                    "t_armed",
+                    ts,
+                    stock_code,
+                    {
+                        "t_allowed_ratio": row.get("t_allowed_ratio", 0.0),
+                    },
+                )
+            if bool(row.get("t_triggered", False)):
+                add(
+                    "t_transition",
+                    ts,
+                    stock_code,
+                    {
+                        "t_overlay_state": t_state,
+                        "t_direction": str(row.get("t_direction", "") or ""),
+                        "t_leg_done": str(row.get("t_leg_done", "") or ""),
+                        "t_trigger_reason": str(row.get("t_trigger_reason", "") or ""),
+                        "t_allowed_ratio": row.get("t_allowed_ratio", 0.0),
+                    },
+                )
+            if t_state == "t_completed":
+                add(
+                    "t_completed",
+                    ts,
+                    stock_code,
+                    {
+                        "t_direction": str(row.get("t_direction", "") or ""),
+                        "t_rounds_used": row.get("t_rounds_used", 0),
+                    },
+                )
+            if t_state == "t_frozen":
+                add(
+                    "t_frozen",
+                    ts,
+                    stock_code,
+                    {
+                        "t_trigger_reason": str(row.get("t_trigger_reason", "") or ""),
+                    },
+                )
     if current_phase == "close_reconcile":
         add("close_reconcile_started", str(phase_state.get("updated_at", "") or now_ts.isoformat(timespec="seconds")))
     if current_phase == "postclose_archive":

@@ -27,6 +27,18 @@ def _midday_review_root(config: Dict[str, Any]) -> Path:
     return ensure_dir(_trade_clock_root(config) / "midday_review")
 
 
+def _intraday_state_root(config: Dict[str, Any]) -> Path:
+    default_root = _trade_clock_root(config) / "intraday_state"
+    return ensure_dir(
+        Path(
+            str(
+                dict(config.get("intraday_state_machine", {}) or {}).get("artifact_root", default_root)
+                or default_root
+            )
+        ).resolve()
+    )
+
+
 def _load_json(path: Path) -> Dict[str, Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -96,6 +108,16 @@ def _scan_namespaces(config: Dict[str, Any]) -> List[Dict[str, Any]]:
         if child.is_dir() and (child / "snapshots" / "oms_summary.json").exists():
             namespaces.append(child.name)
     return [_namespace_entry(base_root, namespace) for namespace in namespaces]
+
+
+def _latest_intraday_summary(config: Dict[str, Any]) -> Dict[str, Any]:
+    root = _intraday_state_root(config) / "latest"
+    control = _load_json(root / "intraday_control_summary.json")
+    phase = _load_json(root / "intraday_phase_state.json")
+    return {
+        "control_summary": control,
+        "phase_state": phase,
+    }
 
 
 def _select_namespace(
@@ -233,6 +255,9 @@ def run_midday_review(config_path: Path, release_id: str = "") -> Dict[str, Any]
     release_trade_date = str(release_doc.get("trade_date", "") or "")
     entries = _scan_namespaces(config)
     safety_state = load_system_safety_state(config)
+    intraday_summary = _latest_intraday_summary(config)
+    intraday_control = dict(intraday_summary.get("control_summary", {}) or {})
+    intraday_phase = dict(intraday_summary.get("phase_state", {}) or {})
     real_plan = _real_execution_plan(config=config, release_doc=release_doc, entries=entries)
     shadow_plan = _shadow_execution_plan(config=config, release_doc=release_doc, entries=entries)
     plan = {
@@ -256,6 +281,23 @@ def run_midday_review(config_path: Path, release_id: str = "") -> Dict[str, Any]
             "snapshot": dict(safety_state.get("market_snapshot", {}) or {}),
         },
         "namespace_scan": entries,
+        "timing_overlay_summary": {
+            "summary_source": "latest_intraday_control_summary_pre_midday",
+            "timing_window": str(intraday_control.get("timing_window", "") or intraday_phase.get("timing_window", "") or ""),
+            "projected_afternoon_window": str(
+                intraday_control.get("projected_afternoon_window", "")
+                or intraday_phase.get("projected_afternoon_window", "")
+                or ""
+            ),
+            "timing_enabled_symbols": int(intraday_control.get("timing_enabled_symbols", 0) or 0),
+            "buy_ready_count": int(intraday_control.get("buy_ready_count", 0) or 0),
+            "sell_ready_count": int(intraday_control.get("sell_ready_count", 0) or 0),
+            "t_eligible_symbols": int(intraday_control.get("t_eligible_symbols", 0) or 0),
+            "t_triggered_symbols": int(intraday_control.get("t_triggered_symbols", 0) or 0),
+            "afternoon_second_leg_candidates": int(intraday_control.get("afternoon_second_leg_candidates", 0) or 0),
+            "timing_feature_quality": dict(intraday_control.get("timing_feature_quality", {}) or {}),
+            "overlay_recommendation": dict(intraday_control.get("overlay_recommendation", {}) or {}),
+        },
         "real_execution": real_plan,
         "shadow_execution": shadow_plan,
         "operator_summary": {
@@ -264,6 +306,18 @@ def run_midday_review(config_path: Path, release_id: str = "") -> Dict[str, Any]
             "morning_gap_weight_ratio": float(real_plan.get("gap_weight_ratio", 0.0) or 0.0),
             "afternoon_should_run": bool(real_plan.get("should_run", False)),
             "afternoon_reason": str(real_plan.get("reason", "") or ""),
+            "timing_window": str(intraday_control.get("timing_window", "") or ""),
+            "projected_afternoon_window": str(
+                intraday_control.get("projected_afternoon_window", "")
+                or intraday_phase.get("projected_afternoon_window", "")
+                or ""
+            ),
+            "timing_enabled_symbols": int(intraday_control.get("timing_enabled_symbols", 0) or 0),
+            "buy_ready_count": int(intraday_control.get("buy_ready_count", 0) or 0),
+            "sell_ready_count": int(intraday_control.get("sell_ready_count", 0) or 0),
+            "t_eligible_symbols": int(intraday_control.get("t_eligible_symbols", 0) or 0),
+            "t_triggered_symbols": int(intraday_control.get("t_triggered_symbols", 0) or 0),
+            "afternoon_second_leg_candidates": int(intraday_control.get("afternoon_second_leg_candidates", 0) or 0),
         },
     }
     review_root = ensure_dir(_midday_review_root(config) / str(plan["trade_date"]).replace("-", ""))
@@ -280,6 +334,12 @@ def run_midday_review(config_path: Path, release_id: str = "") -> Dict[str, Any]
         f"real_reason={real_plan['reason']}",
         f"open_orders={real_plan['open_order_count']}",
         f"gap_weight_ratio={real_plan['gap_weight_ratio']}",
+        f"timing_window={plan['timing_overlay_summary']['timing_window']}",
+        f"projected_afternoon_window={plan['timing_overlay_summary']['projected_afternoon_window']}",
+        f"buy_ready_count={plan['timing_overlay_summary']['buy_ready_count']}",
+        f"sell_ready_count={plan['timing_overlay_summary']['sell_ready_count']}",
+        f"t_eligible_symbols={plan['timing_overlay_summary']['t_eligible_symbols']}",
+        f"t_triggered_symbols={plan['timing_overlay_summary']['t_triggered_symbols']}",
         f"shadow_namespace={shadow_plan['namespace']}",
         f"shadow_should_run={shadow_plan['should_run']}",
     ]

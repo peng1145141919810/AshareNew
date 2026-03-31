@@ -7,6 +7,7 @@ from typing import Any, Dict
 
 import pandas as pd
 
+from ..market_state.runtime import load_latest_market_state
 from ..oms.paths import build_oms_paths
 from ..oms.state_reader import load_latest_oms_actual_state
 from ..portfolio_release import load_latest_release, load_release_by_id
@@ -18,6 +19,7 @@ from .intent_state import derive_intent_state_rows
 from .phase_state import derive_formal_phase, derive_midday_decision, phase_allowed_action_bands
 from .safety_mapping import derive_intraday_safety_mode
 from .symbol_state import derive_symbol_state_rows
+from .timing_layer import build_timing_overlay_payload
 
 
 def _trade_clock_root(config: Dict[str, Any]) -> Path:
@@ -76,6 +78,16 @@ def _load_target_frame(release_doc: Dict[str, Any]) -> pd.DataFrame:
     return _read_csv(path)
 
 
+def _load_market_state(config: Dict[str, Any], release_doc: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(release_doc.get("market_state", {}) or {})
+    if payload:
+        return payload
+    try:
+        return dict(load_latest_market_state(config=config, allow_build=False) or {})
+    except Exception:
+        return {}
+
+
 def _oms_paths_for_namespace(config: Dict[str, Any], namespace: str) -> Dict[str, Path]:
     namespace_name = str(namespace or "main").strip() or "main"
     namespace_config = deepcopy(config)
@@ -131,10 +143,11 @@ def build_intraday_state_snapshot(
     trade_date: str = "",
     source_phase: str = "",
     cycle_state: Dict[str, Any] | None = None,
+    now_dt: Any | None = None,
 ) -> Dict[str, Any]:
     intraday_cfg = dict(config.get("intraday_state_machine", {}) or {})
     shadow_mode = bool(intraday_cfg.get("shadow_mode", True))
-    now_dt = clock_now(str(config.get("trade_clock", {}).get("timezone", "Asia/Shanghai") or "Asia/Shanghai"))
+    now_dt = now_dt or clock_now(str(config.get("trade_clock", {}).get("timezone", "Asia/Shanghai") or "Asia/Shanghai"))
     resolved_trade_date = str(trade_date or now_dt.date().isoformat())
     cycle = dict(cycle_state or _load_cycle_state(config, resolved_trade_date) or {})
     release_doc = _resolve_release(config=config, cycle_state=cycle)
@@ -159,6 +172,7 @@ def build_intraday_state_snapshot(
     safety_state = load_system_safety_state(config)
     target_frame = _load_target_frame(release_doc)
     safety_mode = derive_intraday_safety_mode(safety_state)
+    market_state = _load_market_state(config=config, release_doc=release_doc)
     effective_market_stage = _effective_market_stage(now_dt, source_phase)
     current_phase, previous_phase = derive_formal_phase(cycle_state=cycle, source_phase=source_phase, market_stage=effective_market_stage)
     midday_decision = derive_midday_decision(midday_plan, safety_mode)
@@ -186,6 +200,22 @@ def build_intraday_state_snapshot(
         release_id=release_id,
         trade_date=resolved_trade_date,
     )
+    timing_payload = build_timing_overlay_payload(
+        config=config,
+        trade_date=resolved_trade_date,
+        now_dt=now_dt,
+        current_phase=current_phase,
+        symbol_state_frame=symbol_state_frame,
+        target_frame=target_frame,
+        actual_positions_frame=actual_positions,
+        market_state=market_state,
+        safety_mode=safety_mode,
+    )
+    if isinstance(timing_payload.get("symbol_state_frame"), pd.DataFrame) and not timing_payload["symbol_state_frame"].empty:
+        symbol_state_frame = timing_payload["symbol_state_frame"]
+    timing_summary = dict(timing_payload.get("timing_summary", {}) or {})
+    current_window = dict(timing_payload.get("current_window", {}) or {})
+    afternoon_projection = dict(timing_payload.get("afternoon_projection", {}) or {})
     allowed_actions = phase_allowed_action_bands(current_phase, safety_mode, midday_decision=midday_decision)
     phase_state = {
         "generated_at": now_dt.isoformat(timespec="seconds"),
@@ -200,10 +230,14 @@ def build_intraday_state_snapshot(
         "system_mode": str(safety_state.get("system_mode", "") or ""),
         "market_safety_regime": str(safety_state.get("market_safety_regime", "") or ""),
         "midday_decision": midday_decision,
+        "timing_window": str(current_window.get("name", "") or ""),
+        "projected_afternoon_window": str(afternoon_projection.get("name", "") or ""),
         "allowed_action_bands": allowed_actions,
         "phase_status_overview": _phase_status_overview(cycle),
         "manual_halt": bool(safety_state.get("manual_halt", False)),
         "manual_reduce_only": bool(safety_state.get("manual_reduce_only", False)),
+        "execution_timing_enabled": bool(dict(intraday_cfg.get("timing_layer", {}) or {}).get("enabled", True)),
+        "t_overlay_enabled": bool(dict(intraday_cfg.get("t_overlay", {}) or {}).get("enabled", True)),
         "shadow_mode": shadow_mode,
         "integration_mode": "shadow" if shadow_mode else "bounded_takeover",
         "updated_at": now_dt.isoformat(timespec="seconds"),
@@ -230,11 +264,25 @@ def build_intraday_state_snapshot(
             "phase_status_overview": phase_state["phase_status_overview"],
         },
         "symbol_state_counts": _counts(symbol_state_frame, "symbol_state"),
+        "timing_state_counts": _counts(symbol_state_frame, "timing_state"),
+        "t_overlay_state_counts": _counts(symbol_state_frame, "t_overlay_state"),
         "intent_state_counts": _counts(intent_state_frame, "intent_state"),
         "freeze_count": int((symbol_state_frame.get("symbol_state", pd.Series(dtype=str)).astype(str) == "freeze").sum()) if not symbol_state_frame.empty else 0,
         "reconcile_only_count": int((symbol_state_frame.get("symbol_state", pd.Series(dtype=str)).astype(str) == "reconcile_only").sum()) if not symbol_state_frame.empty else 0,
         "replace_required_count": int((intent_state_frame.get("intent_state", pd.Series(dtype=str)).astype(str) == "replace_required").sum()) if not intent_state_frame.empty else 0,
         "cancel_requested_count": int((intent_state_frame.get("intent_state", pd.Series(dtype=str)).astype(str) == "cancel_requested").sum()) if not intent_state_frame.empty else 0,
+        "timing_window": str(current_window.get("name", "") or ""),
+        "projected_afternoon_window": str(afternoon_projection.get("name", "") or ""),
+        "timing_enabled_symbols": int(timing_summary.get("timing_enabled_symbols", 0) or 0),
+        "t_eligible_symbols": int(timing_summary.get("t_eligible_symbols", 0) or 0),
+        "t_triggered_symbols": int(timing_summary.get("t_triggered_symbols", 0) or 0),
+        "buy_window_open_count": int(timing_summary.get("buy_window_open_count", 0) or 0),
+        "sell_window_open_count": int(timing_summary.get("sell_window_open_count", 0) or 0),
+        "timing_frozen_count": int(timing_summary.get("timing_frozen_count", 0) or 0),
+        "t_completed_count": int(timing_summary.get("t_completed_count", 0) or 0),
+        "buy_ready_count": int(timing_summary.get("buy_ready_count", 0) or 0),
+        "sell_ready_count": int(timing_summary.get("sell_ready_count", 0) or 0),
+        "afternoon_second_leg_candidates": int(timing_summary.get("afternoon_second_leg_candidates", 0) or 0),
         "midday_action": midday_decision,
         "afternoon_execution_outcome": str(dict(cycle.get("phases", {}).get("afternoon_execution", {}) or {}).get("status", "") or ""),
         "close_reconcile_outcome": "archived" if current_phase == "postclose_archive" else ("active" if current_phase == "close_reconcile" else ""),
@@ -252,7 +300,16 @@ def build_intraday_state_snapshot(
             "allow_unfinished_orders_reconcile": bool(midday_decision in {"carry_and_reconcile", "risk_reduce"}) or bool(dict(midday_plan.get("real_execution", {}) or {}).get("allow_unfinished_orders_reconcile", False)),
             "block_new_entries": bool(midday_decision in {"risk_reduce", "abort_new_entries"} or safety_mode in {"PANIC", "HALT"}),
             "force_reconcile_only": bool(current_phase in {"close_reconcile", "postclose_archive"} or safety_mode == "HALT"),
+            "timing_window": str(current_window.get("name", "") or ""),
+            "projected_afternoon_window": str(afternoon_projection.get("name", "") or ""),
+            "timing_layer_active": bool(timing_summary.get("timing_enabled_symbols", 0) or 0),
+            "buy_ready_count": int(timing_summary.get("buy_ready_count", 0) or 0),
+            "sell_ready_count": int(timing_summary.get("sell_ready_count", 0) or 0),
+            "afternoon_second_leg_candidates_count": int(timing_summary.get("afternoon_second_leg_candidates", 0) or 0),
+            "t_triggered_count": int(timing_summary.get("t_triggered_symbols", 0) or 0),
+            "block_new_t": bool(dict(timing_summary.get("overlay_recommendation", {}) or {}).get("block_new_t", False)),
         },
+        "timing_feature_quality": dict(timing_summary.get("feature_quality_counts", {}) or {}),
         "shadow_mode": shadow_mode,
         "integration_mode": "shadow" if shadow_mode else "bounded_takeover",
         "paths": {
@@ -293,13 +350,14 @@ def refresh_intraday_state_machine(
     trade_date: str = "",
     source_phase: str = "",
     cycle_state: Dict[str, Any] | None = None,
+    now_dt: Any | None = None,
 ) -> Dict[str, Any]:
     cfg = dict(config.get("intraday_state_machine", {}) or {})
     shadow_mode = bool(cfg.get("shadow_mode", True))
     if not bool(cfg.get("enabled", True)):
         return {"ran": False, "ok": True, "message": "intraday_state_machine_disabled"}
     try:
-        snapshot = build_intraday_state_snapshot(config=config, trade_date=trade_date, source_phase=source_phase, cycle_state=cycle_state)
+        snapshot = build_intraday_state_snapshot(config=config, trade_date=trade_date, source_phase=source_phase, cycle_state=cycle_state, now_dt=now_dt)
         phase_state = dict(snapshot.get("phase_state", {}) or {})
         return {
             "ran": True,

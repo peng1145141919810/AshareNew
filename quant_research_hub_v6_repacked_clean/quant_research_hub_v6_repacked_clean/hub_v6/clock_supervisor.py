@@ -518,6 +518,18 @@ def _apply_intraday_afternoon_overlay(
     midday_action = str(summary.get("midday_action", "") or "")
     updated["intraday_overlay"] = overlay
     updated["midday_action"] = midday_action
+    updated["timing_window"] = str(summary.get("timing_window", "") or overlay.get("timing_window", "") or "")
+    updated["projected_afternoon_window"] = str(
+        summary.get("projected_afternoon_window", "") or overlay.get("projected_afternoon_window", "") or ""
+    )
+    updated["timing_layer_active"] = bool(overlay.get("timing_layer_active", False))
+    updated["buy_ready_count"] = int(overlay.get("buy_ready_count", 0) or 0)
+    updated["sell_ready_count"] = int(overlay.get("sell_ready_count", 0) or 0)
+    updated["afternoon_second_leg_candidates_count"] = int(
+        overlay.get("afternoon_second_leg_candidates_count", 0) or 0
+    )
+    updated["t_triggered_count"] = int(overlay.get("t_triggered_count", 0) or 0)
+    updated["block_new_t"] = bool(overlay.get("block_new_t", False))
     if bool(overlay.get("allow_unfinished_orders_reconcile", False)):
         updated["allow_unfinished_orders_reconcile"] = True
     if bool(overlay.get("block_new_entries", False)):

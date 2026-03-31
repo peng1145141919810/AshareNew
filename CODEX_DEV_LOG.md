@@ -173,12 +173,24 @@
   - current formal intraday state machine layer:
     - module root:
       - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine`
+    - current timing / T submodules:
+      - `timing_windows.py`
+      - `flow_features.py`
+      - `timing_scores.py`
+      - `timing_rules.py`
+      - `t_overlay.py`
+      - `timing_layer.py`
     - primary artifacts:
       - `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_phase_state.json`
       - `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\symbol_execution_state.csv`
       - `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intent_state_daily.csv`
       - `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_event_log.jsonl`
       - `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_control_summary.json`
+    - current timing / T truth:
+      - timing layer now evaluates formal intraday windows, timing scores, timing states, and T overlay states inside the same sidecar refresh
+      - the timing layer is still honest about data quality and writes `feature_quality_tier` instead of fabricating minute-bar truth
+      - current public portal page:
+        - `https://peng1145141919810.xyz/intraday-state.html`
     - runtime truth:
       - `shadow` mode writes formalized sidecars only and does not rewrite afternoon execution plans
       - `bounded_takeover` mode allows `clock_supervisor` to read the latest intraday control summary and apply a limited afternoon overlay
@@ -190,6 +202,9 @@
       - `F:\quant_data\AshareC#\docs\INTRADAY_STATE_MACHINE_CN.md`
       - `F:\quant_data\AshareC#\docs\INTRADAY_PHASE_MATRIX_CN.md`
       - `F:\quant_data\AshareC#\docs\INTRADAY_SYMBOL_INTENT_MATRIX_CN.md`
+      - `F:\quant_data\AshareC#\docs\EXECUTION_TIMING_LAYER_CN.md`
+      - `F:\quant_data\AshareC#\docs\T_OVERLAY_CN.md`
+      - `F:\quant_data\AshareC#\docs\TIMING_AND_T_STATE_MATRIX_CN.md`
       - `F:\quant_data\AshareC#\docs\SYSTEM_OPERATOR_DAILY_LOOP_GUIDE_CN.md`
 - Formal run-trace root:
   - `F:\quant_data\AshareC#\outputs\canonical_runs`
@@ -1112,11 +1127,11 @@
 | `latest_account_health.json` | gmtrade health probe sidecar | safety guard / operator | `F:\quant_data\Ashare\data\trade_clock\latest_account_health.json` | JSON | latest fresh or cached account/position/order health snapshot fetched via `gmtrade39` |
 | `latest_execution_dispatch.json` | execution gate / trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\latest_execution_dispatch.json` | JSON | latest release-triggered execution dispatch outcome |
 | `latest_execution_dispatch.<namespace>.json` | execution gate / trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\latest_execution_dispatch.<namespace>.json` | JSON | namespace-isolated dispatch result for simulation or shadow execution lines |
-| `intraday_phase_state.json` | intraday state machine | operator / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_phase_state.json` | JSON | latest formal phase, previous phase, namespace, safety mode, midday decision, and integration mode |
-| `symbol_execution_state.csv` | intraday state machine | operator / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\symbol_execution_state.csv` | CSV | symbol-level execution-state view mapped from lifecycle, gap, OMS truth, phase, and safety |
+| `intraday_phase_state.json` | intraday state machine | operator / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_phase_state.json` | JSON | latest formal phase, previous phase, namespace, safety mode, midday decision, current timing window, projected afternoon window, and integration mode |
+| `symbol_execution_state.csv` | intraday state machine | operator / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\symbol_execution_state.csv` | CSV | symbol-level execution-state view mapped from lifecycle, gap, OMS truth, phase, safety, timing scores, timing state, T overlay state, and feature-quality tier |
 | `intent_state_daily.csv` | intraday state machine | operator / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intent_state_daily.csv` | CSV | formal OMS-facing intent-state matrix derived from ledgers, continuity, and cancel-replace audits |
-| `intraday_event_log.jsonl` | intraday state machine | operator / portal / replay | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_event_log.jsonl` | JSONL | phase, safety, symbol, and intent transition events in one append-style stream |
-| `intraday_control_summary.json` | intraday state machine | operator / afternoon overlay / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_control_summary.json` | JSON | phase trace, state counts, risk summary, and overlay recommendation for bounded takeover mode |
+| `intraday_event_log.jsonl` | intraday state machine | operator / portal / replay | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_event_log.jsonl` | JSONL | phase, safety, symbol, intent, timing-window, timing-state, and T-overlay transition events in one append-style stream |
+| `intraday_control_summary.json` | intraday state machine | operator / afternoon overlay / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_control_summary.json` | JSON | phase trace, timing-window summary, symbol/timing/T counts, risk summary, feature-quality counts, and overlay recommendation for bounded takeover mode |
 | `outputs\automation_runs\YYYYMMDD\run_manifest.json` | trade clock summary packager | operator / debugging / daily audit | `F:\quant_data\Ashare\outputs\automation_runs\YYYYMMDD\run_manifest.json` | JSON | per-day automation bundle manifest with release id, namespaces, report path, and copied phase artifacts |
 | `outputs\automation_runs\YYYYMMDD\daily_report.txt` | trade clock summary packager | operator | `F:\quant_data\Ashare\outputs\automation_runs\YYYYMMDD\daily_report.txt` | Text | plain-language daily automation summary over phase results, release, OMS sidecars, warnings, and critical flags |
 | `execution_report_*.json` | Gmtrade execution bridge | operator / supervisor feedback | `F:\quant_data\Ashare\data\live_execution_bridge\execution_report_*.json` | JSON | execution summary per run |
@@ -1190,6 +1205,14 @@
 | `INTRADAY_STATE_MACHINE_ENABLE_AFTERNOON_OVERLAY` | `hub_v6/local_settings.py` | `True` | allows `clock_supervisor` to read `intraday_control_summary.json` and constrain the afternoon leg when not in shadow mode |
 | `INTRADAY_STATE_MACHINE_STALE_ORDER_MINUTES` | `hub_v6/local_settings.py` | `20` | default stale threshold used when mapping OMS orders/intents into `stale_pending` / `replace_required` style intraday states |
 | `INTRADAY_STATE_MACHINE_REFRESH_PHASES` | `hub_v6/local_settings.py` | `preopen_gate,simulation,shadow,midday_review,afternoon_execution,afternoon_shadow,summary` | controls which trade-clock phases trigger a sidecar refresh |
+| `ENABLE_EXECUTION_TIMING_LAYER` | `hub_v6/local_settings.py` | `True` | turns on the intraday timing-score layer that writes `timing_state`, timing scores, and timing-window summary into the formal intraday sidecars |
+| `TIMING_LAYER_BUY_SCORE_THRESHOLD` / `TIMING_LAYER_SELL_SCORE_THRESHOLD` | `hub_v6/local_settings.py` | `0.58 / 0.62` | controls when a symbol is promoted from watch/observe into `buy_ready` or `sell_ready` |
+| `TIMING_LAYER_REQUIRE_OMS_CLEAN_STATE` / `TIMING_LAYER_REQUIRE_FLOW_CONFIRMATION` | `hub_v6/local_settings.py` | `True / True` | blocks timing-ready states when OMS intent state is dirty or flow confirmation is missing |
+| `TIMING_LAYER_ENABLE_AFTERNOON_SECOND_LEG` | `hub_v6/local_settings.py` | `True` | allows the T overlay second leg to complete in the afternoon windows |
+| `TIMING_LAYER_WINDOW_CONFIG` | `hub_v6/local_settings.py` | `open_noise,morning_primary,mid_morning_low_speed,afternoon_primary,late_afternoon_reconcile,post_1450_close_only` | defines the formal intraday timing windows and which action families are open inside each window |
+| `ENABLE_T_OVERLAY` | `hub_v6/local_settings.py` | `True` | enables formal positive-T / reverse-T shadow evaluation on top of lifecycle-approved holdings |
+| `T_OVERLAY_MAX_ROUNDS_PER_SYMBOL_PER_DAY` / `T_OVERLAY_MAX_RATIO_PER_SYMBOL` | `hub_v6/local_settings.py` | `1 / 0.20` | caps how many T rounds can happen per symbol per day and how large the overlay can be relative to the base position |
+| `T_OVERLAY_DISABLE_ON_PANIC` / `T_OVERLAY_DISABLE_ON_MAJOR_EVENT` | `hub_v6/local_settings.py` | `True / True` | freezes T overlay when market panic or message-veto conditions are present |
 | `ENABLE_AUDIT_SITE_PUBLISH` / `AUDIT_SITE_PUBLISH_RUN_AFTER_SUMMARY` | `hub_v6/local_settings.py` | `True / True` | automatically publishes the latest audit pack and portal pages to the public site after `summary` |
 | `AUDIT_SITE_PUBLISH_REMOTE_HOST` / `AUDIT_SITE_PUBLISH_DOMAIN` | `hub_v6/local_settings.py` | `43.129.28.141 / peng1145141919810.xyz` | defines the SSH publish target and public domain used by the post-summary portal publish step |
 | `manual_halt` / `manual_reduce_only` | `data\\trade_clock\\manual_overrides.json` | `False / False` | operator-facing runtime kill switches; `manual_halt` blocks all new orders, `manual_reduce_only` keeps the bridge sell-only |
@@ -1239,6 +1262,8 @@
 - The trade clock now includes a pre-research affordable data refresh hook; it improves daily freshness for low-cost sources, but it is intentionally non-blocking by default and should not be mistaken for a canonical data-governance gate.
 - The intraday state machine is now structurally complete and automatically refreshed by the trade clock, but standalone `execution_only` and standalone `midday_review_only` are not yet fully gated by the state machine; the bounded takeover currently lives inside the trade-clock afternoon overlay path.
 - `INTRADAY_STATE_MACHINE_SHADOW_MODE` should remain the default until several real trade dates confirm the symbol/intention mappings are stable; switching it off enables only limited afternoon-plan constraints, not full execution ownership.
+- The new execution timing layer currently depends on the available `daily_price_snapshot.csv` contract. In the present local sample, stable `open/high/low/vwap/volume` minute-style fields are often absent, so many symbols land in `feature_quality_tier=snapshot_degraded`; this is expected and honest, not a bug.
+- The current T overlay uses `available_shares > 0` as the old-base-position proxy. It is suitable for bounded shadow evaluation, but it is not yet a true lot-age or tax-lot-grade T engine.
 
 ## Data Source Governance
 - Canonical rule:
@@ -5135,3 +5160,87 @@ All timestamps below are local file write times in the current workspace and sho
   - stop and disable `ashare-portal-backend`
   - remove the `/api/` nginx proxy block
   - revert the four touched portal scripts if the site must return to static-read-only mode
+
+### 2026-03-31 13:23
+- Type:
+  - `feature|runtime|config|docs`
+- Scope:
+  - `execution|infra|portal`
+- Location:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\flow_features.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\timing_windows.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\timing_scores.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\timing_rules.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\t_overlay.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\timing_layer.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\runtime.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\event_model.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\midday_review.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `scripts\probe_execution_timing_layer.py`
+  - `scripts\probe_t_overlay.py`
+  - `scripts\build_audit_site_index.py`
+  - `docs\EXECUTION_TIMING_LAYER_CN.md`
+  - `docs\T_OVERLAY_CN.md`
+  - `docs\TIMING_AND_T_STATE_MATRIX_CN.md`
+- What changed:
+  - Added a formal execution timing layer on top of the existing intraday state machine:
+    - window resolver
+    - feature builder
+    - timing scores
+    - timing state rules
+    - T overlay state rules
+  - Extended intraday sidecars so `symbol_execution_state.csv` now carries timing / T fields and `intraday_control_summary.json` now carries:
+    - timing window
+    - projected afternoon window
+    - timing-ready counts
+    - T counts
+    - timing/T state distributions
+    - timing feature-quality counts
+  - Extended `intraday_event_log.jsonl` with timing and T transition events.
+  - Extended `midday_review` so the plan now records the latest timing/T summary for operator inspection.
+  - Kept afternoon execution integration bounded and conservative:
+    - the trade clock only receives extra overlay metadata
+    - no hidden per-symbol execution takeover was introduced
+  - Added two lightweight probes:
+    - `probe_execution_timing_layer.py`
+    - `probe_t_overlay.py`
+  - Updated the portal intraday page so it now shows:
+    - current timing window
+    - timing/T counts
+    - timing/T distributions
+    - per-symbol timing score and T overlay state
+    - feature-quality tier
+  - Added three Chinese docs covering the execution timing layer, T overlay, and the state matrix.
+  - Fixed real robustness issues discovered during implementation:
+    - CSV column access in `flow_features.py` now degrades safely when optional columns are absent
+    - probe scripts now trim to actually available columns instead of assuming every field exists
+- Impact:
+  - The intraday layer is no longer only formal phase / symbol / intent mapping; it now has a real timing/T shadow layer with inspectable output.
+  - Operators can now see whether afternoon inactivity is caused by:
+    - no timing-ready names
+    - message veto
+    - panic/halt compression
+    - degraded intraday data quality
+  - The public portal now surfaces this timing/T truth directly on `intraday-state.html`.
+- Validation:
+  - `python -m py_compile` on all touched intraday modules, config/runtime files, and both new probe scripts
+  - `python scripts\probe_execution_timing_layer.py --trade-date 2026-03-30 --time 09:50:00 --source-phase shadow`
+    - result: success
+    - observed timing window: `morning_primary_window`
+    - observed feature quality: `snapshot_degraded`
+  - `python scripts\probe_t_overlay.py --trade-date 2026-03-30 --morning-time 10:00:00 --afternoon-time 13:20:00`
+    - result: success
+    - observed T states remain conservative/frozen under current veto conditions
+- Compatibility:
+  - additive on top of the existing formal intraday sidecar contract
+  - `shadow` remains default; no direct execution ownership transfer
+  - existing OMS / safety / release truth contracts remain unchanged
+- Rollback:
+  - revert the touched intraday timing/T files and the matching config/docs/site updates
+  - if necessary, disable with:
+    - `ENABLE_EXECUTION_TIMING_LAYER = False`
+    - `ENABLE_T_OVERLAY = False`
+  - leaving those switches off restores the older intraday sidecar behavior without removing the base state machine

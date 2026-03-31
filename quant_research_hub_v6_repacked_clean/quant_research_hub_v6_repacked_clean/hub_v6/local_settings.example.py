@@ -194,6 +194,64 @@ INTRADAY_STATE_MACHINE_SHADOW_MODE = True
 INTRADAY_STATE_MACHINE_FAIL_OPEN = True
 INTRADAY_STATE_MACHINE_ENABLE_AFTERNOON_OVERLAY = True
 INTRADAY_STATE_MACHINE_STALE_ORDER_MINUTES = 20
+ENABLE_EXECUTION_TIMING_LAYER = True
+ENABLE_T_OVERLAY = True
+TIMING_LAYER_BUY_SCORE_THRESHOLD = 0.58
+TIMING_LAYER_SELL_SCORE_THRESHOLD = 0.62
+TIMING_LAYER_REQUIRE_OMS_CLEAN_STATE = True
+TIMING_LAYER_REQUIRE_FLOW_CONFIRMATION = True
+TIMING_LAYER_ENABLE_AFTERNOON_SECOND_LEG = True
+T_OVERLAY_MAX_ROUNDS_PER_SYMBOL_PER_DAY = 1
+T_OVERLAY_MAX_RATIO_PER_SYMBOL = 0.20
+T_OVERLAY_DISABLE_ON_PANIC = True
+T_OVERLAY_DISABLE_ON_MAJOR_EVENT = True
+TIMING_LAYER_WINDOW_CONFIG = {
+    "open_noise_window": {
+        "start": "09:30:00",
+        "end": "09:40:00",
+        "allow_trim": True,
+        "allow_exit": True,
+    },
+    "morning_primary_window": {
+        "start": "09:40:00",
+        "end": "10:30:00",
+        "allow_new_entry": True,
+        "allow_build_entry": True,
+        "allow_trim": True,
+        "allow_exit": True,
+        "allow_t_first_leg": True,
+    },
+    "mid_morning_low_speed_window": {
+        "start": "10:30:00",
+        "end": "11:20:00",
+        "allow_trim": True,
+        "allow_exit": True,
+        "allow_reconcile": True,
+    },
+    "afternoon_primary_window": {
+        "start": "13:00:00",
+        "end": "14:20:00",
+        "allow_new_entry": True,
+        "allow_build_entry": True,
+        "allow_trim": True,
+        "allow_exit": True,
+        "allow_t_second_leg": True,
+    },
+    "late_afternoon_reconcile_window": {
+        "start": "14:20:00",
+        "end": "14:50:00",
+        "allow_trim": True,
+        "allow_exit": True,
+        "allow_reconcile": True,
+        "allow_t_second_leg": True,
+    },
+    "post_1450_close_only_window": {
+        "start": "14:50:00",
+        "end": "15:00:00",
+        "allow_exit": True,
+        "allow_reconcile": True,
+    },
+}
 INTRADAY_STATE_MACHINE_REFRESH_PHASES = [
     "preopen_gate",
     "simulation",

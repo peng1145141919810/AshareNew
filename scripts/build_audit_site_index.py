@@ -240,7 +240,7 @@ def build_site(reports_root: Path, output_dir: Path, domain: str, repo_root: Pat
       <article class='card'><div class='label'>账户健康</div><div class='metric'>{html.escape(t(health.get("status"), "未生成"))}</div><p class='muted'>如果这里长期为空，说明账户健康快照尚未接入当前副本。</p></article>
       <article class='card'><div class='label'>发布约束</div><div class='metric'>{p((manifest.get("constraints") or {}).get("total_exposure_cap"), 1)}</div><p class='muted'>单票上限 {p((manifest.get("constraints") or {}).get("single_name_cap"), 1)}，最大目标数 {html.escape(t(manifest.get("target_count")))}。</p></article>
       <article class='card'><div class='label'>账户结构图</div>{account_bars}</article>
-      <article class='card wide'><div class='label'>盘中控制摘要</div>{kv([("integration_mode", intraday_control.get("integration_mode")), ("midday_action", intraday_control.get("midday_action")), ("freeze_count", intraday_control.get("freeze_count")), ("reconcile_only_count", intraday_control.get("reconcile_only_count")), ("replace_required_count", intraday_control.get("replace_required_count")), ("cancel_requested_count", intraday_control.get("cancel_requested_count")), ("event_count", intraday_control.get("event_count")), ("详情页", "./intraday-state.html")])}</article>
+      <article class='card wide'><div class='label'>盘中控制摘要</div>{kv([("integration_mode", intraday_control.get("integration_mode")), ("midday_action", intraday_control.get("midday_action")), ("timing_window", intraday_control.get("timing_window")), ("buy_ready_count", intraday_control.get("buy_ready_count")), ("sell_ready_count", intraday_control.get("sell_ready_count")), ("t_eligible_symbols", intraday_control.get("t_eligible_symbols")), ("t_triggered_symbols", intraday_control.get("t_triggered_symbols")), ("详情页", "./intraday-state.html")])}</article>
       <article class='card full'><div class='label'>最近异常与事件</div>{table(["时间", "级别", "事件"], incident_table)}</article>
       <article class='card full'><div class='label'>系统时间轴</div>{incident_timeline}</article>
     </section>""")
@@ -281,12 +281,19 @@ def build_site(reports_root: Path, output_dir: Path, domain: str, repo_root: Pat
     intraday_symbol_rows = [[
         html.escape(t(r.get("stock_code"))),
         html.escape(t(r.get("symbol_state"))),
+        html.escape(t(r.get("timing_state"))),
         html.escape(t(r.get("source_lifecycle_state"))),
         p(r.get("target_weight")),
         p(r.get("actual_weight")),
+        n(r.get("buy_timing_score")),
+        n(r.get("sell_timing_score")),
+        html.escape(t(r.get("t_overlay_state"))),
+        html.escape(t(r.get("t_direction"))),
+        p(r.get("t_allowed_ratio")),
         html.escape(t(r.get("last_intent_state"))),
         html.escape(t(r.get("action_band"))),
-        html.escape(t(r.get("freeze_reason"))),
+        html.escape(t(r.get("freeze_reason") or r.get("timing_freeze_reason"))),
+        html.escape(t(r.get("feature_quality_tier"))),
     ] for r in intraday_symbols]
     intraday_intent_rows = [[
         html.escape(t(r.get("stock_code"))),
@@ -314,17 +321,33 @@ def build_site(reports_root: Path, output_dir: Path, domain: str, repo_root: Pat
         [(k, v / max(1, sum((intraday_control.get("symbol_state_counts") or {}).values()))) for k, v in (intraday_control.get("symbol_state_counts") or {}).items()]
         or [("no_symbol_state", 0.0)]
     )
+    intraday_timing_state_bars = bars(
+        [(k, v / max(1, sum((intraday_control.get("timing_state_counts") or {}).values()))) for k, v in (intraday_control.get("timing_state_counts") or {}).items()]
+        or [("no_timing_state", 0.0)]
+    )
+    intraday_t_overlay_bars = bars(
+        [(k, v / max(1, sum((intraday_control.get("t_overlay_state_counts") or {}).values()))) for k, v in (intraday_control.get("t_overlay_state_counts") or {}).items()]
+        or [("no_t_overlay_state", 0.0)]
+    )
+    intraday_timing_bars = bars(
+        [(k, v / max(1, sum((intraday_control.get("timing_feature_quality") or {}).values()))) for k, v in (intraday_control.get("timing_feature_quality") or {}).items()]
+        or [("no_timing_quality", 0.0)]
+    )
     intraday = shell("盘中状态机", domain, "intraday", f"""
     <div class='section-title'><h2>盘中状态机</h2><div class='sub'>把交易日阶段、单标的执行状态、OMS 意图状态和事件时间轴放到一套正式 sidecar 上</div></div>
     <section class='grid'>
       <article class='card'><div class='label'>当前 formal phase</div><div class='metric'>{html.escape(t(intraday_phase.get("current_phase"), "未生成"))}</div>{badge(t(intraday_phase.get("integration_mode"), "shadow"))}{badge(t(intraday_phase.get("safety_mode"), "unknown"))}</article>
       <article class='card'><div class='label'>午间决议</div><div class='metric'>{html.escape(t(intraday_phase.get("midday_decision"), "未生成"))}</div><p class='muted'>命名空间 {html.escape(t(intraday_phase.get("namespace"), "-"))}，上阶段 {html.escape(t(intraday_phase.get("previous_phase"), "-"))}</p></article>
       <article class='card'><div class='label'>风险压缩</div><div class='metric'>{html.escape(t((intraday_control.get("risk_summary") or {}).get("safety_mode"), "未生成"))}</div>{badge(t((intraday_control.get("risk_summary") or {}).get("market_safety_regime"), "unknown"))}<p class='muted'>halt_reason {html.escape(t((intraday_control.get("risk_summary") or {}).get("halt_reason"), "-"))}</p></article>
-      <article class='card wide'><div class='label'>phase 约束</div>{kv([("integration_mode", intraday_phase.get("integration_mode")), ("allowed_action_bands", ", ".join(list(intraday_phase.get("allowed_action_bands", []) or [])) or "-"), ("manual_halt", intraday_phase.get("manual_halt")), ("manual_reduce_only", intraday_phase.get("manual_reduce_only")), ("overlay.block_new_entries", (intraday_control.get("overlay_recommendation") or {}).get("block_new_entries")), ("overlay.allow_unfinished_orders_reconcile", (intraday_control.get("overlay_recommendation") or {}).get("allow_unfinished_orders_reconcile")), ("overlay.force_reconcile_only", (intraday_control.get("overlay_recommendation") or {}).get("force_reconcile_only")), ("event_count", intraday_control.get("event_count"))])}</article>
+      <article class='card wide'><div class='label'>phase 约束</div>{kv([("integration_mode", intraday_phase.get("integration_mode")), ("timing_window", intraday_control.get("timing_window")), ("projected_afternoon_window", intraday_control.get("projected_afternoon_window")), ("allowed_action_bands", ", ".join(list(intraday_phase.get("allowed_action_bands", []) or [])) or "-"), ("manual_halt", intraday_phase.get("manual_halt")), ("manual_reduce_only", intraday_phase.get("manual_reduce_only")), ("overlay.block_new_entries", (intraday_control.get("overlay_recommendation") or {}).get("block_new_entries")), ("overlay.block_new_t", (intraday_control.get("overlay_recommendation") or {}).get("block_new_t")), ("event_count", intraday_control.get("event_count"))])}</article>
       <article class='card wide'><div class='label'>状态分布</div>{intraday_count_bars}</article>
-      <article class='card'><div class='label'>控制计数</div>{kv([("freeze_count", intraday_control.get("freeze_count")), ("reconcile_only_count", intraday_control.get("reconcile_only_count")), ("replace_required_count", intraday_control.get("replace_required_count")), ("cancel_requested_count", intraday_control.get("cancel_requested_count")), ("open_intents_after", (intraday_control.get("risk_summary") or {}).get("open_intents_after")), ("gap_symbols", (intraday_control.get("risk_summary") or {}).get("n_gap_symbols"))])}</article>
+      <article class='card'><div class='label'>控制计数</div>{kv([("freeze_count", intraday_control.get("freeze_count")), ("reconcile_only_count", intraday_control.get("reconcile_only_count")), ("buy_ready_count", intraday_control.get("buy_ready_count")), ("sell_ready_count", intraday_control.get("sell_ready_count")), ("t_eligible_symbols", intraday_control.get("t_eligible_symbols")), ("t_triggered_symbols", intraday_control.get("t_triggered_symbols")), ("open_intents_after", (intraday_control.get("risk_summary") or {}).get("open_intents_after")), ("gap_symbols", (intraday_control.get("risk_summary") or {}).get("n_gap_symbols"))])}</article>
+      <article class='card'><div class='label'>Timing / T 摘要</div>{kv([("timing_layer_active", (intraday_control.get("overlay_recommendation") or {}).get("timing_layer_active")), ("buy_window_open_count", intraday_control.get("buy_window_open_count")), ("sell_window_open_count", intraday_control.get("sell_window_open_count")), ("afternoon_second_leg_candidates", intraday_control.get("afternoon_second_leg_candidates")), ("t_completed_count", intraday_control.get("t_completed_count")), ("feature_quality_keys", ", ".join(list((intraday_control.get("timing_feature_quality") or {}).keys())) or "-")])}</article>
+      <article class='card wide'><div class='label'>Timing state 分布</div>{intraday_timing_state_bars}</article>
+      <article class='card wide'><div class='label'>T overlay 分布</div>{intraday_t_overlay_bars}</article>
+      <article class='card wide'><div class='label'>Timing 特征质量</div>{intraday_timing_bars}</article>
       <article class='card'><div class='label'>trade_clock phase 状态</div>{table(["phase", "status"], intraday_phase_rows)}</article>
-      <article class='card full'><div class='label'>symbol execution state</div>{table(["标的", "symbol_state", "source_lifecycle", "target_weight", "actual_weight", "last_intent_state", "action_band", "freeze_reason"], intraday_symbol_rows)}</article>
+      <article class='card full'><div class='label'>symbol execution state</div>{table(["标的", "symbol_state", "timing_state", "source_lifecycle", "target_weight", "actual_weight", "buy_score", "sell_score", "t_overlay_state", "t_direction", "t_allowed_ratio", "last_intent_state", "action_band", "freeze_reason", "feature_quality"], intraday_symbol_rows)}</article>
       <article class='card full'><div class='label'>intent state</div>{table(["标的", "intent_id", "intent_state", "oms_status", "order_status", "fill_ratio", "stale_reason", "continuation"], intraday_intent_rows)}</article>
       <article class='card full'><div class='label'>事件时间轴</div>{intraday_event_timeline}</article>
       <article class='card full'><div class='label'>当前 sidecar 名称</div>{kv([("phase_state", "intraday_phase_state.json"), ("control_summary", "intraday_control_summary.json"), ("symbol_execution_state", "symbol_execution_state.csv"), ("intent_state_daily", "intent_state_daily.csv"), ("event_log", "intraday_event_log.jsonl")])}</article>

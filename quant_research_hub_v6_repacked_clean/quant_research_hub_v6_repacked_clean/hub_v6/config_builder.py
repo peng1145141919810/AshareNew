@@ -57,6 +57,7 @@ def build_runtime_config() -> Dict[str, Any]:
             "log_root": LS.LOG_ROOT,
             "portfolio_output_root": LS.PORTFOLIO_OUTPUT_ROOT,
             "live_execution_root": LS.LIVE_EXECUTION_ROOT,
+            "live_price_snapshot_path": str(getattr(LS, "LIVE_PRICE_SNAPSHOT_PATH", Path(LS.LIVE_EXECUTION_ROOT) / "daily_price_snapshot.csv")),
             "trade_release_root": str(getattr(LS, "TRADE_RELEASE_ROOT", Path(LS.LIVE_EXECUTION_ROOT).parents[0] / "trade_release_v1")),
             "trade_clock_root": str(getattr(LS, "TRADE_CLOCK_ROOT", Path(LS.LIVE_EXECUTION_ROOT).parents[0] / "trade_clock")),
             "automation_runs_root": str(getattr(LS, "AUTOMATION_RUNS_ROOT", Path(LS.PROJECT_ROOT).parents[1] / "outputs" / "automation_runs")),
@@ -272,6 +273,70 @@ def build_runtime_config() -> Dict[str, Any]:
                 )
                 or ["preopen_gate", "simulation", "shadow", "midday_review", "afternoon_execution", "afternoon_shadow", "summary"]
             ),
+            "timing_layer": {
+                "enabled": bool(getattr(LS, "ENABLE_EXECUTION_TIMING_LAYER", True)),
+                "window_config": dict(
+                    getattr(
+                        LS,
+                        "TIMING_LAYER_WINDOW_CONFIG",
+                        {
+                            "open_noise_window": {"start": "09:30:00", "end": "09:40:00", "allow_trim": True, "allow_exit": True},
+                            "morning_primary_window": {
+                                "start": "09:40:00",
+                                "end": "10:30:00",
+                                "allow_new_entry": True,
+                                "allow_build_entry": True,
+                                "allow_trim": True,
+                                "allow_exit": True,
+                                "allow_t_first_leg": True,
+                            },
+                            "mid_morning_low_speed_window": {
+                                "start": "10:30:00",
+                                "end": "11:20:00",
+                                "allow_trim": True,
+                                "allow_exit": True,
+                                "allow_reconcile": True,
+                            },
+                            "afternoon_primary_window": {
+                                "start": "13:00:00",
+                                "end": "14:20:00",
+                                "allow_new_entry": True,
+                                "allow_build_entry": True,
+                                "allow_trim": True,
+                                "allow_exit": True,
+                                "allow_t_second_leg": True,
+                            },
+                            "late_afternoon_reconcile_window": {
+                                "start": "14:20:00",
+                                "end": "14:50:00",
+                                "allow_trim": True,
+                                "allow_exit": True,
+                                "allow_reconcile": True,
+                                "allow_t_second_leg": True,
+                            },
+                            "post_1450_close_only_window": {
+                                "start": "14:50:00",
+                                "end": "15:00:00",
+                                "allow_exit": True,
+                                "allow_reconcile": True,
+                            },
+                        },
+                    )
+                    or {}
+                ),
+                "buy_score_threshold": float(getattr(LS, "TIMING_LAYER_BUY_SCORE_THRESHOLD", 0.58) or 0.58),
+                "sell_score_threshold": float(getattr(LS, "TIMING_LAYER_SELL_SCORE_THRESHOLD", 0.62) or 0.62),
+                "require_oms_clean_state": bool(getattr(LS, "TIMING_LAYER_REQUIRE_OMS_CLEAN_STATE", True)),
+                "require_flow_confirmation": bool(getattr(LS, "TIMING_LAYER_REQUIRE_FLOW_CONFIRMATION", True)),
+                "enable_afternoon_second_leg": bool(getattr(LS, "TIMING_LAYER_ENABLE_AFTERNOON_SECOND_LEG", True)),
+            },
+            "t_overlay": {
+                "enabled": bool(getattr(LS, "ENABLE_T_OVERLAY", True)),
+                "max_rounds_per_symbol_per_day": int(getattr(LS, "T_OVERLAY_MAX_ROUNDS_PER_SYMBOL_PER_DAY", 1) or 1),
+                "max_ratio_per_symbol": float(getattr(LS, "T_OVERLAY_MAX_RATIO_PER_SYMBOL", 0.20) or 0.20),
+                "disable_on_panic": bool(getattr(LS, "T_OVERLAY_DISABLE_ON_PANIC", True)),
+                "disable_on_major_event": bool(getattr(LS, "T_OVERLAY_DISABLE_ON_MAJOR_EVENT", True)),
+            },
         },
         "portfolio_recommendation": {
             "enabled": LS.ENABLE_PORTFOLIO_RECOMMENDATION,
