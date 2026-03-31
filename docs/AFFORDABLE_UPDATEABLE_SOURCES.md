@@ -53,6 +53,21 @@
   - summary layer only
   - not detailed customs tables
 
+### Local Research Model
+- `internal_expectation`
+- Source mix:
+  - local blend over existing low-cost rows already in `affordable_data_v1.sqlite3`
+  - current inputs:
+    - `forecast`
+    - `express`
+    - `fina_indicator`
+    - `daily_basic`
+    - `stock_basic`
+- Scope:
+  - research-only internal expected-profit / revision layer
+  - not analyst consensus
+  - not canonical truth
+
 ## What Gets Stored
 - Table:
   - `affordable_dataset_rows`
@@ -128,4 +143,19 @@ C:\Users\Administrator\PyCharmMiscProject\.venv\Scripts\python.exe F:\quant_data
 ## Current Limits
 - `fina_indicator` is targeted, not full-universe by default.
 - `customs_summary` is summary only and comes from `gov.cn` release pages.
+- `internal_expectation` is an internal model layer and must not be renamed or consumed as analyst-consensus truth.
 - This bundle is a low-cost update layer, not an exchange-licensed institutional truth store.
+
+## Current Supply-Chain Alternatives To The Gated CNEPTP Platform
+- Procurement / tender raw layer:
+  - `https://www.ccgp.gov.cn/cggg/`
+  - `https://www.ccgp.gov.cn/cggg/zygg/zbgg/`
+  - `https://bigdata.cebpubservice.com/`
+- Commodity / spot-price / inventory public web layer:
+  - `https://www.100ppi.com/`
+- Official macro and customs summary layer:
+  - `https://www.gov.cn/`
+  - `https://www.stats.gov.cn/`
+- Current operating truth:
+  - these are usable substitute discovery sources after `cneptp` was judged permission-gated for a personal operator
+  - they are not a one-for-one replacement for the full `cneptp` risk/price/supplier database

@@ -124,11 +124,13 @@
       - `moneyflow`: `15532`
       - `stk_limit`: `22544`
       - `customs_summary`: `2`
+      - `internal_expectation`: `4289`
   - affordable bundle hard limitations:
     - it is a standalone low-cost update layer, not the canonical truth store
     - current default run only covers low-cost updateable sources and does not include the previously deleted heavy non-price pipeline
     - `customs_summary` is summary-only from `gov.cn`, not customs detail tables
     - analyst consensus / `expectation_revision_daily` is still not implemented under the current `2000`-point Tushare tier
+    - the new `internal_expectation` layer is a local research model, not analyst-consensus truth, and currently covers the universe only where low-cost source blending can produce a stable estimate
     - Tushare `moneyflow` is already covered as a daily low-cost dataset but does not solve intraday tick / realtime snapshot gaps
     - `fina_indicator` is supported only as targeted refresh with explicit `--ts-code`, not full-universe default ingestion
     - industry-level price / inventory / warehouse-receipt / operating-rate factor layer is still source-discovery stage and not yet materialized into SQL tables
@@ -192,8 +194,20 @@
       - the timing layer is still honest about data quality and writes `feature_quality_tier` instead of fabricating minute-bar truth
       - `daily_price_snapshot.csv` now prefers `Tushare realtime_quote` (`doc_id=315`) for live `open/high/low/price/volume/amount` and falls back to the latest available daily panel when realtime is unavailable
       - the older daily `moneyflow` source (`doc_id=170`) remains useful for end-of-day flow features only and is not treated as a realtime substitute
-      - current public portal page:
+    - current public portal page:
         - `https://peng1145141919810.xyz/intraday-state.html`
+  - current non-`cneptp` supply-chain substitute stack:
+    - procurement / tender raw:
+      - `https://www.ccgp.gov.cn/cggg/`
+      - `https://www.ccgp.gov.cn/cggg/zygg/zbgg/`
+      - `https://bigdata.cebpubservice.com/`
+    - spot / commodity public web:
+      - `https://www.100ppi.com/`
+    - macro / customs summary:
+      - `https://www.gov.cn/`
+      - `https://www.stats.gov.cn/`
+    - operator truth:
+      - `cneptp` remains strategically valuable but is currently permission-gated for a personal operator and must not be assumed usable by default
     - runtime truth:
       - `shadow` mode writes formalized sidecars only and does not rewrite afternoon execution plans
       - `bounded_takeover` mode allows `clock_supervisor` to read the latest intraday control summary and apply a limited afternoon overlay
@@ -5311,3 +5325,101 @@ All timestamps below are local file write times in the current workspace and sho
   - disable preopen same-day reruns with:
     - `TRADE_CLOCK_MORNING_RESEARCH_REFRESH_ENABLED = False`
     - `TRADE_CLOCK_MORNING_RELEASE_REFRESH_ENABLED = False`
+
+### [2026-03-31 22:20] Type: data-source/runtime/cleanup
+- Scope:
+  - `https://www.cneptp.com/`
+  - `data\trade_clock`
+  - `outputs\automation_runs`
+  - `data\trade_release_v1`
+  - `data\live_execution_bridge`
+  - `data\event_lake_v6\research`
+- What changed:
+  - Verified the public entry for the national enterprise procurement sourcing/inquiry system:
+    - `https://www.cneptp.com/`
+  - Verified from public operator-side descriptions that the platform is relevant to supply-chain strategy research because it is built around:
+    - commodity information databases
+    - supplier entities
+    - procurement-side risk recognition
+    - price-monitoring / price-index capabilities
+  - Current judgment:
+    - this source is strategically useful for supply-chain research
+    - but it should currently be treated as a gated source candidate rather than a free bulk-ingestion source
+    - public/open integration is likely to require platform authorization such as `AppKey/AppSecret/accessToken` and possibly IP whitelisting
+  - Checked current workspace runtime truth before cleanup:
+    - there is no current `clock_supervisor.pid` under `F:\quant_data\AshareC#\data\trade_clock`
+    - there is no `20260331` runtime directory under `F:\quant_data\AshareC#\data\trade_clock\runtime`
+    - the old `clock_state.json` was stale pre-`2026-03-31` residue rather than proof of an active new-workspace trade-clock run
+  - Cleared all identified pre-`2026-03-31` local generated artifacts from the selected runtime/output roots, including:
+    - stale trade-clock state/log files
+    - stale automation audit probe files
+    - stale release snapshot
+    - stale live execution bridge snapshots
+    - stale research sidecars / pdf cache / three-strategy sidecars
+- Impact:
+  - The new workspace is no longer polluted by pre-`2026-03-31` generated runtime residues.
+  - Operator judgment about "is the system actually running now" is clearer:
+    - current answer is `no confirmed active trade-clock run in this workspace at the time of inspection`
+  - `cneptp` is now logged as a serious candidate source for future supply-chain factor expansion, but not yet an approved free-autoupdate source.
+- Validation:
+  - targeted filesystem scan after cleanup:
+    - no files older than `2026-03-31` remain under the selected generated-artifact roots
+  - runtime inspection:
+    - no `clock_supervisor.pid`
+    - no `20260331` trade-clock runtime folder
+    - only the dev-log sync watcher Python process was clearly active
+- Compatibility:
+  - cleanup touched generated artifacts only
+  - no source code or operator config was changed in this step
+  - future formal runs will regenerate these state files as needed
+- Rollback:
+  - none for deleted generated artifacts
+  - regenerate by re-running the relevant trade-clock / research / portal flows
+
+### [2026-03-31 22:59] Type: data-source/research-model/sql
+- Scope:
+  - `scripts\update_affordable_data_bundle.py`
+  - `docs\AFFORDABLE_UPDATEABLE_SOURCES.md`
+- What changed:
+  - Added a new affordable dataset:
+    - `internal_expectation`
+  - `internal_expectation` is generated locally from existing low-cost rows already stored in `affordable_data_v1.sqlite3` and currently blends:
+    - `forecast`
+    - `express`
+    - `fina_indicator` when available
+    - `daily_basic`
+    - `stock_basic`
+  - The model writes research-only fields such as:
+    - `expected_profit`
+    - `expected_profit_lower`
+    - `expected_profit_upper`
+    - `revision_ratio`
+    - `confidence`
+    - `source_mix`
+    - `valuation_bucket`
+    - `growth_proxy`
+  - Added explicit documentation that this layer is:
+    - internal
+    - research-only
+    - not analyst consensus
+  - Logged the current fallback supply-chain source stack after `cneptp` was ruled out for the current personal operator due to permission gating.
+- Impact:
+  - The system now has a formal low-cost internal expected-profit / expectation-gap layer instead of waiting for analyst-consensus data.
+  - Future affordable bundle runs now include this dataset by default and can refresh it daily.
+  - Research consumers can distinguish high-confidence disclosure-driven names from low-confidence valuation-implied names via `confidence` and `source_mix`.
+- Validation:
+  - `python -m py_compile` on `scripts\update_affordable_data_bundle.py`
+  - executed:
+    - `python F:\quant_data\AshareC#\scripts\update_affordable_data_bundle.py --dataset internal_expectation`
+  - result:
+    - `4289` rows written into `F:\quant_data\AshareC#\data\sql_store\affordable_data_v1.sqlite3`
+    - snapshot written to `F:\quant_data\AshareC#\data\affordable_feeds\latest\internal_expectation.csv`
+  - sample spot-check confirmed `source_mix` and `confidence` fields are present in stored payloads
+- Compatibility:
+  - additive only
+  - does not overwrite or impersonate analyst-consensus fields
+  - stored inside the affordable standalone store, not the canonical truth store
+- Rollback:
+  - remove `internal_expectation` from `DATASET_SPECS`
+  - delete rows with `dataset='internal_expectation'` from `affordable_dataset_rows`
+  - remove `internal_expectation.csv` snapshot if the layer must be withdrawn

@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List
+from typing import Any, Callable, Dict, Iterable, List, Tuple
 
 import pandas as pd
 
@@ -200,6 +200,13 @@ DATASET_SPECS: Dict[str, DatasetSpec] = {
         mode="customs_urls",
         key_fields=("source_url",),
         primary_date_fields=("release_date",),
+    ),
+    "internal_expectation": DatasetSpec(
+        name="internal_expectation",
+        source_name="local_model",
+        mode="internal_expectation",
+        key_fields=("ts_code", "as_of_date"),
+        primary_date_fields=("as_of_date",),
     ),
 }
 
@@ -567,6 +574,206 @@ def fetch_customs_summary(urls: List[str], *, started_at: float) -> pd.DataFrame
     return pd.DataFrame(records).fillna("") if records else pd.DataFrame()
 
 
+def _coerce_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip().replace(",", "")
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _row_date_key(payload: Dict[str, Any]) -> Tuple[str, str]:
+    primary = str(payload.get("ann_date", "") or payload.get("trade_date", "") or payload.get("end_date", "") or payload.get("release_date", "") or "")
+    secondary = str(payload.get("end_date", "") or payload.get("f_ann_date", "") or "")
+    return primary, secondary
+
+
+def _load_affordable_payloads(conn: sqlite3.Connection, dataset: str) -> List[Dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT payload_json
+        FROM affordable_dataset_rows
+        WHERE dataset = ?
+        """,
+        (dataset,),
+    ).fetchall()
+    payloads: List[Dict[str, Any]] = []
+    for row in rows:
+        try:
+            payload = json.loads(row["payload_json"])
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    return payloads
+
+
+def _latest_by_ts_code(payloads: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    latest: Dict[str, Dict[str, Any]] = {}
+    for payload in payloads:
+        ts_code = str(payload.get("ts_code", "")).strip()
+        if not ts_code:
+            continue
+        key = _row_date_key(payload)
+        existing = latest.get(ts_code)
+        if existing is None or key > _row_date_key(existing):
+            latest[ts_code] = payload
+    return latest
+
+
+def _build_forecast_midpoint(payload: Dict[str, Any]) -> Tuple[float | None, str, float | None]:
+    low = _coerce_float(payload.get("net_profit_min"))
+    high = _coerce_float(payload.get("net_profit_max"))
+    if low is not None and high is not None:
+        midpoint = (low + high) / 2.0
+        revision = None
+        last_parent = _coerce_float(payload.get("last_parent_net"))
+        if last_parent not in (None, 0.0):
+            revision = (midpoint - last_parent) / abs(last_parent)
+        return midpoint, "forecast_net_profit_range", revision
+    pct_low = _coerce_float(payload.get("p_change_min"))
+    pct_high = _coerce_float(payload.get("p_change_max"))
+    last_parent = _coerce_float(payload.get("last_parent_net"))
+    if last_parent not in (None, 0.0) and pct_low is not None and pct_high is not None:
+        pct_mid = (pct_low + pct_high) / 200.0
+        midpoint = last_parent * (1.0 + pct_mid)
+        revision = (midpoint - last_parent) / abs(last_parent)
+        return midpoint, "forecast_pct_change_proxy", revision
+    return None, "", None
+
+
+def _build_express_profit(payload: Dict[str, Any]) -> Tuple[float | None, str]:
+    for field in ("n_income", "total_profit", "operate_profit"):
+        value = _coerce_float(payload.get(field))
+        if value is not None:
+            return value, field
+    return None, ""
+
+
+def _select_growth_proxy(payload: Dict[str, Any]) -> Tuple[float | None, str]:
+    for field in ("q_dtprofit_yoy", "q_netprofit_yoy", "netprofit_yoy", "dt_netprofit_yoy", "roe_yoy"):
+        value = _coerce_float(payload.get(field))
+        if value is not None:
+            return value, field
+    return None, ""
+
+
+def _build_model_profit(fina_payload: Dict[str, Any] | None, daily_payload: Dict[str, Any] | None) -> Tuple[float | None, str, float | None]:
+    if not daily_payload:
+        return None, "", None
+    total_mv = _coerce_float(daily_payload.get("total_mv"))
+    pe_ttm = _coerce_float(daily_payload.get("pe_ttm") or daily_payload.get("pe"))
+    if total_mv is None or pe_ttm is None or pe_ttm <= 0:
+        return None, "", None
+    implied_trailing_profit = total_mv / pe_ttm
+    growth_value = None
+    growth_field = ""
+    if fina_payload:
+        growth_value, growth_field = _select_growth_proxy(fina_payload)
+    if growth_value is None:
+        return implied_trailing_profit, "market_implied_trailing_profit", None
+    clipped = max(-0.8, min(2.0, growth_value / 100.0))
+    forward_profit = implied_trailing_profit * (1.0 + clipped * 0.5)
+    return forward_profit, f"market_implied_plus_{growth_field}", growth_value / 100.0
+
+
+def build_internal_expectation(conn: sqlite3.Connection, *, started_at: float) -> pd.DataFrame:
+    log_event(started_at, "dataset_batch_start", dataset="internal_expectation", phase="load_payloads")
+    stock_basic_latest = _latest_by_ts_code(_load_affordable_payloads(conn, "stock_basic"))
+    forecast_latest = _latest_by_ts_code(_load_affordable_payloads(conn, "forecast"))
+    express_latest = _latest_by_ts_code(_load_affordable_payloads(conn, "express"))
+    fina_latest = _latest_by_ts_code(_load_affordable_payloads(conn, "fina_indicator"))
+    daily_basic_latest = _latest_by_ts_code(_load_affordable_payloads(conn, "daily_basic"))
+    universe = sorted(set(stock_basic_latest) | set(forecast_latest) | set(express_latest) | set(fina_latest) | set(daily_basic_latest))
+    log_event(started_at, "dataset_batch_done", dataset="internal_expectation", phase="load_payloads", universe=len(universe))
+
+    rows: List[Dict[str, Any]] = []
+    as_of_date = datetime.now().strftime("%Y%m%d")
+    for index, ts_code in enumerate(universe, start=1):
+        if index == 1 or index % 500 == 0 or index == len(universe):
+            log_event(started_at, "dataset_batch_start", dataset="internal_expectation", phase="score_symbol", batch=index, total_batches=len(universe), ts_code=ts_code)
+        stock_payload = stock_basic_latest.get(ts_code, {})
+        forecast_payload = forecast_latest.get(ts_code, {})
+        express_payload = express_latest.get(ts_code, {})
+        fina_payload = fina_latest.get(ts_code, {})
+        daily_payload = daily_basic_latest.get(ts_code, {})
+
+        express_profit, express_source = _build_express_profit(express_payload)
+        forecast_profit, forecast_source, forecast_revision = _build_forecast_midpoint(forecast_payload)
+        model_profit, model_source, model_growth = _build_model_profit(fina_payload, daily_payload)
+
+        expected_profit = None
+        source_mix: List[str] = []
+        confidence = 0.0
+        revision = None
+
+        if express_profit is not None:
+            expected_profit = express_profit
+            source_mix.append(f"express:{express_source}")
+            confidence = 0.95
+            if model_profit is not None:
+                expected_profit = express_profit * 0.85 + model_profit * 0.15
+                source_mix.append(f"model:{model_source}")
+        elif forecast_profit is not None:
+            expected_profit = forecast_profit
+            source_mix.append(f"forecast:{forecast_source}")
+            confidence = 0.78
+            revision = forecast_revision
+            if model_profit is not None:
+                expected_profit = forecast_profit * 0.75 + model_profit * 0.25
+                source_mix.append(f"model:{model_source}")
+        elif model_profit is not None:
+            expected_profit = model_profit
+            source_mix.append(f"model:{model_source}")
+            confidence = 0.42 if model_growth is not None else 0.30
+            revision = model_growth
+        else:
+            continue
+
+        if revision is None:
+            last_parent = _coerce_float(forecast_payload.get("last_parent_net"))
+            if last_parent not in (None, 0.0) and expected_profit is not None:
+                revision = (expected_profit - last_parent) / abs(last_parent)
+
+        growth_proxy, growth_proxy_field = _select_growth_proxy(fina_payload) if fina_payload else (None, "")
+        pe_ttm = _coerce_float(daily_payload.get("pe_ttm") or daily_payload.get("pe"))
+        valuation_bucket = "unknown"
+        if pe_ttm is not None:
+            if pe_ttm <= 15:
+                valuation_bucket = "low"
+            elif pe_ttm <= 35:
+                valuation_bucket = "mid"
+            else:
+                valuation_bucket = "high"
+
+        rows.append(
+            {
+                "ts_code": ts_code,
+                "symbol": str(stock_payload.get("symbol", "") or daily_payload.get("ts_code", "")).replace(".SH", "").replace(".SZ", ""),
+                "name": str(stock_payload.get("name", "")).strip(),
+                "as_of_date": as_of_date,
+                "expected_profit": round(expected_profit, 4) if expected_profit is not None else "",
+                "expected_profit_lower": round(_coerce_float(forecast_payload.get("net_profit_min")), 4) if _coerce_float(forecast_payload.get("net_profit_min")) is not None else "",
+                "expected_profit_upper": round(_coerce_float(forecast_payload.get("net_profit_max")), 4) if _coerce_float(forecast_payload.get("net_profit_max")) is not None else "",
+                "revision_ratio": round(revision, 6) if revision is not None else "",
+                "confidence": round(confidence, 4),
+                "source_mix": "|".join(source_mix),
+                "valuation_bucket": valuation_bucket,
+                "growth_proxy": round(growth_proxy, 4) if growth_proxy is not None else "",
+                "growth_proxy_field": growth_proxy_field,
+                "forecast_ann_date": str(forecast_payload.get("ann_date", "") or ""),
+                "express_ann_date": str(express_payload.get("ann_date", "") or ""),
+                "fina_ann_date": str(fina_payload.get("ann_date", "") or ""),
+                "daily_trade_date": str(daily_payload.get("trade_date", "") or ""),
+            }
+        )
+    return pd.DataFrame(rows).fillna("")
+
+
 def execute_dataset(
     conn: sqlite3.Connection,
     client: TushareClient | None,
@@ -623,6 +830,8 @@ def execute_dataset(
             urls = [str(item).strip() for item in args.customs_url if str(item).strip()] or list(CUSTOMS_DEFAULT_URLS)
             params.update({"urls": urls})
             frame = fetch_customs_summary(urls, started_at=started_at)
+        elif spec.mode == "internal_expectation":
+            frame = build_internal_expectation(conn, started_at=started_at)
         else:
             raise RuntimeError(f"unsupported dataset mode: {spec.mode}")
 
