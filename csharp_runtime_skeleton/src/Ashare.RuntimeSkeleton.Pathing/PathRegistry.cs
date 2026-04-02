@@ -14,7 +14,7 @@ public sealed record PathRegistry
     public string TradeClockServicePath { get; init; } = string.Empty;
     public string AffordableDataBundleScriptPath { get; init; } = string.Empty;
     public string LivePriceSnapshotPath { get; init; } = string.Empty;
-    public string ThreeStrategyKernelRoot { get; init; } = string.Empty;
+    public string IntegratedThesisRoot { get; init; } = string.Empty;
     public string IntradayStateRoot { get; init; } = string.Empty;
     public string IntradayPhaseStatePath { get; init; } = string.Empty;
     public string IntradaySymbolStatePath { get; init; } = string.Empty;
@@ -25,9 +25,18 @@ public sealed record PathRegistry
     public string ExternalTradeClockRoot { get; init; } = string.Empty;
     public string ExternalOmsRoot { get; init; } = string.Empty;
     public string ExternalDataRoot { get; init; } = string.Empty;
+    public string ClockStatePath { get; init; } = string.Empty;
+    public string SafetyStatePath { get; init; } = string.Empty;
     public string ResearchSqlStorePath { get; init; } = string.Empty;
     public string AffordableSqlStorePath { get; init; } = string.Empty;
     public string AffordableSnapshotRoot { get; init; } = string.Empty;
+    public string PositionLedgerLatestPath { get; init; } = string.Empty;
+    public string MechanismRealismRollupPath { get; init; } = string.Empty;
+    public string LatestTAuditJsonPath { get; init; } = string.Empty;
+    public string LatestTAuditWindowCsvPath { get; init; } = string.Empty;
+    public string SitePublishRoot { get; init; } = string.Empty;
+    public string AuditReportsRoot { get; init; } = string.Empty;
+    public string OperatorRuntimeContextPath { get; init; } = string.Empty;
     public string LegacyDataRoot { get; init; } = string.Empty;
     public bool UsesLegacyDataFallback { get; init; }
 
@@ -62,7 +71,7 @@ public sealed record PathRegistry
             TradeClockServicePath = Path.Combine(normalizedRoot, "trade_clock_service.py"),
             AffordableDataBundleScriptPath = Path.Combine(normalizedRoot, "scripts", "update_affordable_data_bundle.py"),
             LivePriceSnapshotPath = Path.Combine(externalDataRoot, "live_execution_bridge", "daily_price_snapshot.csv"),
-            ThreeStrategyKernelRoot = Path.Combine(externalDataRoot, "event_lake_v6", "research", "three_strategy_kernel"),
+            IntegratedThesisRoot = Path.Combine(externalDataRoot, "event_lake_v6", "research", "integrated_thesis"),
             IntradayStateRoot = Path.Combine(localDataRoot, "trade_clock", "intraday_state"),
             IntradayPhaseStatePath = Path.Combine(localDataRoot, "trade_clock", "intraday_state", "latest", "intraday_phase_state.json"),
             IntradaySymbolStatePath = Path.Combine(localDataRoot, "trade_clock", "intraday_state", "latest", "symbol_execution_state.csv"),
@@ -73,9 +82,18 @@ public sealed record PathRegistry
             ExternalTradeClockRoot = Path.Combine(externalDataRoot, "trade_clock"),
             ExternalOmsRoot = Path.Combine(externalDataRoot, "live_execution_bridge", "oms_v1"),
             ExternalDataRoot = externalDataRoot,
-            ResearchSqlStorePath = Path.Combine(externalDataRoot, "sql_store", "research_data_v1.sqlite3"),
-            AffordableSqlStorePath = Path.Combine(externalDataRoot, "sql_store", "affordable_data_v1.sqlite3"),
-            AffordableSnapshotRoot = Path.Combine(externalDataRoot, "affordable_feeds", "latest"),
+            ClockStatePath = Path.Combine(externalDataRoot, "trade_clock", "clock_state.json"),
+            SafetyStatePath = Path.Combine(externalDataRoot, "trade_clock", "system_safety_state.json"),
+            ResearchSqlStorePath = Path.Combine(localDataRoot, "sql_store", "research_fact_layers_v1.sqlite3"),
+            AffordableSqlStorePath = Path.Combine(localDataRoot, "sql_store", "affordable_data_v1.sqlite3"),
+            AffordableSnapshotRoot = Path.Combine(localDataRoot, "affordable_feeds", "latest"),
+            PositionLedgerLatestPath = Path.Combine(externalDataRoot, "live_execution_bridge", "oms_v1", "ledgers", "position_ledger_latest.csv"),
+            MechanismRealismRollupPath = Path.Combine(externalDataRoot, "live_execution_bridge", "oms_v1", "feedback", "mechanism_realism_rollup.csv"),
+            LatestTAuditJsonPath = Path.Combine(localDataRoot, "audit_v1", "latest", "latest_t_audit.json"),
+            LatestTAuditWindowCsvPath = Path.Combine(localDataRoot, "audit_v1", "latest", "t_overlay_window_daily.csv"),
+            SitePublishRoot = Path.Combine(normalizedRoot, "outputs", "site_publish_stage"),
+            AuditReportsRoot = Path.Combine(normalizedRoot, "outputs", "site_publish_stage", "reports"),
+            OperatorRuntimeContextPath = Path.Combine(normalizedRoot, "outputs", "site_publish_stage", "operator_runtime_context.json"),
             LegacyDataRoot = legacyDataRoot,
             UsesLegacyDataFallback = !useLocalData
         };
@@ -104,7 +122,9 @@ public sealed record PathRegistry
             new() { Name = "OmsSummary", Path = Path.Combine(ExternalOmsRoot, "snapshots", "oms_summary.json"), Purpose = "OMS summary snapshot." },
             new() { Name = "IntentLedger", Path = Path.Combine(ExternalOmsRoot, "ledgers", "intent_ledger_latest.csv"), Purpose = "Current OMS intent ledger." },
             new() { Name = "OrderLedger", Path = Path.Combine(ExternalOmsRoot, "ledgers", "order_ledger_latest.csv"), Purpose = "Current OMS order ledger." },
-            new() { Name = "FillLedger", Path = Path.Combine(ExternalOmsRoot, "ledgers", "fill_ledger_latest.csv"), Purpose = "Current OMS fill ledger." }
+            new() { Name = "FillLedger", Path = Path.Combine(ExternalOmsRoot, "ledgers", "fill_ledger_latest.csv"), Purpose = "Current OMS fill ledger." },
+            new() { Name = "PositionLedger", Path = PositionLedgerLatestPath, Purpose = "Current OMS position ledger." },
+            new() { Name = "MechanismRealismRollup", Path = MechanismRealismRollupPath, Purpose = "Execution realism rollup for audit attribution." }
         ];
     }
 }

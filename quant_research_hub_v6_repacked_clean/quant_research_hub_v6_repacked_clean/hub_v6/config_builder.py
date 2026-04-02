@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict
 from . import local_settings as LS
@@ -66,7 +67,9 @@ def build_runtime_config() -> Dict[str, Any]:
             "technical_confirmation_root": str(getattr(LS, "TECHNICAL_CONFIRMATION_ROOT", Path(LS.RESEARCH_ROOT) / "technical_confirmation")),
             "oms_output_root": str(getattr(LS, "OMS_OUTPUT_ROOT", Path(LS.LIVE_EXECUTION_ROOT) / "oms_v1")),
             "affordable_sqlite_path": str(getattr(LS, "AFFORDABLE_SQLITE_PATH", Path(LS.DATA_ROOT) / "sql_store" / "affordable_data_v1.sqlite3")),
+            "research_fact_sqlite_path": str(getattr(LS, "RESEARCH_FACT_SQLITE_PATH", Path(LS.DATA_ROOT) / "sql_store" / "research_fact_layers_v1.sqlite3")),
             "affordable_snapshot_root": str(getattr(LS, "AFFORDABLE_SNAPSHOT_ROOT", Path(LS.DATA_ROOT) / "affordable_feeds" / "latest")),
+            "manual_event_proxy_path": str(getattr(LS, "MANUAL_EVENT_PROXY_PATH", Path(LS.RESEARCH_ROOT) / "manual_event_proxy" / "manual_event_proxy.jsonl")),
         },
         "providers": {
             "tushare": {
@@ -163,10 +166,10 @@ def build_runtime_config() -> Dict[str, Any]:
             "config_path": str(getattr(LS, "MARKET_STATE_CONFIG_PATH", Path(LS.PROJECT_ROOT) / "configs" / "market_state" / "default.json")),
             "use_router_bias": bool(getattr(LS, "MARKET_STATE_USE_ROUTER_BIAS", True)),
         },
-        "three_strategy_kernel": {
-            "enabled": bool(getattr(LS, "ENABLE_THREE_STRATEGY_KERNEL", True)),
-            "output_root": str(getattr(LS, "THREE_STRATEGY_KERNEL_ROOT", Path(LS.RESEARCH_ROOT) / "three_strategy_kernel")),
-            "portfolio_budget_overlay": bool(getattr(LS, "THREE_STRATEGY_KERNEL_PORTFOLIO_BUDGET_OVERLAY", True)),
+        "integrated_thesis": {
+            "enabled": bool(getattr(LS, "ENABLE_INTEGRATED_THESIS", True)),
+            "output_root": str(getattr(LS, "INTEGRATED_THESIS_ROOT", Path(LS.RESEARCH_ROOT) / "integrated_thesis")),
+            "portfolio_budget_overlay": bool(getattr(LS, "INTEGRATED_THESIS_PORTFOLIO_BUDGET_OVERLAY", True)),
         },
         "industry_router": {
             "enabled": bool(getattr(LS, "ENABLE_INDUSTRY_ROUTER", True)),
@@ -249,17 +252,46 @@ def build_runtime_config() -> Dict[str, Any]:
                 or []
             ),
         },
+        "research_fact_refresh": {
+            "enabled": bool(getattr(LS, "ENABLE_RESEARCH_FACT_REFRESH", True)),
+            "run_before_research": bool(getattr(LS, "RESEARCH_FACT_REFRESH_RUN_BEFORE_RESEARCH", True)),
+            "fail_open": bool(getattr(LS, "RESEARCH_FACT_REFRESH_FAIL_OPEN", True)),
+            "event_script_path": str(getattr(LS, "RESEARCH_FACT_EVENT_SCRIPT_PATH", Path(LS.PROJECT_ROOT).parents[1] / "scripts" / "build_event_fact_layer.py")),
+            "hard_factor_script_path": str(getattr(LS, "RESEARCH_FACT_HARD_FACTOR_SCRIPT_PATH", Path(LS.PROJECT_ROOT).parents[1] / "scripts" / "build_industry_hard_factor_layer.py")),
+            "sqlite_path": str(getattr(LS, "RESEARCH_FACT_SQLITE_PATH", Path(LS.DATA_ROOT) / "sql_store" / "research_fact_layers_v1.sqlite3")),
+            "event_lookback_days": int(getattr(LS, "RESEARCH_FACT_EVENT_LOOKBACK_DAYS", 60) or 60),
+            "hard_factor_lookback_days": int(getattr(LS, "RESEARCH_FACT_HARD_FACTOR_LOOKBACK_DAYS", 5) or 5),
+            "timeout_minutes": int(getattr(LS, "RESEARCH_FACT_REFRESH_TIMEOUT_MINUTES", 90) or 90),
+        },
+        "t_audit": {
+            "enabled": bool(getattr(LS, "ENABLE_T_AUDIT", True)),
+            "artifact_root": str(getattr(LS, "T_AUDIT_OUTPUT_ROOT", Path(LS.DATA_ROOT) / "audit_v1")),
+            "policy_path": str(getattr(LS, "T_AUDIT_POLICY_PATH", Path(LS.PROJECT_ROOT) / "configs" / "t_overlay" / "t_audit_policy.json")),
+        },
         "audit_site_publish": {
             "enabled": bool(getattr(LS, "ENABLE_AUDIT_SITE_PUBLISH", True)),
             "run_after_summary": bool(getattr(LS, "AUDIT_SITE_PUBLISH_RUN_AFTER_SUMMARY", True)),
             "fail_open": bool(getattr(LS, "AUDIT_SITE_PUBLISH_FAIL_OPEN", True)),
             "script_path": str(getattr(LS, "AUDIT_SITE_PUBLISH_SCRIPT_PATH", Path(LS.PROJECT_ROOT).parents[1] / "scripts" / "publish_audit_report_to_site.ps1")),
             "powershell_executable": str(getattr(LS, "AUDIT_SITE_PUBLISH_POWERSHELL", "powershell.exe") or "powershell.exe"),
+            "python_executable": str(getattr(LS, "PYTHON_EXECUTABLE", sys.executable) or sys.executable),
             "remote_user": str(getattr(LS, "AUDIT_SITE_PUBLISH_REMOTE_USER", "ubuntu") or "ubuntu"),
             "remote_host": str(getattr(LS, "AUDIT_SITE_PUBLISH_REMOTE_HOST", "43.129.28.141") or "43.129.28.141"),
             "remote_root": str(getattr(LS, "AUDIT_SITE_PUBLISH_REMOTE_ROOT", "/var/www/peng1145141919810.xyz/site") or "/var/www/peng1145141919810.xyz/site"),
             "domain": str(getattr(LS, "AUDIT_SITE_PUBLISH_DOMAIN", "peng1145141919810.xyz") or "peng1145141919810.xyz"),
             "timeout_minutes": int(getattr(LS, "AUDIT_SITE_PUBLISH_TIMEOUT_MINUTES", 20) or 20),
+        },
+        "operator_runtime_publish": {
+            "enabled": bool(getattr(LS, "ENABLE_OPERATOR_RUNTIME_PUBLISH", True)),
+            "fail_open": bool(getattr(LS, "OPERATOR_RUNTIME_PUBLISH_FAIL_OPEN", True)),
+            "script_path": str(getattr(LS, "OPERATOR_RUNTIME_PUBLISH_SCRIPT_PATH", Path(LS.PROJECT_ROOT).parents[1] / "scripts" / "publish_operator_runtime_context_to_site.ps1")),
+            "powershell_executable": str(getattr(LS, "OPERATOR_RUNTIME_PUBLISH_POWERSHELL", "powershell.exe") or "powershell.exe"),
+            "python_executable": str(getattr(LS, "PYTHON_EXECUTABLE", sys.executable) or sys.executable),
+            "remote_user": str(getattr(LS, "AUDIT_SITE_PUBLISH_REMOTE_USER", "ubuntu") or "ubuntu"),
+            "remote_host": str(getattr(LS, "AUDIT_SITE_PUBLISH_REMOTE_HOST", "43.129.28.141") or "43.129.28.141"),
+            "remote_root": str(getattr(LS, "AUDIT_SITE_PUBLISH_REMOTE_ROOT", "/var/www/peng1145141919810.xyz/site") or "/var/www/peng1145141919810.xyz/site"),
+            "timeout_minutes": int(getattr(LS, "OPERATOR_RUNTIME_PUBLISH_TIMEOUT_MINUTES", 5) or 5),
+            "min_interval_seconds": int(getattr(LS, "OPERATOR_RUNTIME_PUBLISH_MIN_INTERVAL_SECONDS", 300) or 300),
         },
         "intraday_state_machine": {
             "enabled": bool(getattr(LS, "ENABLE_INTRADAY_STATE_MACHINE", True)),
@@ -500,7 +532,7 @@ def build_runtime_config() -> Dict[str, Any]:
                         "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_PREOPEN_GATE_TIMEOUT_MINUTES", 15) or 15),
                     },
                     "simulation": {
-                        "time": str(getattr(LS, "TRADE_CLOCK_PHASE_SIMULATION_TIME", "09:28:00") or "09:28:00"),
+                        "time": str(getattr(LS, "TRADE_CLOCK_PHASE_SIMULATION_TIME", "09:30:35") or "09:30:35"),
                         "timeout_minutes": int(getattr(LS, "TRADE_CLOCK_SIMULATION_TIMEOUT_MINUTES", 45) or 45),
                     },
                     "shadow": {

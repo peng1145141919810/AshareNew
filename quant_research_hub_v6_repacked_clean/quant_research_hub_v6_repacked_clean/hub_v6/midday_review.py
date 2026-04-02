@@ -9,6 +9,7 @@ import pandas as pd
 from .config_utils import ensure_dir, load_config
 from .portfolio_release import load_latest_release, load_release_by_id
 from .safety_guard import load_system_safety_state
+from .t_audit import build_t_audit_pack
 from .trading_clock import clock_now
 
 
@@ -37,6 +38,13 @@ def _intraday_state_root(config: Dict[str, Any]) -> Path:
             )
         ).resolve()
     )
+
+
+def _t_audit_latest_path(config: Dict[str, Any]) -> Path:
+    data_root = Path(str(config.get("paths", {}).get("data_root", Path(__file__).resolve().parents[3] / "data") or Path(__file__).resolve().parents[3] / "data")).resolve()
+    audit_cfg = dict(config.get("t_audit", {}) or {})
+    root = Path(str(audit_cfg.get("artifact_root", data_root / "audit_v1") or data_root / "audit_v1")).resolve()
+    return root / "latest" / "latest_t_audit.json"
 
 
 def _load_json(path: Path) -> Dict[str, Any]:
@@ -258,6 +266,7 @@ def run_midday_review(config_path: Path, release_id: str = "") -> Dict[str, Any]
     intraday_summary = _latest_intraday_summary(config)
     intraday_control = dict(intraday_summary.get("control_summary", {}) or {})
     intraday_phase = dict(intraday_summary.get("phase_state", {}) or {})
+    t_audit = build_t_audit_pack(config=config, trade_date=release_trade_date or now.date().isoformat(), release_doc=release_doc)
     real_plan = _real_execution_plan(config=config, release_doc=release_doc, entries=entries)
     shadow_plan = _shadow_execution_plan(config=config, release_doc=release_doc, entries=entries)
     plan = {
@@ -297,6 +306,13 @@ def run_midday_review(config_path: Path, release_id: str = "") -> Dict[str, Any]
             "afternoon_second_leg_candidates": int(intraday_control.get("afternoon_second_leg_candidates", 0) or 0),
             "timing_feature_quality": dict(intraday_control.get("timing_feature_quality", {}) or {}),
             "overlay_recommendation": dict(intraday_control.get("overlay_recommendation", {}) or {}),
+        },
+        "t_audit_summary": {
+            "available": bool(t_audit.get("available", False)),
+            "top_reject_reason": str(t_audit.get("top_reject_reason", "") or ""),
+            "top_suited_mechanism": str(t_audit.get("top_suited_mechanism", "") or ""),
+            "summary_lines": list(t_audit.get("summary_lines", []) or [])[:4],
+            "policy_change_suggestions": list(t_audit.get("policy_change_suggestions", []) or [])[:4],
         },
         "real_execution": real_plan,
         "shadow_execution": shadow_plan,
@@ -340,6 +356,8 @@ def run_midday_review(config_path: Path, release_id: str = "") -> Dict[str, Any]
         f"sell_ready_count={plan['timing_overlay_summary']['sell_ready_count']}",
         f"t_eligible_symbols={plan['timing_overlay_summary']['t_eligible_symbols']}",
         f"t_triggered_symbols={plan['timing_overlay_summary']['t_triggered_symbols']}",
+        f"t_top_reject_reason={plan['t_audit_summary']['top_reject_reason']}",
+        f"t_top_suited_mechanism={plan['t_audit_summary']['top_suited_mechanism']}",
         f"shadow_namespace={shadow_plan['namespace']}",
         f"shadow_should_run={shadow_plan['should_run']}",
     ]

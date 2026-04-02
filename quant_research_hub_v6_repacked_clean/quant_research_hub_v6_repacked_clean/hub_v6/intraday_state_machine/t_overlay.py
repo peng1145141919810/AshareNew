@@ -4,6 +4,8 @@ from typing import Any, Dict
 
 import pandas as pd
 
+from ..t_audit import resolve_t_execution_policy
+
 
 T_OVERLAY_STATES = [
     "t_disabled",
@@ -25,7 +27,7 @@ def _to_float(value: Any, default: float = 0.0) -> float:
     return float(out)
 
 
-def _allowed_ratio(row: Dict[str, Any], safety_mode: str, max_ratio: float) -> float:
+def _allowed_ratio(row: Dict[str, Any], safety_mode: str, max_ratio: float, policy_max_ratio: float = 0.0) -> float:
     lifecycle = str(row.get("source_lifecycle_state", "") or "").strip().lower()
     base = {
         "hold": 1.0,
@@ -38,7 +40,8 @@ def _allowed_ratio(row: Dict[str, Any], safety_mode: str, max_ratio: float) -> f
         base *= 0.6
     elif safety in {"PANIC", "HALT"}:
         base = 0.0
-    return round(max_ratio * base, 6)
+    base_ratio = max_ratio if policy_max_ratio <= 0 else min(max_ratio, policy_max_ratio)
+    return round(base_ratio * base, 6)
 
 
 def _previous_state_map(previous_frame: pd.DataFrame, trade_date: str) -> Dict[str, Dict[str, Any]]:
@@ -90,8 +93,21 @@ def apply_t_overlay(
         timing_state = str(row.get("timing_state", "") or "").strip()
         lifecycle = str(row.get("source_lifecycle_state", "") or "").strip().lower()
         has_old_base = bool(row.get("has_old_base_position", False)) and actual_weight > 0.0
-        allowed_ratio = _allowed_ratio(row=row, safety_mode=safety_mode, max_ratio=max_ratio)
-        t_eligible = enabled and has_old_base and lifecycle in {"hold", "build", "trim", "pilot"} and timing_state not in {"timing_frozen", "reconcile_only"} and allowed_ratio > 0.0
+        policy = resolve_t_execution_policy(config=config, row=row, timing_window=current_window.get("name", ""))
+        allowed_ratio = _allowed_ratio(
+            row=row,
+            safety_mode=safety_mode,
+            max_ratio=max_ratio,
+            policy_max_ratio=_to_float(policy.get("max_t_ratio"), 0.0),
+        )
+        t_eligible = (
+            enabled
+            and bool(policy.get("t_allowed", False))
+            and has_old_base
+            and lifecycle in {"hold", "build", "trim", "pilot"}
+            and timing_state not in {"timing_frozen", "reconcile_only"}
+            and allowed_ratio > 0.0
+        )
         t_state = "t_disabled"
         t_direction = ""
         t_leg_done = ""
@@ -120,7 +136,7 @@ def apply_t_overlay(
             t_state = prev_state
             t_direction = prev_direction or "positive_t"
             t_leg_done = "sell_leg"
-            if enable_afternoon_second_leg and bool(current_window.get("allow_t_second_leg", False)) and buy_score >= float(config.get("intraday_state_machine", {}).get("timing_layer", {}).get("buy_score_threshold", 0.58) or 0.58):
+            if bool(policy.get("allow_second_leg", True)) and enable_afternoon_second_leg and bool(current_window.get("allow_t_second_leg", False)) and buy_score >= float(config.get("intraday_state_machine", {}).get("timing_layer", {}).get("buy_score_threshold", 0.58) or 0.58):
                 t_state = "t_completed"
                 t_leg_done = "completed"
                 t_trigger_reason = "positive_t_buyback_ready"
@@ -130,7 +146,7 @@ def apply_t_overlay(
             t_state = prev_state
             t_direction = prev_direction or "reverse_t"
             t_leg_done = "buy_leg"
-            if enable_afternoon_second_leg and bool(current_window.get("allow_t_second_leg", False)) and sell_score >= float(config.get("intraday_state_machine", {}).get("timing_layer", {}).get("sell_score_threshold", 0.62) or 0.62):
+            if bool(policy.get("allow_second_leg", True)) and enable_afternoon_second_leg and bool(current_window.get("allow_t_second_leg", False)) and sell_score >= float(config.get("intraday_state_machine", {}).get("timing_layer", {}).get("sell_score_threshold", 0.62) or 0.62):
                 t_state = "t_completed"
                 t_leg_done = "completed"
                 t_trigger_reason = "reverse_t_sellback_ready"
@@ -172,6 +188,9 @@ def apply_t_overlay(
                 "t_triggered": bool(t_transition_flag),
                 "t_trigger_reason": t_trigger_reason,
                 "t_rounds_used": int(t_rounds_used),
+                "policy_t_allowed": bool(policy.get("t_allowed", False)),
+                "policy_allow_second_leg": bool(policy.get("allow_second_leg", True)),
+                "policy_max_t_ratio": float(policy.get("max_t_ratio", 0.0) or 0.0),
             }
         )
     return pd.DataFrame(rows)

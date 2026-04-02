@@ -4,6 +4,8 @@ from typing import Any, Dict
 
 import pandas as pd
 
+from ..t_audit import resolve_t_execution_policy
+
 
 TIMING_STATES = [
     "timing_frozen",
@@ -62,6 +64,7 @@ def apply_timing_rules(
         sell_window_open = bool(current_window.get("allow_trim", False) or current_window.get("allow_exit", False))
         can_buy_symbol = lifecycle in {"pilot", "build", "hold"} and symbol_state not in {"freeze", "reconcile_only"}
         can_sell_symbol = lifecycle in {"build", "hold", "trim", "exit"} and symbol_state not in {"freeze", "reconcile_only"}
+        policy = resolve_t_execution_policy(config=config, row=row, timing_window=current_window.get("name", ""))
 
         freeze_reasons: list[str] = []
         if not timing_enabled:
@@ -85,6 +88,7 @@ def apply_timing_rules(
         if require_flow_confirmation and not flow_ok:
             if buy_score >= buy_threshold or sell_score >= sell_threshold:
                 freeze_reasons.append("flow_confirmation_missing")
+        freeze_reasons.extend(str(reason) for reason in list(policy.get("reject_reasons", []) or []) if str(reason).strip())
 
         if freeze_reasons:
             timing_state = "reconcile_only" if "symbol_reconcile_only" in freeze_reasons else "timing_frozen"
@@ -113,6 +117,10 @@ def apply_timing_rules(
                 "buy_window_open": bool(buy_window_open and can_buy_symbol),
                 "sell_window_open": bool(sell_window_open and can_sell_symbol),
                 "oms_clean_state": bool(oms_clean_state),
+                "policy_t_allowed": bool(policy.get("t_allowed", False)),
+                "policy_allow_second_leg": bool(policy.get("allow_second_leg", True)),
+                "policy_max_t_ratio": float(policy.get("max_t_ratio", 0.0) or 0.0),
+                "policy_reject_reasons": ";".join(str(reason) for reason in list(policy.get("reject_reasons", []) or []) if str(reason).strip()),
                 "timing_freeze_reason": ";".join(reason for reason in freeze_reasons if str(reason or "").strip()),
             }
         )

@@ -6,6 +6,8 @@ using Ashare.RuntimeSkeleton.Oms;
 using Ashare.RuntimeSkeleton.Pathing;
 using Ashare.RuntimeSkeleton.PythonBridge;
 using Ashare.RuntimeSkeleton.Safety;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 var command = args.Length > 0 ? args[0].Trim().ToLowerInvariant() : "help";
 var workspaceRoot = args.Length > 1 ? args[1] : @"F:\quant_data\AshareC#";
@@ -252,15 +254,41 @@ switch (command)
         Console.WriteLine($"trade_clock_service_path: {registry.TradeClockServicePath}");
         Console.WriteLine($"affordable_data_bundle_script_path: {registry.AffordableDataBundleScriptPath}");
         Console.WriteLine($"live_price_snapshot_path: {registry.LivePriceSnapshotPath}");
-        Console.WriteLine($"three_strategy_kernel_root: {registry.ThreeStrategyKernelRoot}");
+        Console.WriteLine($"integrated_thesis_root: {registry.IntegratedThesisRoot}");
         Console.WriteLine($"intraday_state_root: {registry.IntradayStateRoot}");
         Console.WriteLine($"intraday_phase_state_path: {registry.IntradayPhaseStatePath}");
         Console.WriteLine($"intraday_symbol_state_path: {registry.IntradaySymbolStatePath}");
         Console.WriteLine($"intraday_intent_state_path: {registry.IntradayIntentStatePath}");
         Console.WriteLine($"intraday_event_log_path: {registry.IntradayEventLogPath}");
         Console.WriteLine($"intraday_control_summary_path: {registry.IntradayControlSummaryPath}");
+        Console.WriteLine($"clock_state_path: {registry.ClockStatePath}");
+        Console.WriteLine($"safety_state_path: {registry.SafetyStatePath}");
+        Console.WriteLine($"research_sql_store_path: {registry.ResearchSqlStorePath}");
         Console.WriteLine($"affordable_sql_store_path: {registry.AffordableSqlStorePath}");
         Console.WriteLine($"affordable_snapshot_root: {registry.AffordableSnapshotRoot}");
+        Console.WriteLine($"position_ledger_latest_path: {registry.PositionLedgerLatestPath}");
+        Console.WriteLine($"mechanism_realism_rollup_path: {registry.MechanismRealismRollupPath}");
+        Console.WriteLine($"latest_t_audit_json_path: {registry.LatestTAuditJsonPath}");
+        Console.WriteLine($"latest_t_audit_window_csv_path: {registry.LatestTAuditWindowCsvPath}");
+        Console.WriteLine($"site_publish_root: {registry.SitePublishRoot}");
+        Console.WriteLine($"audit_reports_root: {registry.AuditReportsRoot}");
+        Console.WriteLine($"operator_runtime_context_path: {registry.OperatorRuntimeContextPath}");
+        break;
+    }
+    case "runtime-profile":
+    case "profile":
+    {
+        PrintRuntimeProfile(registry, loader);
+        break;
+    }
+    case "audit-status":
+    {
+        PrintAuditStatus(registry);
+        break;
+    }
+    case "site-status":
+    {
+        PrintSiteStatus(registry);
         break;
     }
     case "authority":
@@ -584,7 +612,244 @@ static void PrintHelp()
     Console.WriteLine("  canonical-run [workspaceRoot] [args...]");
     Console.WriteLine("  clock-run [workspaceRoot] [args...]");
     Console.WriteLine("  paths [workspaceRoot]");
+    Console.WriteLine("  runtime-profile [workspaceRoot]");
+    Console.WriteLine("  audit-status [workspaceRoot]");
+    Console.WriteLine("  site-status [workspaceRoot]");
     Console.WriteLine("  authority");
     Console.WriteLine("  schedule");
     Console.WriteLine("  execution-plan [workspaceRoot]");
+}
+
+static void PrintRuntimeProfile(PathRegistry registry, ManifestDocumentLoader loader)
+{
+    var profiles = loader.LoadRunProfiles(registry.RunProfilesPath);
+    var clockJson = ReadJsonObject(registry.ClockStatePath);
+    if (clockJson.ValueKind == JsonValueKind.Undefined)
+    {
+        clockJson = ReadJsonObject(Path.Combine(registry.ExternalTradeClockRoot, "clock_state.json"));
+    }
+
+    var schedulerProfile = GetJsonString(clockJson, "scheduler_profile");
+    var runtime = GetJsonObject(clockJson, "runtime");
+    var serviceProfile = GetJsonString(runtime, "service_profile");
+    var configPath = GetJsonString(runtime, "config_path");
+
+    var effectiveProfile = FirstNonEmpty(serviceProfile, schedulerProfile, profiles.DefaultProfile);
+    var runtimeConfig = ReadJsonObject(configPath);
+    var execution = GetJsonObject(runtimeConfig, "execution");
+    var supervisor = GetJsonObject(runtimeConfig, "supervisor");
+    var executionCycles = GetJsonInt(execution, "max_cycles");
+    var v5Cycles = GetJsonInt(supervisor, "v5_gpu_max_cycles_per_tick");
+
+    Console.WriteLine("Runtime Profile");
+    Console.WriteLine($"clock_state_path: {registry.ClockStatePath}");
+    Console.WriteLine($"scheduler_profile: {V(schedulerProfile)}");
+    Console.WriteLine($"service_profile: {V(serviceProfile)}");
+    Console.WriteLine($"effective_profile: {V(effectiveProfile)}");
+    Console.WriteLine($"runtime_config_path: {V(configPath)}");
+    Console.WriteLine($"v5_gpu_max_cycles_per_tick: {v5Cycles?.ToString() ?? "unknown"}");
+    Console.WriteLine($"execution_max_cycles: {executionCycles?.ToString() ?? "unknown"}");
+    Console.WriteLine("note: execution_max_cycles is not the V5/XGBoost research-depth control.");
+
+    if (!string.IsNullOrWhiteSpace(effectiveProfile)
+        && profiles.AllowedProfiles.TryGetValue(effectiveProfile, out var definition))
+    {
+        Console.WriteLine($"run_profile_v5_cycles: {definition.V5Cycles}");
+        Console.WriteLine($"run_profile_operator_use: {definition.OperatorUse}");
+    }
+}
+
+static void PrintAuditStatus(PathRegistry registry)
+{
+    Console.WriteLine("Audit Status");
+    Console.WriteLine($"site_publish_root: {registry.SitePublishRoot}");
+    Console.WriteLine($"audit_reports_root: {registry.AuditReportsRoot}");
+    Console.WriteLine($"operator_runtime_context: {(File.Exists(registry.OperatorRuntimeContextPath) ? "ok" : "missing")}");
+    Console.WriteLine($"position_ledger_latest: {(File.Exists(registry.PositionLedgerLatestPath) ? "ok" : "missing")}");
+    Console.WriteLine($"mechanism_realism_rollup: {(File.Exists(registry.MechanismRealismRollupPath) ? "ok" : "missing")}");
+    Console.WriteLine($"latest_t_audit_json: {(File.Exists(registry.LatestTAuditJsonPath) ? "ok" : "missing")}");
+    Console.WriteLine($"latest_t_audit_window_csv: {(File.Exists(registry.LatestTAuditWindowCsvPath) ? "ok" : "missing")}");
+
+    if (!Directory.Exists(registry.AuditReportsRoot))
+    {
+        Console.WriteLine("latest_report: missing");
+        return;
+    }
+
+    var latestJson = Directory
+        .EnumerateFiles(registry.AuditReportsRoot, "strategy_audit.json", SearchOption.AllDirectories)
+        .Select(path => new FileInfo(path))
+        .OrderByDescending(info => info.LastWriteTimeUtc)
+        .FirstOrDefault();
+
+    if (latestJson is null)
+    {
+        Console.WriteLine("latest_report: missing");
+        return;
+    }
+
+    Console.WriteLine($"latest_report_json: {latestJson.FullName}");
+    var htmlPath = Path.Combine(latestJson.DirectoryName ?? string.Empty, "strategy_audit.html");
+    Console.WriteLine($"latest_report_html: {(File.Exists(htmlPath) ? htmlPath : "missing")}");
+
+    var auditJson = ReadJsonObject(latestJson.FullName);
+    PrintAuditSectionAvailability(auditJson, "pnl_source_analysis");
+    PrintAuditSectionAvailability(auditJson, "mechanism_realism_analysis");
+    PrintAuditSectionAvailability(auditJson, "execution_flow_analysis");
+    PrintAuditSectionAvailability(auditJson, "realized_pnl_analysis");
+    PrintAuditSectionAvailability(auditJson, "t_overlay_analysis");
+}
+
+static void PrintSiteStatus(PathRegistry registry)
+{
+    Console.WriteLine("Site Status");
+    Console.WriteLine($"site_publish_root: {registry.SitePublishRoot}");
+    Console.WriteLine($"site_publish_root_exists: {Directory.Exists(registry.SitePublishRoot)}");
+
+    var siteStatePath = Path.Combine(registry.SitePublishRoot, "site_state.json");
+    var siteState = ReadJsonObject(siteStatePath);
+    var runtimeContext = ReadJsonObject(registry.OperatorRuntimeContextPath);
+
+    Console.WriteLine($"site_state_path: {siteStatePath}");
+    Console.WriteLine($"site_state_exists: {File.Exists(siteStatePath)}");
+    Console.WriteLine($"operator_runtime_context_exists: {File.Exists(registry.OperatorRuntimeContextPath)}");
+    Console.WriteLine($"latest_t_audit_json_exists: {File.Exists(registry.LatestTAuditJsonPath)}");
+    Console.WriteLine($"index_html: {(File.Exists(Path.Combine(registry.SitePublishRoot, "index.html")) ? "ok" : "missing")}");
+    Console.WriteLine($"audit_center_html: {(File.Exists(Path.Combine(registry.SitePublishRoot, "audit-center.html")) ? "ok" : "missing")}");
+    Console.WriteLine($"operator_console_html: {(File.Exists(Path.Combine(registry.SitePublishRoot, "operator-console.html")) ? "ok" : "missing")}");
+
+    Console.WriteLine($"site_generated_at: {V(GetJsonString(siteState, "generated_at"))}");
+    Console.WriteLine($"site_latest_release_id: {V(GetJsonString(siteState, "latest_release_id"))}");
+    Console.WriteLine($"site_report_count: {GetJsonInt(siteState, "report_count")?.ToString() ?? "unknown"}");
+    Console.WriteLine($"site_target_count: {GetJsonInt(siteState, "target_count")?.ToString() ?? "unknown"}");
+    Console.WriteLine($"site_position_count: {GetJsonInt(siteState, "position_count")?.ToString() ?? "unknown"}");
+
+    Console.WriteLine($"runtime_trade_date: {V(GetJsonString(runtimeContext, "trade_date"))}");
+    Console.WriteLine($"runtime_clock_phase: {V(GetJsonString(runtimeContext, "clock_phase"))}");
+    Console.WriteLine($"runtime_release_id: {V(GetJsonString(runtimeContext, "release_id"))}");
+    Console.WriteLine($"runtime_heartbeat_at: {V(GetJsonString(runtimeContext, "heartbeat_at"))}");
+
+    var safety = GetJsonObject(runtimeContext, "safety");
+    Console.WriteLine($"runtime_system_mode: {V(GetJsonString(safety, "system_mode"))}");
+    Console.WriteLine($"runtime_market_safety_regime: {V(GetJsonString(safety, "market_safety_regime"))}");
+    Console.WriteLine($"runtime_gate_open: {GetJsonBool(safety, "gate_open")?.ToString() ?? "unknown"}");
+    Console.WriteLine($"runtime_gate_reason: {V(GetJsonString(safety, "gate_reason"))}");
+
+    var tAudit = ReadJsonObject(registry.LatestTAuditJsonPath);
+    Console.WriteLine($"t_audit_available: {GetJsonBool(tAudit, "available")?.ToString() ?? "unknown"}");
+    Console.WriteLine($"t_audit_top_reject_reason: {V(GetJsonString(tAudit, "top_reject_reason"))}");
+    Console.WriteLine($"t_audit_top_suited_mechanism: {V(GetJsonString(tAudit, "top_suited_mechanism"))}");
+
+    if (Directory.Exists(registry.AuditReportsRoot))
+    {
+        var reportDirs = Directory.GetDirectories(registry.AuditReportsRoot);
+        Console.WriteLine($"staged_audit_report_dirs: {reportDirs.Length}");
+        var latestReportDir = reportDirs
+            .Select(path => new DirectoryInfo(path))
+            .OrderByDescending(info => info.LastWriteTimeUtc)
+            .FirstOrDefault();
+        Console.WriteLine($"latest_audit_report_dir: {latestReportDir?.FullName ?? "missing"}");
+    }
+    else
+    {
+        Console.WriteLine("staged_audit_report_dirs: 0");
+        Console.WriteLine("latest_audit_report_dir: missing");
+    }
+}
+
+static void PrintAuditSectionAvailability(JsonElement root, string sectionName)
+{
+    var section = GetJsonObject(root, sectionName);
+    var available = GetJsonBool(section, "available");
+    var mode = GetJsonString(section, "mode");
+    Console.WriteLine($"{sectionName}: {(available.HasValue ? (available.Value ? "available" : "unavailable") : "unknown")}");
+    if (!string.IsNullOrWhiteSpace(mode))
+    {
+        Console.WriteLine($"{sectionName}_mode: {mode}");
+    }
+}
+
+static JsonElement ReadJsonObject(string? path)
+{
+    if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+    {
+        return default;
+    }
+
+    try
+    {
+        var text = File.ReadAllText(path);
+        text = SanitizeJson(text);
+        using var document = JsonDocument.Parse(text);
+        return document.RootElement.Clone();
+    }
+    catch
+    {
+        return default;
+    }
+}
+
+static string SanitizeJson(string text)
+{
+    if (string.IsNullOrWhiteSpace(text))
+    {
+        return text;
+    }
+
+    return Regex.Replace(text, @"(?<=[:\[,]\s*)(NaN|Infinity|-Infinity)(?=\s*[,}\]])", "null");
+}
+
+static JsonElement GetJsonObject(JsonElement element, string propertyName)
+{
+    return element.ValueKind == JsonValueKind.Object && element.TryGetProperty(propertyName, out var value)
+        ? value
+        : default;
+}
+
+static string GetJsonString(JsonElement element, string propertyName)
+{
+    if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(propertyName, out var value))
+    {
+        return string.Empty;
+    }
+
+    return value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
+}
+
+static int? GetJsonInt(JsonElement element, string propertyName)
+{
+    if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(propertyName, out var value))
+    {
+        return null;
+    }
+
+    return value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var parsed) ? parsed : null;
+}
+
+static bool? GetJsonBool(JsonElement element, string propertyName)
+{
+    if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(propertyName, out var value))
+    {
+        return null;
+    }
+
+    return value.ValueKind switch
+    {
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        _ => null
+    };
+}
+
+static string FirstNonEmpty(params string[] values)
+{
+    foreach (var value in values)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value.Trim();
+        }
+    }
+
+    return string.Empty;
 }

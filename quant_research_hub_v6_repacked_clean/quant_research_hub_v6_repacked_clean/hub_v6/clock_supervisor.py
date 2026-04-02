@@ -98,6 +98,11 @@ def _runtime_log_paths(config: Dict[str, Any], trade_date: str, phase_name: str)
     }
 
 
+def _research_python_from_config(config: Dict[str, Any]) -> str:
+    configured = str(dict(config.get("execution", {}) or {}).get("python_executable", "") or "").strip()
+    return configured or sys.executable
+
+
 def _phase_state_path(config: Dict[str, Any], trade_date: str) -> Path:
     return _phase_state_root(config) / f"{trade_date.replace('-', '')}.json"
 
@@ -397,13 +402,29 @@ def _subprocess_phase(
     process: subprocess.Popen[str] | None = None
     try:
         with logs["stdout"].open("w", encoding="utf-8") as stdout_handle, logs["stderr"].open("w", encoding="utf-8") as stderr_handle:
-            process = subprocess.Popen(
-                command,
-                cwd=str(_repo_root()),
-                stdout=stdout_handle,
-                stderr=stderr_handle,
-                text=True,
-            )
+            try:
+                process = subprocess.Popen(
+                    command,
+                    cwd=str(_repo_root()),
+                    stdout=stdout_handle,
+                    stderr=stderr_handle,
+                    text=True,
+                )
+            except OSError as exc:
+                stderr_handle.write(f"spawn_failed: {exc}\n")
+                stderr_handle.flush()
+                return {
+                    "ok": False,
+                    "timed_out": False,
+                    "return_code": None,
+                    "error_message": f"spawn_failed: {exc}",
+                    "stdout_log": str(logs["stdout"]),
+                    "stderr_log": str(logs["stderr"]),
+                    "stdout_tail": [],
+                    "stderr_tail": [f"spawn_failed: {exc}"],
+                    "result_payload": {},
+                    "warning_count": 0,
+                }
             _update_lock_child_pid(config, _phase_specs(config)[phase_name].lock_name, process.pid)
             deadline = time.time() + max(int(timeout_minutes or 0), 1) * 60
             while True:
@@ -452,8 +473,16 @@ def _affordable_bundle_cfg(config: Dict[str, Any]) -> Dict[str, Any]:
     return dict(config.get("affordable_data_bundle", {}) or {})
 
 
+def _research_fact_refresh_cfg(config: Dict[str, Any]) -> Dict[str, Any]:
+    return dict(config.get("research_fact_refresh", {}) or {})
+
+
 def _audit_site_publish_cfg(config: Dict[str, Any]) -> Dict[str, Any]:
     return dict(config.get("audit_site_publish", {}) or {})
+
+
+def _operator_runtime_publish_cfg(config: Dict[str, Any]) -> Dict[str, Any]:
+    return dict(config.get("operator_runtime_publish", {}) or {})
 
 
 def _intraday_state_cfg(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -472,6 +501,13 @@ def _latest_intraday_manifest_path(config: Dict[str, Any]) -> Path:
 
 def _latest_intraday_control_summary(config: Dict[str, Any]) -> Dict[str, Any]:
     return _load_json(_intraday_state_root(config) / "latest" / "intraday_control_summary.json", default={})
+
+
+def _latest_t_audit_summary(config: Dict[str, Any]) -> Dict[str, Any]:
+    data_root = Path(str(config.get("paths", {}).get("data_root", _repo_root() / "data") or _repo_root() / "data")).resolve()
+    audit_cfg = dict(config.get("t_audit", {}) or {})
+    root = Path(str(audit_cfg.get("artifact_root", data_root / "audit_v1") or data_root / "audit_v1")).resolve()
+    return _load_json(root / "latest" / "latest_t_audit.json", default={})
 
 
 def _run_intraday_state_refresh(
@@ -538,6 +574,21 @@ def _apply_intraday_afternoon_overlay(
     )
     updated["t_triggered_count"] = int(overlay.get("t_triggered_count", 0) or 0)
     updated["block_new_t"] = bool(overlay.get("block_new_t", False))
+    t_audit = _latest_t_audit_summary(config)
+    if bool(t_audit.get("available", False)):
+        updated["t_audit_top_reject_reason"] = str(t_audit.get("top_reject_reason", "") or "")
+        updated["t_audit_top_suited_mechanism"] = str(t_audit.get("top_suited_mechanism", "") or "")
+        updated["t_audit_policy_change_suggestions"] = list(t_audit.get("policy_change_suggestions", []) or [])[:3]
+        top_reject_reason = str(t_audit.get("top_reject_reason", "") or "")
+        if top_reject_reason in {"system_halt", "snapshot_degraded", "quality_below_minimum"}:
+            updated["ignore_market_panic_reduce_only"] = False
+            updated["allow_unfinished_orders_reconcile"] = True
+            if int(updated.get("t_triggered_count", 0) or 0) <= 0 and int(updated.get("buy_ready_count", 0) or 0) <= 0:
+                updated["should_run"] = bool(updated.get("allow_unfinished_orders_reconcile", False))
+                updated["reason"] = str(updated.get("reason", "") or f"t_audit_{top_reject_reason}")
+        top_suited_mechanism = str(t_audit.get("top_suited_mechanism", "") or "")
+        if top_suited_mechanism and top_suited_mechanism not in {"unknown", "unlabeled"}:
+            updated["preferred_t_mechanism"] = top_suited_mechanism
     if bool(overlay.get("allow_unfinished_orders_reconcile", False)):
         updated["allow_unfinished_orders_reconcile"] = True
     if bool(overlay.get("block_new_entries", False)):
@@ -572,13 +623,29 @@ def _subprocess_auxiliary(
     timed_out = False
     process: subprocess.Popen[str] | None = None
     with logs["stdout"].open("w", encoding="utf-8") as stdout_handle, logs["stderr"].open("w", encoding="utf-8") as stderr_handle:
-        process = subprocess.Popen(
-            command,
-            cwd=str(_repo_root()),
-            stdout=stdout_handle,
-            stderr=stderr_handle,
-            text=True,
-        )
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=str(_repo_root()),
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+                text=True,
+            )
+        except OSError as exc:
+            stderr_handle.write(f"spawn_failed: {exc}\n")
+            stderr_handle.flush()
+            return {
+                "ok": False,
+                "timed_out": False,
+                "return_code": None,
+                "error_message": f"spawn_failed: {exc}",
+                "stdout_log": str(logs["stdout"]),
+                "stderr_log": str(logs["stderr"]),
+                "stdout_tail": [],
+                "stderr_tail": [f"spawn_failed: {exc}"],
+                "result_payload": {},
+                "warning_count": 0,
+            }
         deadline = time.time() + max(int(timeout_minutes or 0), 1) * 60
         while True:
             return_code = process.poll()
@@ -633,7 +700,7 @@ def _run_affordable_data_refresh(config: Dict[str, Any], trade_date: str) -> Dic
     if not script_path.exists():
         return {"enabled": True, "ran": False, "ok": False, "message": f"missing_script:{script_path}"}
     command = [
-        sys.executable,
+        _research_python_from_config(config),
         str(script_path),
         "--db-path",
         str(Path(str(bundle_cfg.get("sqlite_path", "") or "")).resolve()),
@@ -665,6 +732,76 @@ def _run_affordable_data_refresh(config: Dict[str, Any], trade_date: str) -> Dic
         "stderr_log": str(raw.get("stderr_log", "") or ""),
         "warning_count": int(raw.get("warning_count", 0) or 0),
         "result_payload": dict(raw.get("result_payload", {}) or {}),
+    }
+
+
+def _run_research_fact_refresh(config: Dict[str, Any], trade_date: str) -> Dict[str, Any]:
+    refresh_cfg = _research_fact_refresh_cfg(config)
+    if not bool(refresh_cfg.get("enabled", True)) or not bool(refresh_cfg.get("run_before_research", True)):
+        return {"enabled": False, "ran": False, "ok": True, "message": "disabled"}
+    event_script_path = Path(str(refresh_cfg.get("event_script_path", "") or "")).resolve()
+    hard_factor_script_path = Path(str(refresh_cfg.get("hard_factor_script_path", "") or "")).resolve()
+    sqlite_path = Path(str(refresh_cfg.get("sqlite_path", "") or "")).resolve()
+    if not event_script_path.exists():
+        return {"enabled": True, "ran": False, "ok": False, "message": f"missing_script:{event_script_path}"}
+    if not hard_factor_script_path.exists():
+        return {"enabled": True, "ran": False, "ok": False, "message": f"missing_script:{hard_factor_script_path}"}
+    timeout_minutes = int(refresh_cfg.get("timeout_minutes", 90) or 90)
+    event_raw = _subprocess_auxiliary(
+        config=config,
+        trade_date=trade_date,
+        name="research_fact_event_refresh",
+        command=[
+            _research_python_from_config(config),
+            str(event_script_path),
+            "--db-path",
+            str(sqlite_path),
+            "--lookback-days",
+            str(int(refresh_cfg.get("event_lookback_days", 60) or 60)),
+        ],
+        timeout_minutes=max(15, timeout_minutes // 2),
+    )
+    hard_factor_raw = _subprocess_auxiliary(
+        config=config,
+        trade_date=trade_date,
+        name="research_fact_hard_factor_refresh",
+        command=[
+            _research_python_from_config(config),
+            str(hard_factor_script_path),
+            "--db-path",
+            str(sqlite_path),
+            "--lookback-days",
+            str(int(refresh_cfg.get("hard_factor_lookback_days", 5) or 5)),
+        ],
+        timeout_minutes=max(15, timeout_minutes // 2),
+    )
+    ok = bool(event_raw.get("ok", False)) and bool(hard_factor_raw.get("ok", False))
+    messages = [
+        str(event_raw.get("error_message", "") or "").strip(),
+        str(hard_factor_raw.get("error_message", "") or "").strip(),
+    ]
+    return {
+        "enabled": True,
+        "ran": True,
+        "ok": ok,
+        "fail_open": bool(refresh_cfg.get("fail_open", True)),
+        "message": "; ".join(text for text in messages if text),
+        "warning_count": int(event_raw.get("warning_count", 0) or 0) + int(hard_factor_raw.get("warning_count", 0) or 0),
+        "result_payload": {
+            "sqlite_path": str(sqlite_path),
+            "event_refresh": {
+                "ok": bool(event_raw.get("ok", False)),
+                "stdout_log": str(event_raw.get("stdout_log", "") or ""),
+                "stderr_log": str(event_raw.get("stderr_log", "") or ""),
+                "result_payload": dict(event_raw.get("result_payload", {}) or {}),
+            },
+            "hard_factor_refresh": {
+                "ok": bool(hard_factor_raw.get("ok", False)),
+                "stdout_log": str(hard_factor_raw.get("stdout_log", "") or ""),
+                "stderr_log": str(hard_factor_raw.get("stderr_log", "") or ""),
+                "result_payload": dict(hard_factor_raw.get("result_payload", {}) or {}),
+            },
+        },
     }
 
 
@@ -721,6 +858,8 @@ def _run_audit_site_publish(config: Dict[str, Any], trade_date: str, report_dir:
         "Bypass",
         "-File",
         str(script_path),
+        "-PythonExe",
+        str(publish_cfg.get("python_executable", _research_python_from_config(config)) or _research_python_from_config(config)),
         "-ReportDir",
         str(report_dir.resolve()),
         "-RemoteUser",
@@ -738,6 +877,49 @@ def _run_audit_site_publish(config: Dict[str, Any], trade_date: str, report_dir:
         name="audit_site_publish",
         command=command,
         timeout_minutes=int(publish_cfg.get("timeout_minutes", 20) or 20),
+    )
+    return {
+        "enabled": True,
+        "ran": True,
+        "ok": bool(raw.get("ok", False)),
+        "fail_open": bool(publish_cfg.get("fail_open", True)),
+        "message": str(raw.get("error_message", "") or ""),
+        "stdout_log": str(raw.get("stdout_log", "") or ""),
+        "stderr_log": str(raw.get("stderr_log", "") or ""),
+        "warning_count": int(raw.get("warning_count", 0) or 0),
+        "result_payload": dict(raw.get("result_payload", {}) or {}),
+    }
+
+
+def _run_operator_runtime_publish(config: Dict[str, Any], trade_date: str) -> Dict[str, Any]:
+    publish_cfg = _operator_runtime_publish_cfg(config)
+    if not bool(publish_cfg.get("enabled", True)):
+        return {"enabled": False, "ran": False, "ok": True, "message": "disabled"}
+    script_path = Path(str(publish_cfg.get("script_path", "") or "")).resolve()
+    if not script_path.exists():
+        return {"enabled": True, "ran": False, "ok": False, "message": f"missing_script:{script_path}"}
+    powershell_exe = str(publish_cfg.get("powershell_executable", "powershell.exe") or "powershell.exe").strip() or "powershell.exe"
+    command = [
+        powershell_exe,
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(script_path),
+        "-PythonExe",
+        str(publish_cfg.get("python_executable", _research_python_from_config(config)) or _research_python_from_config(config)),
+        "-RemoteUser",
+        str(publish_cfg.get("remote_user", "ubuntu") or "ubuntu"),
+        "-RemoteHost",
+        str(publish_cfg.get("remote_host", "43.129.28.141") or "43.129.28.141"),
+        "-RemoteRoot",
+        str(publish_cfg.get("remote_root", "/var/www/peng1145141919810.xyz/site") or "/var/www/peng1145141919810.xyz/site"),
+    ]
+    raw = _subprocess_auxiliary(
+        config=config,
+        trade_date=trade_date,
+        name="operator_runtime_publish",
+        command=command,
+        timeout_minutes=int(publish_cfg.get("timeout_minutes", 5) or 5),
     )
     return {
         "enabled": True,
@@ -1097,16 +1279,17 @@ def _market_state_summary(release_doc: Dict[str, Any]) -> Dict[str, Any]:
     return market_state
 
 
-def _three_strategy_summary(release_doc: Dict[str, Any]) -> Dict[str, Any]:
-    payload = dict(release_doc.get("three_strategy_state", {}) or {})
+def _integrated_thesis_summary(release_doc: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(release_doc.get("integrated_thesis_state", {}) or {})
     if not payload:
         return {"available": False}
     return {
         "available": True,
-        "formal_strategy_framework": str(payload.get("formal_strategy_framework", "three_long_term_strategies") or "three_long_term_strategies"),
+        "formal_strategy_framework": str(payload.get("formal_strategy_framework", "integrated_event_industry_earnings_alpha") or "integrated_event_industry_earnings_alpha"),
         "primary_strategy_key": str(payload.get("primary_strategy_key", "") or ""),
-        "strategy_allocations": dict(payload.get("strategy_allocations", {}) or {}),
         "portfolio_construction": dict(payload.get("portfolio_construction", {}) or {}),
+        "summary": dict(payload.get("summary", {}) or {}),
+        "top_candidates": list(payload.get("top_candidates", []) or [])[:10],
     }
 
 
@@ -1355,7 +1538,7 @@ def _build_daily_pack(
     release_doc = _release_by_id_safe(config, str(pack_state.get("release_id", "") or "")) or _latest_release_for_trade_date(config, trade_date)
     release_summary = _daily_release_summary(release_doc)
     market_summary = _market_state_summary(release_doc)
-    three_strategy_summary = _three_strategy_summary(release_doc)
+    integrated_thesis_summary = _integrated_thesis_summary(release_doc)
     v2a_summary = _portfolio_v2a_summary(release_doc)
     scheduler = _scheduler_cfg(config)
     midday_plan = _midday_plan_payload(pack_state)
@@ -1451,7 +1634,7 @@ def _build_daily_pack(
     _write_json(pack_dir / "phase_status.json", pack_state)
     _write_json(pack_dir / "daily_release_summary.json", release_summary)
     _write_json(pack_dir / "market_state_summary.json", market_summary)
-    _write_json(pack_dir / "three_strategy_summary.json", three_strategy_summary)
+    _write_json(pack_dir / "integrated_thesis_summary.json", integrated_thesis_summary)
     _write_json(pack_dir / "portfolio_v2a_summary.json", v2a_summary)
     _write_json(pack_dir / "oms_summary_simulation.json", simulation_oms)
     _write_json(pack_dir / "oms_summary_shadow.json", shadow_oms)
@@ -1488,7 +1671,7 @@ def _build_daily_pack(
         f"研究档位: {profile}",
         f"release_id: {release_summary.get('release_id', '') or '无'}",
         f"market_regime: {market_summary.get('market_regime', '') or 'unknown'}",
-        f"primary_strategy: {three_strategy_summary.get('primary_strategy_key', '') or 'unknown'}",
+        f"primary_strategy: {integrated_thesis_summary.get('primary_strategy_key', '') or 'unknown'}",
         f"style_bias: {market_summary.get('style_bias', '') or 'unknown'}",
         f"V2A posture: {v2a_summary.get('rebalance_mode', '') or 'unknown'}",
         f"目标持仓数: {target_count}",
@@ -1660,6 +1843,34 @@ def _mark_phase_complete(
     return state
 
 
+def _mark_phase_exception(
+    config: Dict[str, Any],
+    trade_date: str,
+    profile: str,
+    phase_name: str,
+    exc: Exception,
+) -> Dict[str, Any]:
+    return _mark_phase_complete(
+        config,
+        trade_date,
+        profile,
+        phase_name,
+        {
+            "status": "failed",
+            "return_code": None,
+            "release_id": "",
+            "warning_count": 0,
+            "error_message": f"phase_exception: {exc}",
+            "stdout_log": "",
+            "stderr_log": "",
+            "stdout_tail": [],
+            "stderr_tail": [str(exc)],
+            "result_status": "phase_exception",
+            "result_payload": {},
+        },
+    )
+
+
 def _adopt_external_release_for_trade_date(
     config: Dict[str, Any],
     trade_date: str,
@@ -1738,6 +1949,7 @@ def _run_phase(
     specs = _phase_specs(config)
     _mark_phase_running(config, trade_date, profile, phase_name, scheduled_for=scheduled_at.isoformat(timespec="seconds"))
     affordable_refresh: Dict[str, Any] = {}
+    research_fact_refresh: Dict[str, Any] = {}
     if phase_name == "release":
         research_status = str(dict(cycle_state.get("phases", {}).get("research", {}) or {}).get("status", "") or "")
         if research_status in {"failed", "timeout"}:
@@ -1876,6 +2088,25 @@ def _run_phase(
                 "result_payload": {"affordable_data_refresh": affordable_refresh},
             }
             return _mark_phase_complete(config, trade_date, profile, phase_name, result)
+        research_fact_refresh = _run_research_fact_refresh(config=config, trade_date=trade_date)
+        if research_fact_refresh.get("ran", False) and not research_fact_refresh.get("ok", False) and not research_fact_refresh.get("fail_open", True):
+            result = {
+                "status": "failed",
+                "return_code": None,
+                "release_id": "",
+                "warning_count": int(research_fact_refresh.get("warning_count", 0) or 0),
+                "error_message": str(research_fact_refresh.get("message", "") or "research_fact_refresh_failed"),
+                "stdout_log": "",
+                "stderr_log": "",
+                "stdout_tail": [],
+                "stderr_tail": [],
+                "result_status": "research_fact_refresh_failed",
+                "result_payload": {
+                    "affordable_data_refresh": affordable_refresh,
+                    "research_fact_refresh": research_fact_refresh,
+                },
+            }
+            return _mark_phase_complete(config, trade_date, profile, phase_name, result)
     raw = _subprocess_phase(
         config=config,
         trade_date=trade_date,
@@ -1887,9 +2118,12 @@ def _run_phase(
     if phase_name in {"research", "research_refresh"}:
         payload = dict(result.get("result_payload", {}) or {})
         payload["affordable_data_refresh"] = affordable_refresh
+        payload["research_fact_refresh"] = research_fact_refresh
         result["result_payload"] = payload
         if affordable_refresh.get("ran", False) and not affordable_refresh.get("ok", False):
             result["warning_count"] = int(result.get("warning_count", 0) or 0) + int(affordable_refresh.get("warning_count", 0) or 0) + 1
+        if research_fact_refresh.get("ran", False) and not research_fact_refresh.get("ok", False):
+            result["warning_count"] = int(result.get("warning_count", 0) or 0) + int(research_fact_refresh.get("warning_count", 0) or 0) + 1
     if live_snapshot_refresh.get("ran", False):
         payload = dict(result.get("result_payload", {}) or {})
         payload["live_snapshot_refresh"] = live_snapshot_refresh
@@ -1977,7 +2211,6 @@ def run_trade_clock(
     config = load_config(config_path)
     _load_json._active_config = config
     _write_json._active_config = config
-    scheduler = _scheduler_cfg(config)
     sleep_seconds = int(poll_seconds if poll_seconds is not None else dict(config.get("trade_clock", {}) or {}).get("poll_seconds", 30) or 30)
     _sync_runtime_state(
         config=config,
@@ -1990,14 +2223,27 @@ def run_trade_clock(
             "pid": os.getpid(),
         },
     )
+    last_operator_runtime_publish_ts = 0.0
     while True:
         config = load_config(config_path)
         _load_json._active_config = config
         _write_json._active_config = config
+        scheduler = _scheduler_cfg(config)
         now = clock_now(str(dict(config.get("trade_clock", {}) or {}).get("timezone", "Asia/Shanghai") or "Asia/Shanghai"))
         _clear_owned_locks(config)
         heartbeat = _scheduler_heartbeat_state(config=config, profile=profile, now=now)
         _write_json(_clock_state_path(config), heartbeat)
+        runtime_publish_cfg = _operator_runtime_publish_cfg(config)
+        min_interval_seconds = int(runtime_publish_cfg.get("min_interval_seconds", 300) or 300)
+        current_trade_date = str(heartbeat.get("current_trade_date", "") or heartbeat.get("trade_date", "") or now.date().isoformat())
+        if bool(runtime_publish_cfg.get("enabled", True)) and (once or (time.time() - last_operator_runtime_publish_ts) >= max(min_interval_seconds, 30)):
+            publish_result = _run_operator_runtime_publish(config=config, trade_date=current_trade_date)
+            heartbeat["operator_runtime_publish"] = publish_result
+            _write_json(_clock_state_path(config), heartbeat)
+            if bool(publish_result.get("ok", False)):
+                last_operator_runtime_publish_ts = time.time()
+            elif not bool(publish_result.get("fail_open", True)):
+                raise RuntimeError(str(publish_result.get("message", "") or "operator_runtime_publish_failed"))
         if _stop_requested(config):
             _sync_runtime_state(
                 config=config,
@@ -2022,15 +2268,38 @@ def run_trade_clock(
                         "service_status": "running_phase",
                         "active_phase": str(candidate["phase_name"]),
                         "active_trade_date": str(candidate["trade_date"]),
+                        "last_exception": "",
                     },
                 )
-                state = _run_phase(
-                    config=config,
-                    profile=profile,
-                    trade_date=str(candidate["trade_date"]),
-                    phase_name=str(candidate["phase_name"]),
-                    scheduled_at=candidate["scheduled_at"],
-                )
+                try:
+                    state = _run_phase(
+                        config=config,
+                        profile=profile,
+                        trade_date=str(candidate["trade_date"]),
+                        phase_name=str(candidate["phase_name"]),
+                        scheduled_at=candidate["scheduled_at"],
+                    )
+                except Exception as exc:
+                    state = _mark_phase_exception(
+                        config=config,
+                        trade_date=str(candidate["trade_date"]),
+                        profile=profile,
+                        phase_name=str(candidate["phase_name"]),
+                        exc=exc,
+                    )
+                    _sync_runtime_state(
+                        config=config,
+                        profile=profile,
+                        payload={
+                            "service_status": "phase_exception",
+                            "active_phase": "",
+                            "active_trade_date": "",
+                            "last_phase": str(candidate["phase_name"]),
+                            "last_trade_date": str(candidate["trade_date"]),
+                            "last_phase_status": "failed",
+                            "last_exception": str(exc),
+                        },
+                    )
                 phase_bucket = dict(state.get("phases", {}).get(str(candidate["phase_name"]), {}) or {})
                 _sync_runtime_state(
                     config=config,
@@ -2043,6 +2312,7 @@ def run_trade_clock(
                         "last_trade_date": str(candidate["trade_date"]),
                         "last_phase_status": str(phase_bucket.get("status", "") or ""),
                         "last_release_id": str(state.get("release_id", "") or ""),
+                        "last_exception": "",
                     },
                 )
                 executed_phase = True

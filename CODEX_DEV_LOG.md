@@ -52,6 +52,17 @@
     - `18` `.cs` files
     - `9` `.csproj` files
     - `1` `.sln` file
+  - operator CLI now exposes direct runtime/audit observability commands:
+    - `runtime-profile`
+    - `audit-status`
+    - `site-status`
+  - operator CLI audit/site observability now also covers the local T overlay audit artifacts:
+    - `data\audit_v1\latest\latest_t_audit.json`
+    - `data\audit_v1\latest\t_overlay_window_daily.csv`
+  - the C# path registry now treats local workspace SQL/site artifacts as first-class local paths:
+    - `data\sql_store\research_fact_layers_v1.sqlite3`
+    - `data\sql_store\affordable_data_v1.sqlite3`
+    - `outputs\site_publish_stage\reports`
 - Migration-assessment scan baseline:
   - current workspace code files scanned:
     - `.py`: `1405`
@@ -63,13 +74,65 @@
     - total code lines: `478992`
 
 ## Latest Stable Snapshot
-- Snapshot date: `2026-03-31`
+- Snapshot date: `2026-04-02`
 - Workspace operator mirror: `F:\quant_data\AshareC#\launch_canonical.py`
 - Workspace trade-clock service mirror: `F:\quant_data\AshareC#\trade_clock_service.py`
 - Workspace business root mirror: `F:\quant_data\AshareC#\main_research_runner.py`
 - Current live operator repo still: `F:\quant_data\Ashare`
 - Default mode: `integrated_supervisor`
 - Default profile: `quick_test`
+- Trade-clock scheduler profile currently observed live: `daily_production`
+- V5/XGBoost research-depth cycle mapping currently in force:
+  - `quick_test = 1`
+  - `daily_production = 3`
+  - `overnight = 8`
+- Important config clarification:
+  - do not confuse top-level `execution.max_cycles` with V5/XGBoost research cycles
+  - the effective V5/XGBoost research-depth control is `supervisor.v5_gpu_max_cycles_per_tick`
+- Research strategy architecture: primary stock-alpha now converges on one mainline `integrated_event_industry_earnings_alpha`; legacy `three_strategy_kernel` compatibility wiring has been removed from the active Python runtime.
+- Industry-router sector join behavior:
+  - `industry_router` state builders no longer require exact string equality between stock/event industry labels and local research SQL factor labels
+  - the active router now normalizes narrow sector labels into broader hard-factor buckets before reading local SQL, including:
+    - `半导体` / `元器件` / `通信设备` / `电信运营` -> `电子`
+    - `化工原料` / `化学制品` -> `化工`
+    - `铜` / `铝` / `小金属` / `稀土` -> `有色`
+    - `锂` / `碳酸锂` / `工业硅` / `光伏材料` -> `新能源金属`
+  - router state `notes` now explicitly record `sql_industry_match=...` so downstream thesis/debug views can see which local SQL industry bucket was actually consumed
+- Strategy audit behavior:
+  - the active audit pack no longer stops at net value and filter ratios
+  - `strategy_audit.py` now emits a dedicated `pnl_source_analysis` section that explains where money is coming from at the current stage
+  - when OMS `position_ledger_latest.csv` is available, the audit uses latest position `unrealized_pnl` plus market value as a live proxy attribution source
+  - when OMS position ledger is unavailable, the audit falls back to release-weight proxy attribution based on:
+    - `portfolio_weight`
+    - `mechanism_primary`
+    - `primary_event_type`
+    - `earnings_reason`
+    - `integrated_thesis_score`
+  - audit HTML and the site portal audit index now surface:
+    - top money-source mechanism
+    - event attribution
+    - earnings-validation attribution
+    - top winners / top losers
+- T intraday execution behavior:
+  - T remains a bounded intraday execution overlay, not a separate alpha line
+  - the active runtime now resolves T policy per symbol using:
+    - mechanism
+    - primary event type
+    - lifecycle state
+    - timing window
+    - feature quality tier
+  - the active T audit pack is written locally under:
+    - `data\audit_v1\latest\latest_t_audit.json`
+    - `data\audit_v1\latest\t_overlay_window_daily.csv`
+    - `data\audit_v1\latest\t_overlay_reject_reasons.csv`
+    - `data\audit_v1\latest\t_overlay_mechanism_summary.csv`
+    - `data\audit_v1\latest\t_overlay_event_summary.csv`
+    - `data\audit_v1\latest\t_overlay_quality_summary.csv`
+  - strategy audit packs now embed `t_overlay_analysis`
+  - the local staged site audit center now surfaces:
+    - `T适配机制`
+    - `T主阻断`
+  - midday review now includes a `t_audit_summary` block so afternoon execution planning can see current T fit and blocking patterns
 - Source-truth governance:
   - from `2026-03-30` onward, no new field may enter a production or canonical table unless its source class is explicitly labeled as one of:
     - `official_truth`
@@ -103,6 +166,8 @@
     - snapshot root: `F:\quant_data\AshareC#\data\affordable_feeds\latest`
     - daily automation:
       - the trade clock now runs the affordable bundle before the `research` phase by default
+      - the trade clock now also runs `research_fact_refresh` before `research` and `research_refresh`, so structured event facts and industry hard factors are daily-refreshed into the local research sqlite
+      - the trade clock resolves the research Python from runtime config and uses that interpreter for the affordable bundle and bound site-publish step, instead of assuming `sys.executable` or a machine-hardcoded publish Python path
       - runtime logs land under:
         - `F:\quant_data\AshareC#\data\trade_clock\runtime\<trade_date>\affordable_data_refresh.stdout.log`
         - `F:\quant_data\AshareC#\data\trade_clock\runtime\<trade_date>\affordable_data_refresh.stderr.log`
@@ -135,35 +200,80 @@
     - the new `internal_expectation` layer is a local research model, not analyst-consensus truth, and currently covers the universe only where low-cost source blending can produce a stable estimate
     - Tushare `moneyflow` is already covered as a daily low-cost dataset but does not solve intraday tick / realtime snapshot gaps
     - `fina_indicator` is supported only as targeted refresh with explicit `--ts-code`, not full-universe default ingestion
-    - industry-level price / inventory / warehouse-receipt / operating-rate factor layer is still source-discovery stage and not yet materialized into SQL tables
-    - announcement / contract / backlog / tender raw sources are identified, but structured fact-layer ingestion is still pending
-  - three-strategy coverage assessment:
-    - strategy 1 `industry chain expectation gap`:
-      - partially ready
-      - industrial evidence sources now include tender, customs summary, futures, warehouse receipts, northbound/margin proxies, and announcement-driven evidence, but broad free coverage for spot price, social inventory, and operating-rate series is still incomplete
-    - strategy 2 `earnings expectation gap`:
-      - partially ready
-      - announcement / forecast / express / indicator inputs are available, but broad analyst-consensus revision data is still missing under current budget constraints
-    - strategy 3 `asset allocation / risk parity`:
-      - structurally ready earlier than the first two because it depends more on market-state and risk-control layers than on the missing hard datasets
-    - operator conclusion:
-      - current low-cost data is enough to start integrating all three strategies into the system skeleton
-      - current low-cost data is not enough to claim all three are fully completed or fully data-complete
-  - current formal three-strategy integration layer:
+  - current research-side fact and factor layer:
+    - dedicated sqlite:
+      - `F:\quant_data\AshareC#\data\sql_store\research_fact_layers_v1.sqlite3`
+    - current materialized tables validated on `2026-04-02 05:15`:
+      - `event_fact_company_actions`: `207`
+      - `event_fact_contract_orders`: `80`
+      - `event_fact_supply_chain_signals`: `28`
+      - `industry_factor_price_inventory_daily`: `88`
+      - `industry_factor_operation_daily`: `10`
+      - `industry_factor_customs_summary_daily`: `6`
+    - current source stack:
+      - structured event facts:
+        - upstream `event_store.jsonl` when available locally, else read-only fallback to `F:\quant_data\Ashare\data\event_lake_v6\curated\event_store.jsonl`
+        - `forecast`
+        - `express`
+        - `ccgp_bid_awards`
+        - optional operator-maintained `manual_event_proxy.jsonl`
+      - industry hard factors:
+        - `ppi_market_digest`
+        - `customs_summary`
+        - `tushare.fut_daily`
+        - `tushare.fut_wsr`
+        - official pages declared in `configs\industry_router\source_contracts.json`, including NBS, MIIT, CAICT, PBOC, NEA, and `gov.cn` relays
+    - current direct local SQL truth:
+      - all refreshed event facts and hard factors write directly into:
+        - `F:\quant_data\AshareC#\data\sql_store\research_fact_layers_v1.sqlite3`
+      - the current hard-factor sector focus is already visible in local SQL counts:
+        - price/inventory:
+          - `有色 = 25`
+          - `化工 = 24`
+          - `钢铁 = 13`
+          - `能源 = 12`
+          - `新能源金属 = 9`
+        - operation:
+          - `电子 = 3`
+          - `能源 = 3`
+    - operator truth:
+      - this sqlite is a research-side structured layer, not canonical truth
+      - source lineage and source class stay attached at the field/table level
+      - no proxy or inferred field is promoted into canonical truth by this layer
+  - current integrated-thesis mainline:
     - artifact root:
-      - `F:\quant_data\AshareC#\data\event_lake_v6\research\three_strategy_kernel`
+      - `F:\quant_data\AshareC#\data\event_lake_v6\research\integrated_thesis`
     - primary artifacts:
-      - `three_strategy_state.json`
-      - `three_strategy_daily.csv`
+      - `integrated_thesis_state.json`
+      - `integrated_thesis_candidates.csv`
+      - `latest_integrated_thesis.csv`
+      - `integrated_thesis_explainer.json`
+    - current contract truth:
+      - one stock-alpha mainline only: `integrated_event_industry_earnings_alpha`
+      - thesis flow is now explicit:
+        - `event_gate -> mechanism_gate -> earnings_gate -> portfolio_gate`
+      - symbol rows now carry fact-backed explanation fields such as:
+        - `primary_event_fact_id`
+        - `mechanism_reason_chain`
+        - `earnings_reason_chain`
+        - `thesis_reason_chain`
+        - `thesis_gate_stage`
+        - `thesis_reject_reason`
     - system wiring:
-      - `orchestrator_v6` now builds the three-strategy state after `market_state`
-      - `context_pack` now carries a `three_strategy` section for research planning / LLM explanation
-      - `portfolio_recommendation` now consumes the three-strategy state and applies a bounded `alpha_budget_multiplier` overlay to stock-sleeve sizing
-      - `portfolio_release` now copies `three_strategy_state.json` into each formal release
-    - current design truth:
-      - strategy 1 is materially anchored on `industry_router`
-      - strategy 2 is materially anchored on `forecast` / `express` / `daily_basic` and future earnings-source expansion
-      - strategy 3 is materially anchored on `market_state` and remains the top-level posture / risk-budget layer rather than a third stock-alpha stack
+      - `orchestrator_v6` builds `integrated_thesis` after `market_state`
+      - `context_pack` and `research_brief_engine` now carry `integrated_thesis` only, not `three_strategy`
+      - `portfolio_recommendation` consumes integrated-thesis state/table and reads `alpha_budget_multiplier` only from this mainline
+      - release, audit, clock summary, and operator portal reads have been cut over to `integrated_thesis_state.json`
+    - current probe truth validated on `2026-04-02 05:15`:
+      - `industry_router_status = ok`
+      - `industry_router_signal_rows = 24`
+      - `integrated_thesis_status = ok`
+      - `integrated_thesis_symbol_count = 10`
+      - `integrated_thesis_accepted_count = 1`
+      - sample accepted symbol:
+        - `600309.SH`
+        - `primary_event_fact_id = express::600309.SH::20260317`
+        - `thesis_gate_stage = portfolio_gate_passed`
   - current LLM operating boundary:
     - LLM may be used for:
       - announcement extraction
@@ -547,7 +657,7 @@
   - runtime code is now split into `contracts\`, `core\`, and `mechanisms\`
   - top-level `hub_v6\industry_router\runtime.py` and `backtest.py` are orchestration wrappers only
   - `contracts\stock_profile_schema.py`, `mechanism_state_schema.py`, `signal_schema.py`, and `backtest_schema.py` now define the formal research-side schema
-  - runtime artifacts now live under `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router`
+  - runtime artifacts now live under `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router`
   - current mechanism groups are fixed to:
     - `trend_capex`
     - `price_inventory`
@@ -584,26 +694,21 @@
 
 ## Latest Live Portfolio Snapshot
 <!-- LIVE_PORTFOLIO_SNAPSHOT_START -->
-- Updated at: `20260323_002316`
-- Source report: `F:\quant_data\Ashare\data\live_execution_bridge\execution_report_20260323_002316.json`
-- Account: `oms_...ount`
-- NAV: `10000.0000`
-- Cash: `8000.0000`
-- Positions: `1`
-- Target names: `1`
-- Orders/Fills: `1` / `0`
-- Turnover raw/final: `0.2000` / `0.2000`
-- Drift skipped: `0`
-- Turnover adjustments: `0`
-- Execution status summary: `success=0 partial=0 failed=1 skipped=0`
-- Top holdings:
-- `600010.SH`: weight=0.2000, shares=200, price=10.0000
+- Updated at: `2026-04-01 23:39:39`
+- Status: `no local execution snapshot found in this workspace`
+- Checked roots:
+  - `F:\quant_data\AshareC#\data\live_execution_bridge`
+  - `F:\quant_data\AshareC#\data\trade_release_v1`
+  - `F:\quant_data\AshareC#\outputs\canonical_runs`
+- Current truth:
+  - the inherited `20260323_002316` snapshot from the old live repo is no longer treated as the stable local workspace snapshot
+  - do not infer current holdings or execution status from old-repo artifacts unless the user explicitly asks to inspect the protected live repo
 <!-- LIVE_PORTFOLIO_SNAPSHOT_END -->
 ## Session Start Checklist
 - Read `Latest Stable Snapshot`, `Latest Live Portfolio Snapshot`, `Known Dangerous Operations`, and `Known Issues` before touching code.
 - Confirm whether the user wants changes in the live `Ashare` repo or the Rider `AshareC#` migration workspace before editing files.
 - Default answer: only edit `AshareC#`; treat the old live repo as read-only.
-- If the task assumes standalone runtime, verify whether required `data/` and train tables are still external under `F:\quant_data\Ashare\data`.
+- If the task assumes standalone runtime, verify the local `F:\quant_data\AshareC#\data` mirror first and note any remaining fallback dependency on `F:\quant_data\Ashare\data` when required control-plane files are missing locally.
 - If the task touches precise-style execution, also inspect `data\trade_release_v1\latest_release.json` and `data\trade_clock\clock_state.json` first.
 - Confirm whether the user has explicitly allowed any long-running integrated run in the current session.
 - Use `launch_canonical.py` plus the documented profile for formal operator runs.
@@ -1074,101 +1179,105 @@
 ## Artifact Registry
 | Artifact | Producer | Consumer | Path | Format | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `supervisor_state.json` | integrated supervisor | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\supervisor\supervisor_state.json` | JSON | first stop for top-level step status; now includes `current_stage`, `stages`, and `stage_history` during runtime |
-| `runtime_stage_notes.json` | supervisor local explainer sidecar | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\supervisor\runtime_stage_notes.json` | JSON | rolling operator notes for selected long stages with suggested watch files |
-| `market_pipeline_report.json` | market pipeline | operator / debugging | `F:\quant_data\Ashare\data\daily_cache_v6\market_pipeline_report.json` | JSON | shows data sync and train append status |
-| `research_context_pack.json` | context pack builder | research brief engine / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\context_pack\research_context_pack.json` | JSON | full evidence pack |
-| `announcement_evidence_cards.json` | V6 additive local evidence-card sidecar | research brief engine / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\evidence_cards\announcement_evidence_cards.json` | JSON | compact high-value announcement evidence cards; additive only |
-| `research_brief.json` | V6 research planner | V5 bridge / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\briefs\research_brief.json` | JSON | core planning artifact |
-| `manual_review_queue.json` | event-extract local review-router sidecar | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\extract_summary\manual_review_queue.json` | JSON | compact queue of events worth manual review; additive only |
-| `run_manifest.json` | formal governance wrapper | operator / debugging | `F:\quant_data\Ashare\outputs\canonical_runs\<run_id>\run_manifest.json` | JSON | run id, operator entry, runtime root, mode/profile, and trace metadata |
-| `industry_router_summary.json` | industry-router runtime | context pack / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\industry_router_summary.json` | JSON | high-level summary over mechanism groups, latest active signals, and split-backtest status |
-| `latest_market_state.json` | market-state runtime | context pack / portfolio recommendation / release / execution gate / operator | `F:\quant_data\Ashare\data\market_state_v6\latest_market_state.json` | JSON | current market regime truth with regime score, style bias, mechanism bias, exposure/turnover multipliers, and entry posture |
-| `market_state_daily.csv` | market-state runtime | operator / debugging | `F:\quant_data\Ashare\data\market_state_v6\market_state_daily.csv` | CSV | historical daily market-state rows with sub-score decomposition and final posture fields |
-| `market_state_explainer.json` | market-state runtime | operator / debugging | `F:\quant_data\Ashare\data\market_state_v6\market_state_explainer.json` | JSON | concise explanation of the latest regime drivers, thresholds, and policy decisions |
-| `stock_master.csv` | industry-router runtime | event mapper / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\stock_master.csv` | CSV | resolved stock master with mechanism and subchain tags |
-| `mechanism_map.csv` | industry-router runtime | event mapper / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\mechanism_map.csv` | CSV | symbol-to-mechanism mapping contract used by the router |
-| `stock_profile.csv` | industry-router runtime | mechanism policies / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\stock_profile.csv` | CSV | resolved stock profile contract after merging stock master and mechanism map |
-| `<mechanism>_profile.csv` | industry-router runtime | mechanism debugging / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\<mechanism>_profile.csv` | CSV | mechanism-sliced profile view after profile enrichment |
-| `event_instances.csv` | industry-router runtime | mapper / backtest / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\event_instances.csv` | CSV | normalized event instances with resolved mechanism group and direction |
-| `event_stock_mapping.csv` | industry-router runtime | scorer / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\event_stock_mapping.csv` | CSV | event-to-stock mapping with score, reason, and exposure level |
-| `mechanism_state_daily.csv` | industry-router runtime | scorer / context pack / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\mechanism_state_daily.csv` | CSV | unified mechanism-state contract with `scope_type`, state score, source score, heat, and regime label |
-| `<mechanism>_state.csv` | industry-router runtime | mechanism debugging / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\<mechanism>_state.csv` | CSV | mechanism-sliced state output with sub-state columns and drivers |
-| `source_state_daily.csv` | industry-router source sidecar | scorer / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\source_state_daily.csv` | CSV | mechanism-level official-source state rows derived from structured source contracts |
-| `core_variable_daily.csv` | industry-router runtime | signal policy / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\core_variable_daily.csv` | CSV | per-stock per-date core variables before policy scoring and risk filtering |
-| `<mechanism>_core_variable.csv` | industry-router runtime | mechanism debugging / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\<mechanism>_core_variable.csv` | CSV | mechanism-sliced core-variable table before signal generation |
-| `source_snapshot_index.json` | industry-router source sidecar | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\source_snapshots\source_snapshot_index.json` | JSON | compact fetch index with ok/error counts and `as_of_date` |
-| `source_snapshot_items.json` | industry-router source sidecar | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\source_snapshots\source_snapshot_items.json` | JSON | per-source fetch results, extracted publish dates, keyword hits, and signal scores |
-| `stock_signal_daily.csv` | industry-router runtime | backtest / context pack / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\stock_signal_daily.csv` | CSV | unified stock-level policy output with `pre_risk_score`, `final_score`, `signal_state`, `allow_entry`, and attribution bucket |
-| `<mechanism>_signal.csv` | industry-router runtime | mechanism debugging / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\<mechanism>_signal.csv` | CSV | mechanism-sliced signal table with penalty / confirmation / attribution columns |
-| `latest_stock_signal.csv` | industry-router runtime | context pack / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\latest_stock_signal.csv` | CSV | latest-date slice of stock signals, useful for quick inspection |
-| `backtest_trend_capex_*` | industry-router backtest skeleton | operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\backtests\backtest_trend_capex_*` | JSON/CSV | split backtest outputs for trend-capex seeds |
-| `backtest_price_inventory_*` | industry-router backtest skeleton | operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\backtests\backtest_price_inventory_*` | JSON/CSV | split backtest outputs for price/inventory seeds |
-| `backtest_macro_style_*` | industry-router backtest skeleton | operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\backtests\backtest_macro_style_*` | JSON/CSV | split backtest outputs for macro/style seeds |
-| `backtest_combined_*` | industry-router backtest skeleton | operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\backtests\backtest_combined_*` | JSON/CSV | combined equal-weight summary over the split mechanism picks |
-| `backtest_attribution_*` | industry-router backtest skeleton | operator | `F:\quant_data\Ashare\data\event_lake_v6\research\industry_router\backtests\backtest_attribution_*` | JSON/CSV | component-level attribution summary by mechanism; zero-trade candidate buckets are preserved when future bars are unavailable |
-| `candidate_override.json` | V5 bridge | V5.1 runtime | `F:\quant_data\Ashare\data\event_lake_v6\bridge\candidate_override.json` | JSON | tells V5 what routes, models, labels to favor |
-| `latest_v5_cycle_review.json` | supervisor local V5 review sidecar | operator / debugging | `F:\quant_data\Ashare\data\research_hub_v5_1_gpu_integrated\reviews\latest_v5_cycle_review.json` | JSON | concise local review over latest completed V5 cycle; additive only |
-| `portfolio_recommendation.json` | portfolio recommendation layer | operator / execution bridge | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_recommendation.json` | JSON | summary of selected strategy and portfolio state, now also including market-state posture, technical-confirmation summary, and post-filter reweight totals |
-| `latest_portfolio_posture.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_v2a\latest_portfolio_posture.json` | JSON | portfolio-level posture contract with exposure cap, new-entry budget, add budget, rebalance mode, safety linkage, and replacement aggressiveness |
-| `latest_position_lifecycle.csv` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_v2a\latest_position_lifecycle.csv` | CSV | latest per-name lifecycle state, action intent, proposal weight, final weight, cap, and reason fields |
-| `position_lifecycle_daily.csv` | portfolio V2A runtime | operator / replay / audit | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_v2a\position_lifecycle_daily.csv` | CSV | rolling history of lifecycle states for replay and threshold scans |
-| `admission_replacement_audit.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_v2a\admission_replacement_audit.json` | JSON | explains which new names were admitted, denied, or used to replace weaker incumbents |
-| `portfolio_control_summary.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\portfolio_v2a\portfolio_control_summary.json` | JSON | V2A state counts, exposure usage, replacement counts, and soft-crowding snapshot |
-| `latest_technical_confirmation.csv` | technical-confirmation runtime | portfolio recommendation / release / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\technical_confirmation\latest_technical_confirmation.csv` | CSV | latest candidate-level technical gate output with entry allow flag, gate reason, and weight multiplier |
-| `technical_confirmation_daily.csv` | technical-confirmation runtime | operator / debugging | `F:\quant_data\Ashare\data\event_lake_v6\research\technical_confirmation\technical_confirmation_daily.csv` | CSV | rolling technical-confirmation history across candidate symbols and dates |
-| `technical_confirmation_summary.json` | technical-confirmation runtime | portfolio recommendation / release / operator | `F:\quant_data\Ashare\data\event_lake_v6\research\technical_confirmation\technical_confirmation_summary.json` | JSON | latest confirmation counts, strictness level, and summary posture |
-| `target_positions.csv` | portfolio recommendation layer | Gmtrade execution bridge | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\target_positions.csv` | CSV | target holdings with price fields, technical-confirmation fields, market-aware sizing metadata, post-filter reweighted portfolio weights, and V2A lifecycle/action-intent fields |
-| `rebalance_orders.csv` | portfolio recommendation layer | operator / execution bridge | `F:\quant_data\Ashare\data\portfolio_recommendation_v6\rebalance_orders.csv` | CSV | delta orders relative to prior holdings |
-| `latest_release.json` | portfolio release layer | execution gate / trade clock / operator | `F:\quant_data\Ashare\data\trade_release_v1\latest_release.json` | JSON | pointer to the current formal release |
-| `release_manifest.json` | portfolio release layer | execution gate / operator | `F:\quant_data\Ashare\data\trade_release_v1\releases\<release_id>\release_manifest.json` | JSON | versioned trade-date-scoped release contract between research and execution; now also snapshots market-state truth and technical-confirmation summary |
-| `latest_actual_portfolio_state.json` | OMS runtime | operator / V2A continuity / audit | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\latest_actual_portfolio_state.json` | JSON | authoritative OMS actual-state snapshot derived from broker/account truth plus open intents/orders |
-| `desired_vs_actual_gap.csv` | OMS runtime | operator / audit / control feedback | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\desired_vs_actual_gap.csv` | CSV | authoritative desired-vs-actual gap table between the published release book and broker truth |
-| `oms_summary.json` | OMS runtime | operator / postmortem | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\oms_summary.json` | JSON | OMS-level summary over authority ownership, gap size, intent status, dispatch count, and overrides applied |
-| `intent_ledger_latest.csv` | OMS runtime | operator / audit / replay | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\ledgers\intent_ledger_latest.csv` | CSV | authoritative intent ledger with status lifecycle from `planned` through terminal states |
-| `order_ledger_latest.csv` | OMS runtime | operator / audit / replay | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\ledgers\order_ledger_latest.csv` | CSV | authoritative order ledger with broker ids, status, remaining quantity, and intent linkage |
-| `fill_ledger_latest.csv` | OMS runtime | operator / audit / replay | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\ledgers\fill_ledger_latest.csv` | CSV | authoritative fill ledger keyed by broker execution ids when available |
-| `actual_state_daily.csv` | OMS runtime | operator / replay / research continuity fallback | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\actual_state_daily.csv` | CSV | rolling actual-state history derived from broker truth, not from the research-side target book |
-| latest_open_intents.json | OMS runtime | operator / resume logic / audit | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\latest_open_intents.json | JSON | latest unresolved open intents after final ledger deduplication; first-stop snapshot for cross-session continuity |
-| latest_intent_continuity_report.json | OMS runtime | operator / OMS debugging | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\latest_intent_continuity_report.json | JSON | start-of-session continuity classification over carried intents, superseded intents, cancel requests, and reconcile-only blocks |
-| session_resume_audit.json | OMS runtime | operator / recovery | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\session_resume_audit.json | JSON | bounded session-resume audit with ignored stale orders, carried symbols, replacement-required symbols, and cancel requests |
-| cancel_replace_audit.json | OMS runtime | operator / postmortem | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\cancel_replace_audit.json | JSON | explicit cancel/replace lineage over cancel requests/results and old_intent_id -> new_intent_id replacements |
-| latest_manual_intervention_state.json | OMS runtime | operator / audit | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\snapshots\latest_manual_intervention_state.json | JSON | latest applied OMS intervention state with active override summary, applied counts, and current override payload hash |
-| `control_feedback_latest.json` | OMS runtime | V2A posture engine / operator | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\feedback\control_feedback_latest.json` | JSON | Bucket B feedback for new-entry/add completion, turnover truncation, and persistent gap pressure |
-| gap_control_metrics_daily.csv | OMS runtime | V2A posture engine / operator | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\feedback\gap_control_metrics_daily.csv | CSV | rolling control-feedback history with completion ratios, convergence, replacement churn, and partial-stuck metrics |
-| `research_meta_feedback_latest.json` | OMS runtime | context pack / research meta weighting / operator | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\feedback\research_meta_feedback_latest.json` | JSON | Bucket C aggregated execution-realism feedback for research-side consumption only |
-| mechanism_realism_rollup.csv | OMS runtime | research context / operator | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\feedback\mechanism_realism_rollup.csv | CSV | rolling mechanism-level realizability and convergence rollup over 20/40/60-run windows |
-| `narrative_feedback_latest.json` | OMS runtime | operator | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\feedback\narrative_feedback_latest.json` | JSON | Bucket D non-authoritative human-readable summary; never mutates truth |
-| manual_overrides.json | OMS operator | OMS runtime / continuity / cancel-replace | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\manual_overrides.json | JSON | operator-facing OMS intervention file for intent-level, symbol-level, and session-level overrides; distinct from trade-clock safety overrides |
-| manual_override_history.jsonl | OMS runtime | operator / audit | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\history\manual_override_history.jsonl | JSONL | append-only history of OMS override payload hashes and applied intervention summaries |
-| oms_validation_report.json | OMS validation harness | operator / Codex regression checks | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\validation\oms_validation_report.json | JSON | bounded synthetic/replay validation report over reconciliation, continuity, lifecycle, and recovery scenarios |
-| oms_validation_summary.md | OMS validation harness | operator / Codex regression checks | F:\quant_data\Ashare\data\live_execution_bridge\oms_v1\validation\oms_validation_summary.md | Markdown | short human-readable pass/fail summary for the OMS validation harness |
-| `clock_state.json` | trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\clock_state.json` | JSON | heartbeat, gate status, active window, and last dispatch state |
-| `scheduler_runtime.json` | trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\runtime\scheduler_runtime.json` | JSON | scheduler self-state with process pid, active phase, stop reason, and last update time |
-| `phase_state\YYYYMMDD.json` | trade clock supervisor | operator / debugging / postmortem | `F:\quant_data\Ashare\data\trade_clock\phase_state\YYYYMMDD.json` | JSON | per-day phase truth for `research/release/preopen_gate/simulation/shadow/summary` with status, timestamps, release id, and stdout/stderr paths |
-| `system_safety_state.json` | safety guard | operator / execution gate / trade clock | `F:\quant_data\Ashare\data\trade_clock\system_safety_state.json` | JSON | current execution safety truth including system mode, market regime, manual overrides, release validation, and freshness markers |
-| `incident_log.jsonl` | safety guard | operator / debugging / postmortem | `F:\quant_data\Ashare\data\trade_clock\incident_log.jsonl` | JSONL | append-only abnormal-event log with before/after safety modes and action taken |
-| `manual_overrides.json` | operator + safety guard | trade clock / execution gate | `F:\quant_data\Ashare\data\trade_clock\manual_overrides.json` | JSON | operator-editable `manual_halt` / `manual_reduce_only` kill-switch file |
-| `manual_override_history.jsonl` | safety guard | operator / postmortem | `F:\quant_data\Ashare\data\trade_clock\manual_override_history.jsonl` | JSONL | audit trail when manual override values change |
-| `latest_account_health.json` | gmtrade health probe sidecar | safety guard / operator | `F:\quant_data\Ashare\data\trade_clock\latest_account_health.json` | JSON | latest fresh or cached account/position/order health snapshot fetched via `gmtrade39` |
-| `latest_execution_dispatch.json` | execution gate / trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\latest_execution_dispatch.json` | JSON | latest release-triggered execution dispatch outcome |
-| `latest_execution_dispatch.<namespace>.json` | execution gate / trade clock supervisor | operator / debugging | `F:\quant_data\Ashare\data\trade_clock\latest_execution_dispatch.<namespace>.json` | JSON | namespace-isolated dispatch result for simulation or shadow execution lines |
+| `supervisor_state.json` | integrated supervisor | operator / debugging | `F:\quant_data\AshareC#\data\event_lake_v6\research\supervisor\supervisor_state.json` | JSON | first stop for top-level step status; now includes `current_stage`, `stages`, and `stage_history` during runtime |
+| `runtime_stage_notes.json` | supervisor local explainer sidecar | operator / debugging | `F:\quant_data\AshareC#\data\event_lake_v6\research\supervisor\runtime_stage_notes.json` | JSON | rolling operator notes for selected long stages with suggested watch files |
+| `market_pipeline_report.json` | market pipeline | operator / debugging | `F:\quant_data\AshareC#\data\daily_cache_v6\market_pipeline_report.json` | JSON | shows data sync and train append status |
+| `research_context_pack.json` | context pack builder | research brief engine / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\context_pack\research_context_pack.json` | JSON | full evidence pack |
+| `announcement_evidence_cards.json` | V6 additive local evidence-card sidecar | research brief engine / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\evidence_cards\announcement_evidence_cards.json` | JSON | compact high-value announcement evidence cards; additive only |
+| `research_brief.json` | V6 research planner | V5 bridge / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\briefs\research_brief.json` | JSON | core planning artifact |
+| `manual_review_queue.json` | event-extract local review-router sidecar | operator / debugging | `F:\quant_data\AshareC#\data\event_lake_v6\research\extract_summary\manual_review_queue.json` | JSON | compact queue of events worth manual review; additive only |
+| `run_manifest.json` | formal governance wrapper | operator / debugging | `F:\quant_data\AshareC#\outputs\canonical_runs\<run_id>\run_manifest.json` | JSON | run id, operator entry, runtime root, mode/profile, and trace metadata |
+| `industry_router_summary.json` | industry-router runtime | context pack / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\industry_router_summary.json` | JSON | high-level summary over mechanism groups, latest active signals, and split-backtest status |
+| `latest_market_state.json` | market-state runtime | context pack / portfolio recommendation / release / execution gate / operator | `F:\quant_data\AshareC#\data\market_state_v6\latest_market_state.json` | JSON | current market regime truth with regime score, style bias, mechanism bias, exposure/turnover multipliers, and entry posture |
+| `research_fact_layers_v1.sqlite3` | `build_event_fact_layer.py` + `build_industry_hard_factor_layer.py` | industry-router / integrated-thesis / operator | `F:\quant_data\AshareC#\data\sql_store\research_fact_layers_v1.sqlite3` | SQLite | research-side structured event-fact and industry-hard-factor store with lineage columns; not canonical truth |
+| `integrated_thesis_state.json` | integrated-thesis runtime | context pack / research brief / portfolio recommendation / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\integrated_thesis\integrated_thesis_state.json` | JSON | canonical stock-alpha mainline contract built from `event_gate -> mechanism_gate -> earnings_gate -> portfolio_gate`; includes `primary_event_fact_id`, gate stage, reject reason, and reason chains |
+| `integrated_thesis_candidates.csv` | integrated-thesis runtime | portfolio recommendation / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\integrated_thesis\integrated_thesis_candidates.csv` | CSV | full symbol-level candidate table including gate pass/fail state, fact-backed explanation, and earnings validation outputs |
+| `latest_integrated_thesis.csv` | integrated-thesis runtime | portfolio recommendation / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\integrated_thesis\latest_integrated_thesis.csv` | CSV | latest accepted/watch candidate slice with thesis score/state, primary event fact id, mechanism, and reason chain |
+| `market_state_daily.csv` | market-state runtime | operator / debugging | `F:\quant_data\AshareC#\data\market_state_v6\market_state_daily.csv` | CSV | historical daily market-state rows with sub-score decomposition and final posture fields |
+| `market_state_explainer.json` | market-state runtime | operator / debugging | `F:\quant_data\AshareC#\data\market_state_v6\market_state_explainer.json` | JSON | concise explanation of the latest regime drivers, thresholds, and policy decisions |
+| `stock_master.csv` | industry-router runtime | event mapper / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\stock_master.csv` | CSV | resolved stock master with mechanism and subchain tags |
+| `mechanism_map.csv` | industry-router runtime | event mapper / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\mechanism_map.csv` | CSV | symbol-to-mechanism mapping contract used by the router |
+| `stock_profile.csv` | industry-router runtime | mechanism policies / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\stock_profile.csv` | CSV | resolved stock profile contract after merging stock master and mechanism map |
+| `<mechanism>_profile.csv` | industry-router runtime | mechanism debugging / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\<mechanism>_profile.csv` | CSV | mechanism-sliced profile view after profile enrichment |
+| `event_instances.csv` | industry-router runtime | mapper / backtest / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\event_instances.csv` | CSV | normalized event instances with resolved mechanism group and direction |
+| `event_stock_mapping.csv` | industry-router runtime | scorer / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\event_stock_mapping.csv` | CSV | event-to-stock mapping with score, reason, and exposure level |
+| `mechanism_state_daily.csv` | industry-router runtime | scorer / context pack / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\mechanism_state_daily.csv` | CSV | unified mechanism-state contract with `scope_type`, state score, source score, heat, and regime label |
+| `<mechanism>_state.csv` | industry-router runtime | mechanism debugging / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\<mechanism>_state.csv` | CSV | mechanism-sliced state output with sub-state columns and drivers |
+| `source_state_daily.csv` | industry-router source sidecar | scorer / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\source_state_daily.csv` | CSV | mechanism-level official-source state rows derived from structured source contracts |
+| `core_variable_daily.csv` | industry-router runtime | signal policy / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\core_variable_daily.csv` | CSV | per-stock per-date core variables before policy scoring and risk filtering |
+| `<mechanism>_core_variable.csv` | industry-router runtime | mechanism debugging / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\<mechanism>_core_variable.csv` | CSV | mechanism-sliced core-variable table before signal generation |
+| `source_snapshot_index.json` | industry-router source sidecar | operator / debugging | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\source_snapshots\source_snapshot_index.json` | JSON | compact fetch index with ok/error counts and `as_of_date` |
+| `source_snapshot_items.json` | industry-router source sidecar | operator / debugging | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\source_snapshots\source_snapshot_items.json` | JSON | per-source fetch results, extracted publish dates, keyword hits, and signal scores |
+| `stock_signal_daily.csv` | industry-router runtime | backtest / context pack / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\stock_signal_daily.csv` | CSV | unified stock-level policy output with `pre_risk_score`, `final_score`, `signal_state`, `allow_entry`, and attribution bucket |
+| `<mechanism>_signal.csv` | industry-router runtime | mechanism debugging / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\<mechanism>_signal.csv` | CSV | mechanism-sliced signal table with penalty / confirmation / attribution columns |
+| `latest_stock_signal.csv` | industry-router runtime | context pack / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\latest_stock_signal.csv` | CSV | latest-date slice of stock signals, useful for quick inspection |
+| `backtest_trend_capex_*` | industry-router backtest skeleton | operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\backtests\backtest_trend_capex_*` | JSON/CSV | split backtest outputs for trend-capex seeds |
+| `backtest_price_inventory_*` | industry-router backtest skeleton | operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\backtests\backtest_price_inventory_*` | JSON/CSV | split backtest outputs for price/inventory seeds |
+| `backtest_macro_style_*` | industry-router backtest skeleton | operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\backtests\backtest_macro_style_*` | JSON/CSV | split backtest outputs for macro/style seeds |
+| `backtest_combined_*` | industry-router backtest skeleton | operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\backtests\backtest_combined_*` | JSON/CSV | combined equal-weight summary over the split mechanism picks |
+| `backtest_attribution_*` | industry-router backtest skeleton | operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\industry_router\backtests\backtest_attribution_*` | JSON/CSV | component-level attribution summary by mechanism; zero-trade candidate buckets are preserved when future bars are unavailable |
+| `candidate_override.json` | V5 bridge | V5.1 runtime | `F:\quant_data\AshareC#\data\event_lake_v6\bridge\candidate_override.json` | JSON | tells V5 what routes, models, labels to favor |
+| `latest_v5_cycle_review.json` | supervisor local V5 review sidecar | operator / debugging | `F:\quant_data\AshareC#\data\research_hub_v5_1_gpu_integrated\reviews\latest_v5_cycle_review.json` | JSON | concise local review over latest completed V5 cycle; additive only |
+| `portfolio_recommendation.json` | portfolio recommendation layer | operator / execution bridge | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio_recommendation.json` | JSON | summary of selected strategy and portfolio state, now also including market-state posture, technical-confirmation summary, and post-filter reweight totals |
+| `latest_portfolio_posture.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio_v2a\latest_portfolio_posture.json` | JSON | portfolio-level posture contract with exposure cap, new-entry budget, add budget, rebalance mode, safety linkage, and replacement aggressiveness |
+| `latest_position_lifecycle.csv` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio_v2a\latest_position_lifecycle.csv` | CSV | latest per-name lifecycle state, action intent, proposal weight, final weight, cap, and reason fields |
+| `position_lifecycle_daily.csv` | portfolio V2A runtime | operator / replay / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio_v2a\position_lifecycle_daily.csv` | CSV | rolling history of lifecycle states for replay and threshold scans |
+| `admission_replacement_audit.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio_v2a\admission_replacement_audit.json` | JSON | explains which new names were admitted, denied, or used to replace weaker incumbents |
+| `portfolio_control_summary.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio_v2a\portfolio_control_summary.json` | JSON | V2A state counts, exposure usage, replacement counts, and soft-crowding snapshot |
+| `latest_technical_confirmation.csv` | technical-confirmation runtime | portfolio recommendation / release / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\technical_confirmation\latest_technical_confirmation.csv` | CSV | latest candidate-level technical gate output with entry allow flag, gate reason, and weight multiplier |
+| `technical_confirmation_daily.csv` | technical-confirmation runtime | operator / debugging | `F:\quant_data\AshareC#\data\event_lake_v6\research\technical_confirmation\technical_confirmation_daily.csv` | CSV | rolling technical-confirmation history across candidate symbols and dates |
+| `technical_confirmation_summary.json` | technical-confirmation runtime | portfolio recommendation / release / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\technical_confirmation\technical_confirmation_summary.json` | JSON | latest confirmation counts, strictness level, and summary posture |
+| `target_positions.csv` | portfolio recommendation layer | Gmtrade execution bridge | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\target_positions.csv` | CSV | target holdings with price fields, technical-confirmation fields, market-aware sizing metadata, post-filter reweighted portfolio weights, and V2A lifecycle/action-intent fields |
+| `rebalance_orders.csv` | portfolio recommendation layer | operator / execution bridge | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\rebalance_orders.csv` | CSV | delta orders relative to prior holdings |
+| `latest_release.json` | portfolio release layer | execution gate / trade clock / operator | `F:\quant_data\AshareC#\data\trade_release_v1\latest_release.json` | JSON | pointer to the current formal release |
+| `release_manifest.json` | portfolio release layer | execution gate / operator | `F:\quant_data\AshareC#\data\trade_release_v1\releases\<release_id>\release_manifest.json` | JSON | versioned trade-date-scoped release contract between research and execution; now also snapshots market-state truth and technical-confirmation summary |
+| `latest_actual_portfolio_state.json` | OMS runtime | operator / V2A continuity / audit | `F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\snapshots\latest_actual_portfolio_state.json` | JSON | authoritative OMS actual-state snapshot derived from broker/account truth plus open intents/orders |
+| `desired_vs_actual_gap.csv` | OMS runtime | operator / audit / control feedback | `F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\snapshots\desired_vs_actual_gap.csv` | CSV | authoritative desired-vs-actual gap table between the published release book and broker truth |
+| `oms_summary.json` | OMS runtime | operator / postmortem | `F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\snapshots\oms_summary.json` | JSON | OMS-level summary over authority ownership, gap size, intent status, dispatch count, and overrides applied |
+| `intent_ledger_latest.csv` | OMS runtime | operator / audit / replay | `F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\ledgers\intent_ledger_latest.csv` | CSV | authoritative intent ledger with status lifecycle from `planned` through terminal states |
+| `order_ledger_latest.csv` | OMS runtime | operator / audit / replay | `F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\ledgers\order_ledger_latest.csv` | CSV | authoritative order ledger with broker ids, status, remaining quantity, and intent linkage |
+| `fill_ledger_latest.csv` | OMS runtime | operator / audit / replay | `F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\ledgers\fill_ledger_latest.csv` | CSV | authoritative fill ledger keyed by broker execution ids when available |
+| `actual_state_daily.csv` | OMS runtime | operator / replay / research continuity fallback | `F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\snapshots\actual_state_daily.csv` | CSV | rolling actual-state history derived from broker truth, not from the research-side target book |
+| latest_open_intents.json | OMS runtime | operator / resume logic / audit | F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\snapshots\latest_open_intents.json | JSON | latest unresolved open intents after final ledger deduplication; first-stop snapshot for cross-session continuity |
+| latest_intent_continuity_report.json | OMS runtime | operator / OMS debugging | F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\snapshots\latest_intent_continuity_report.json | JSON | start-of-session continuity classification over carried intents, superseded intents, cancel requests, and reconcile-only blocks |
+| session_resume_audit.json | OMS runtime | operator / recovery | F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\snapshots\session_resume_audit.json | JSON | bounded session-resume audit with ignored stale orders, carried symbols, replacement-required symbols, and cancel requests |
+| cancel_replace_audit.json | OMS runtime | operator / postmortem | F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\snapshots\cancel_replace_audit.json | JSON | explicit cancel/replace lineage over cancel requests/results and old_intent_id -> new_intent_id replacements |
+| latest_manual_intervention_state.json | OMS runtime | operator / audit | F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\snapshots\latest_manual_intervention_state.json | JSON | latest applied OMS intervention state with active override summary, applied counts, and current override payload hash |
+| `control_feedback_latest.json` | OMS runtime | V2A posture engine / operator | `F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\feedback\control_feedback_latest.json` | JSON | Bucket B feedback for new-entry/add completion, turnover truncation, and persistent gap pressure |
+| gap_control_metrics_daily.csv | OMS runtime | V2A posture engine / operator | F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\feedback\gap_control_metrics_daily.csv | CSV | rolling control-feedback history with completion ratios, convergence, replacement churn, and partial-stuck metrics |
+| `research_meta_feedback_latest.json` | OMS runtime | context pack / research meta weighting / operator | `F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\feedback\research_meta_feedback_latest.json` | JSON | Bucket C aggregated execution-realism feedback for research-side consumption only |
+| mechanism_realism_rollup.csv | OMS runtime | research context / operator | F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\feedback\mechanism_realism_rollup.csv | CSV | rolling mechanism-level realizability and convergence rollup over 20/40/60-run windows |
+| `narrative_feedback_latest.json` | OMS runtime | operator | `F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\feedback\narrative_feedback_latest.json` | JSON | Bucket D non-authoritative human-readable summary; never mutates truth |
+| manual_overrides.json | OMS operator | OMS runtime / continuity / cancel-replace | F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\manual_overrides.json | JSON | operator-facing OMS intervention file for intent-level, symbol-level, and session-level overrides; distinct from trade-clock safety overrides |
+| manual_override_history.jsonl | OMS runtime | operator / audit | F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\history\manual_override_history.jsonl | JSONL | append-only history of OMS override payload hashes and applied intervention summaries |
+| oms_validation_report.json | OMS validation harness | operator / Codex regression checks | F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\validation\oms_validation_report.json | JSON | bounded synthetic/replay validation report over reconciliation, continuity, lifecycle, and recovery scenarios |
+| oms_validation_summary.md | OMS validation harness | operator / Codex regression checks | F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1\validation\oms_validation_summary.md | Markdown | short human-readable pass/fail summary for the OMS validation harness |
+| `clock_state.json` | trade clock supervisor | operator / debugging | `F:\quant_data\AshareC#\data\trade_clock\clock_state.json` | JSON | heartbeat, gate status, active window, and last dispatch state |
+| `scheduler_runtime.json` | trade clock supervisor | operator / debugging | `F:\quant_data\AshareC#\data\trade_clock\runtime\scheduler_runtime.json` | JSON | scheduler self-state with process pid, active phase, stop reason, and last update time |
+| `phase_state\YYYYMMDD.json` | trade clock supervisor | operator / debugging / postmortem | `F:\quant_data\AshareC#\data\trade_clock\phase_state\YYYYMMDD.json` | JSON | per-day phase truth for `research/release/preopen_gate/simulation/shadow/summary` with status, timestamps, release id, and stdout/stderr paths |
+| `system_safety_state.json` | safety guard | operator / execution gate / trade clock | `F:\quant_data\AshareC#\data\trade_clock\system_safety_state.json` | JSON | current execution safety truth including system mode, market regime, manual overrides, release validation, and freshness markers |
+| `incident_log.jsonl` | safety guard | operator / debugging / postmortem | `F:\quant_data\AshareC#\data\trade_clock\incident_log.jsonl` | JSONL | append-only abnormal-event log with before/after safety modes and action taken |
+| `manual_overrides.json` | operator + safety guard | trade clock / execution gate | `F:\quant_data\AshareC#\data\trade_clock\manual_overrides.json` | JSON | operator-editable `manual_halt` / `manual_reduce_only` kill-switch file |
+| `manual_override_history.jsonl` | safety guard | operator / postmortem | `F:\quant_data\AshareC#\data\trade_clock\manual_override_history.jsonl` | JSONL | audit trail when manual override values change |
+| `latest_account_health.json` | gmtrade health probe sidecar | safety guard / operator | `F:\quant_data\AshareC#\data\trade_clock\latest_account_health.json` | JSON | latest fresh or cached account/position/order health snapshot fetched via `gmtrade39` |
+| `latest_execution_dispatch.json` | execution gate / trade clock supervisor | operator / debugging | `F:\quant_data\AshareC#\data\trade_clock\latest_execution_dispatch.json` | JSON | latest release-triggered execution dispatch outcome |
+| `latest_execution_dispatch.<namespace>.json` | execution gate / trade clock supervisor | operator / debugging | `F:\quant_data\AshareC#\data\trade_clock\latest_execution_dispatch.<namespace>.json` | JSON | namespace-isolated dispatch result for simulation or shadow execution lines |
 | `intraday_phase_state.json` | intraday state machine | operator / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_phase_state.json` | JSON | latest formal phase, previous phase, namespace, safety mode, midday decision, current timing window, projected afternoon window, and integration mode |
 | `symbol_execution_state.csv` | intraday state machine | operator / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\symbol_execution_state.csv` | CSV | symbol-level execution-state view mapped from lifecycle, gap, OMS truth, phase, safety, timing scores, timing state, T overlay state, and feature-quality tier |
 | `intent_state_daily.csv` | intraday state machine | operator / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intent_state_daily.csv` | CSV | formal OMS-facing intent-state matrix derived from ledgers, continuity, and cancel-replace audits |
 | `intraday_event_log.jsonl` | intraday state machine | operator / portal / replay | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_event_log.jsonl` | JSONL | phase, safety, symbol, intent, timing-window, timing-state, and T-overlay transition events in one append-style stream |
 | `intraday_control_summary.json` | intraday state machine | operator / afternoon overlay / portal / summary pack | `F:\quant_data\AshareC#\data\trade_clock\intraday_state\latest\intraday_control_summary.json` | JSON | phase trace, timing-window summary, symbol/timing/T counts, risk summary, feature-quality counts, and overlay recommendation for bounded takeover mode |
-| `outputs\automation_runs\YYYYMMDD\run_manifest.json` | trade clock summary packager | operator / debugging / daily audit | `F:\quant_data\Ashare\outputs\automation_runs\YYYYMMDD\run_manifest.json` | JSON | per-day automation bundle manifest with release id, namespaces, report path, and copied phase artifacts |
-| `outputs\automation_runs\YYYYMMDD\daily_report.txt` | trade clock summary packager | operator | `F:\quant_data\Ashare\outputs\automation_runs\YYYYMMDD\daily_report.txt` | Text | plain-language daily automation summary over phase results, release, OMS sidecars, warnings, and critical flags |
-| `execution_report_*.json` | Gmtrade execution bridge | operator / supervisor feedback | `F:\quant_data\Ashare\data\live_execution_bridge\execution_report_*.json` | JSON | execution summary per run |
-| `latest_account_state.json` | live execution compatibility writer | operator / legacy downstream readers | `F:\quant_data\Ashare\data\live_execution_bridge\latest_account_state.json` | JSON | compatibility-only latest account snapshot; OMS ledgers and `latest_actual_portfolio_state.json` are now authoritative |
-| `position_state_before.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\position_state_before.json` | JSON | planned-trade ledger snapshot before controls are applied |
-| `position_state_after_plan.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\position_state_after_plan.json` | JSON | target vs actual vs pending plan after drift/budget controls |
-| `position_state_after_execution.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\position_state_after_execution.json` | JSON | actual vs target vs unfinished-order pending effect after execution |
-| `rebalance_audit.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\rebalance_audit.json` | JSON | explains drift skips, turnover truncation, and final control decisions |
-| `execution_feedback.json` | portfolio control V1 | operator / audit | `F:\quant_data\Ashare\data\live_execution_bridge\portfolio_control_runs\<timestamp>\execution_feedback.json` | JSON | normalizes planned/submitted/filled/skipped order outcomes |
-| `equity_curve.csv` | Gmtrade execution bridge | supervisor feedback | `F:\quant_data\Ashare\data\live_execution_bridge\equity_curve.csv` | CSV | feeds daily performance feedback |
-| `performance_feedback.json` | supervisor | candidate factory / portfolio recommendation / operator | `F:\quant_data\Ashare\data\event_lake_v6\bridge\performance_feedback.json` | JSON | next-day regime and route bias feedback |
+| `outputs\automation_runs\YYYYMMDD\run_manifest.json` | trade clock summary packager | operator / debugging / daily audit | `F:\quant_data\AshareC#\outputs\automation_runs\YYYYMMDD\run_manifest.json` | JSON | per-day automation bundle manifest with release id, namespaces, report path, and copied phase artifacts |
+| `outputs\automation_runs\YYYYMMDD\daily_report.txt` | trade clock summary packager | operator | `F:\quant_data\AshareC#\outputs\automation_runs\YYYYMMDD\daily_report.txt` | Text | plain-language daily automation summary over phase results, release, OMS sidecars, warnings, and critical flags |
+| `execution_report_*.json` | Gmtrade execution bridge | operator / supervisor feedback | `F:\quant_data\AshareC#\data\live_execution_bridge\execution_report_*.json` | JSON | execution summary per run |
+| `latest_account_state.json` | live execution compatibility writer | operator / legacy downstream readers | `F:\quant_data\AshareC#\data\live_execution_bridge\latest_account_state.json` | JSON | compatibility-only latest account snapshot; OMS ledgers and `latest_actual_portfolio_state.json` are now authoritative |
+| `position_state_before.json` | portfolio control V1 | operator / audit | `F:\quant_data\AshareC#\data\live_execution_bridge\portfolio_control_runs\<timestamp>\position_state_before.json` | JSON | planned-trade ledger snapshot before controls are applied |
+| `position_state_after_plan.json` | portfolio control V1 | operator / audit | `F:\quant_data\AshareC#\data\live_execution_bridge\portfolio_control_runs\<timestamp>\position_state_after_plan.json` | JSON | target vs actual vs pending plan after drift/budget controls |
+| `position_state_after_execution.json` | portfolio control V1 | operator / audit | `F:\quant_data\AshareC#\data\live_execution_bridge\portfolio_control_runs\<timestamp>\position_state_after_execution.json` | JSON | actual vs target vs unfinished-order pending effect after execution |
+| `rebalance_audit.json` | portfolio control V1 | operator / audit | `F:\quant_data\AshareC#\data\live_execution_bridge\portfolio_control_runs\<timestamp>\rebalance_audit.json` | JSON | explains drift skips, turnover truncation, and final control decisions |
+| `execution_feedback.json` | portfolio control V1 | operator / audit | `F:\quant_data\AshareC#\data\live_execution_bridge\portfolio_control_runs\<timestamp>\execution_feedback.json` | JSON | normalizes planned/submitted/filled/skipped order outcomes |
+| `equity_curve.csv` | Gmtrade execution bridge | supervisor feedback | `F:\quant_data\AshareC#\data\live_execution_bridge\equity_curve.csv` | CSV | feeds daily performance feedback |
+| `performance_feedback.json` | supervisor | candidate factory / portfolio recommendation / operator | `F:\quant_data\AshareC#\data\event_lake_v6\bridge\performance_feedback.json` | JSON | next-day regime and route bias feedback |
 
 ## Config Surface
 | Config | Location | Current | Impact |
@@ -1177,12 +1286,18 @@
 | `TOKEN_PLAN_MIN_INTERVAL_HOURS` | `hub_v6/local_settings.py` | `24` | controls V6 research-plan reuse frequency |
 | `OVERNIGHT_V5_GPU_MAX_CYCLES_PER_TICK` | `hub_v6/local_settings.py` | `8` | controls overnight runtime and research depth |
 | `QUICK_TEST_V5_GPU_MAX_CYCLES_PER_TICK` | `hub_v6/local_settings.py` | `1` | controls quick_test runtime and debugging speed |
-| `ENABLE_EXECUTION_BRIDGE` | `hub_v6/local_settings.py` | `True` | determines whether simulated execution runs after portfolio generation |
+| `ENABLE_EXECUTION_BRIDGE` | `hub_v6/local_settings.py` | `private local_settings.py value; example default = False` | actual execution-bridge enablement is environment-specific because the tracked repo does not include the private operator `local_settings.py` |
 | `PORTFOLIO_ENFORCE_EXECUTABLE_UNIVERSE` | `hub_v6/local_settings.py` | `True` | filters research-side candidates to broker-executable symbols before release publication, currently restricted to `.SH` / `.SZ` |
 | `PORTFOLIO_EXECUTABLE_ALLOWED_SUFFIXES` / `PORTFOLIO_EXECUTABLE_REQUIRE_TRADABLE_BASIC` | `hub_v6/local_settings.py` | `.SH,.SZ / True` | enforces exchange suffix and tradable-basic checks so `.BJ` and non-tradable rows do not leak into the formal target book |
 | `PORTFOLIO_ENABLE_POST_FILTER_REWEIGHT` | `hub_v6/local_settings.py` | `True` | allows filtered target weights to be re-expanded toward a meaningful exposure floor when regime capacity still exists |
 | `PORTFOLIO_MIN_EXPOSURE_FILL_RATIO` | `hub_v6/local_settings.py` | `0.75` | target fraction of the current total-exposure cap used by post-filter reweighting when the filtered book is too sparse |
 | `ENABLE_PORTFOLIO_V2A` | `hub_v6/local_settings.py` | `True` | enables the deterministic V2A posture/lifecycle/admission engine inside portfolio recommendation |
+| `ENABLE_INTEGRATED_THESIS` / `INTEGRATED_THESIS_ROOT` / `INTEGRATED_THESIS_PORTFOLIO_BUDGET_OVERLAY` | `hub_v6/local_settings.py` | `True / <research_root>\integrated_thesis / True` | controls the single-mainline stock-alpha builder, its artifact root, and whether portfolio sizing reads the thesis alpha-budget multiplier |
+| `RESEARCH_FACT_SQLITE_PATH` | `hub_v6/local_settings.py` | `F:\quant_data\AshareC#\data\sql_store\research_fact_layers_v1.sqlite3` | points the research-side structured fact/factor layer used by integrated thesis and router factor joins |
+| `MANUAL_EVENT_PROXY_PATH` | `hub_v6/local_settings.py` | `<research_root>\manual_event_proxy\manual_event_proxy.jsonl` | optional operator-maintained research-only event supplement; must stay outside canonical truth |
+| `ENABLE_RESEARCH_FACT_REFRESH` / `RESEARCH_FACT_REFRESH_RUN_BEFORE_RESEARCH` / `RESEARCH_FACT_REFRESH_FAIL_OPEN` | `hub_v6/local_settings.py` | `True / True / True` | controls whether the trade clock refreshes the research-side event-fact and hard-factor sqlite before research phases |
+| `RESEARCH_FACT_EVENT_LOOKBACK_DAYS` / `RESEARCH_FACT_HARD_FACTOR_LOOKBACK_DAYS` / `RESEARCH_FACT_REFRESH_TIMEOUT_MINUTES` | `hub_v6/local_settings.py` | `60 / 5 / 90` | controls daily refresh depth and timeout for event-fact and hard-factor builders |
+| `RESEARCH_FACT_EVENT_SCRIPT_PATH` / `RESEARCH_FACT_HARD_FACTOR_SCRIPT_PATH` | `hub_v6/local_settings.py` | `scripts\build_event_fact_layer.py / scripts\build_industry_hard_factor_layer.py` | explicit builder entrypoints used by the clock-side daily refresh |
 | `PORTFOLIO_ENABLE_LIFECYCLE_STATE_MACHINE` | `hub_v6/local_settings.py` | `True` | enables lifecycle-state assignment before final target-book publication |
 | `PORTFOLIO_ENABLE_ADMISSION_REPLACEMENT` | `hub_v6/local_settings.py` | `True` | enables new-entry admission and weak-incumbent replacement logic when slots are constrained |
 | `PORTFOLIO_ENABLE_SOFT_CROWDING_PENALTY` | `hub_v6/local_settings.py` | `True` | enables soft crowding penalties as a ranking/weight modifier instead of hard blocking |
@@ -1199,7 +1314,7 @@
 | `PORTFOLIO_CONTROL_DEV_LOG_TOP_HOLDINGS` | `hub_v6/local_settings.py` | `8` | controls how many top holdings are written into the dev-log snapshot |
 | `PORTFOLIO_CONTROL_ALLOW_ODD_LOT_EXIT` | `hub_v6/local_settings.py` | `True` | allows cleanup of residual odd-lot sell quantities in the control layer |
 | `ENABLE_OMS` | `hub_v6/local_settings.py` | `True` | turns the broker-truth-first OMS layer on beneath `execution_only` and the gmtrade bridge |
-| `OMS_OUTPUT_ROOT` | `hub_v6/local_settings.py` | `F:\quant_data\Ashare\data\live_execution_bridge\oms_v1` | authoritative OMS ledger/artifact root |
+| `OMS_OUTPUT_ROOT` | `hub_v6/local_settings.py` | `private local_settings.py value; example default = F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1` | authoritative OMS ledger/artifact root; stable workspace default root is local `AshareC#\data` |
 | `OMS_USE_BROKER_TRUTH_FOR_V2A_CONTINUITY` | `hub_v6/local_settings.py` | `True` | makes V2A prefer OMS actual-state truth over previous target/lifecycle sidecars when continuity is available |
 | `OMS_INTENT_EXPIRY_DAYS` | `hub_v6/local_settings.py` | `3` | default expiry window for OMS intents before they should be treated as stale |
 | `OMS_CONTROL_FEEDBACK_LOOKBACK_RUNS` / `OMS_RESEARCH_META_LOOKBACK_RUNS` | `hub_v6/local_settings.py` | `20 / 60` | lookback windows for Bucket B control feedback and Bucket C research meta feedback aggregation |
@@ -1271,7 +1386,7 @@
 
 ## Known Issues
 - `AshareC#` now has a local `data/` mirror, but the control-plane contract is still incomplete locally; if required files such as `system_safety_state.json` or `oms_summary.json` are missing, the C# path registry can still fall back to `F:\quant_data\Ashare\data`.
-- `AshareC#` still depends on a private `hub_v6\local_settings.py` that is not committed in this repo; only `local_settings.example.py` is tracked, so fresh clones are not fully runnable until local secrets/paths are provisioned. The manual clock starter now degrades more gracefully and can fall back to PATH Python when that private file is missing, but runtime secrets and machine-specific paths still need real local provisioning for full production use.
+- `AshareC#` now carries a tracked `hub_v6\local_settings.py` shim that bootstraps from `local_settings.example.py` and can optionally overlay a private legacy file, but fresh clones still are not fully production-runnable until local secrets, broker paths, and machine-specific runtime values are provisioned.
 - `AshareC#` now has an initial `.NET/C#` runtime skeleton under `csharp_runtime_skeleton`, and it builds on local `.NET 8`, but it is still governance/orchestration-first and not yet a full runtime replacement.
 - Governance/runtime files such as `SYSTEM_MANIFEST.yaml` are still inherited from the original repo snapshot and can still point at `F:\quant_data\Ashare`; do not treat this Rider copy as cut-over runtime yet.
 - Historical log entries below still mention original `F:\quant_data\Ashare` paths because they were inherited from the source repo snapshot.
@@ -1282,9 +1397,12 @@
 - For several desired datasets, especially analyst consensus / EPS revision history and licensed historical exchange data, free official sources may be incomplete or unavailable; do not silently substitute scraped or heuristic proxies into canonical truth fields.
 - The current affordable bundle intentionally writes into `affordable_data_v1.sqlite3` instead of `research_data_v1.sqlite3`; until field lineage and source contracts are finalized, do not treat those rows as canonical production truth.
 - `affordable_data_v1.sqlite3` currently contains mostly recent-window refreshes for daily-style datasets and not full-history backfills.
+- Historical log entries below still mention `three_strategy_kernel`; active Python runtime wiring has been cut over to `integrated_thesis`, so treat those old references as superseded history only.
 - `customs_summary` in the affordable bundle is sourced from official `gov.cn` release pages and therefore only covers national summary statements, not `hs_code / region / amount / volume` detail tables.
-- `forecast`, `express`, `dividend`, and `stk_holdertrade` are now cheaply updateable, but contract-announcement, in-hand-order, and tender facts still require text extraction from CNINFO / exchange / procurement pages and are not yet landed into formal SQL fact tables.
-- Low-cost commodity and industrial-factor coverage remains partial: Tushare already exposes futures and warehouse-receipt style data, but broad free coverage for industry spot prices, social inventory, and operating-rate series is still incomplete.
+- `research_fact_layers_v1.sqlite3` is now materialized and already carries structured event facts plus industry hard factors, but coverage is intentionally scoped to the currently reliable free/low-cost slices; it is not yet a full CNINFO / exchange / procurement history warehouse.
+- Low-cost commodity and industrial-factor coverage remains partial even after materialization: the current SQL layer already includes futures, warehouse receipts, customs summary, 100ppi digest, and selected NBS / MIIT / CAICT / PBOC / NEA official pages, but broad free coverage for rolling social inventory, high-frequency operating rates, and richer spot-price histories is still incomplete.
+- Small probe runs can still produce sparse `event_instances` inside `industry_router` even when structured events are supplied. The mainline now mitigates this by allowing fact-backed thesis candidates from `research_fact_store`, but full raw-event normalization coverage is still incomplete.
+- The new clock-side `research_fact_refresh` now makes the local research sqlite daily-refreshable, but some official pages are fixed article/report URLs rather than rolling index feeds; freshness still depends on curated source-contract maintenance, not autonomous source discovery.
 - The trade clock now includes a pre-research affordable data refresh hook; it improves daily freshness for low-cost sources, but it is intentionally non-blocking by default and should not be mistaken for a canonical data-governance gate.
 - The intraday state machine is now structurally complete and automatically refreshed by the trade clock, but standalone `execution_only` and standalone `midday_review_only` are not yet fully gated by the state machine; the bounded takeover currently lives inside the trade-clock afternoon overlay path.
 - `INTRADAY_STATE_MACHINE_SHADOW_MODE` should remain the default until several real trade dates confirm the symbol/intention mappings are stable; switching it off enables only limited afternoon-plan constraints, not full execution ownership.
@@ -1385,6 +1503,18 @@
   - Reason: Gmtrade does not support the main Python runtime used by the research stack.
   - Alternatives considered: unify all runtimes under one interpreter.
   - Consequence: execution-bridge environment must be protected from accidental switching.
+- Decision: structured event facts and industry hard factors now live in `research_fact_layers_v1.sqlite3`, not in `affordable_data_v1.sqlite3` and not in canonical truth tables.
+  - Reason: the new layer mixes truth-derived rows, structured extraction rows, lineage metadata, and research-only joins that need to stay explicit and auditable without polluting canonical truth.
+  - Alternatives considered: append the new tables into `affordable_data_v1.sqlite3`, or promote them directly into canonical production stores.
+  - Consequence: future event/factor expansion should land in the research sqlite first, with field lineage and source-class documentation preserved.
+- Decision: the single stock-alpha mainline remains `integrated_event_industry_earnings_alpha`, and its runtime contract is the gated `integrated_thesis` chain rather than any revived parallel strategy stack.
+  - Reason: the user explicitly rejected compatibility accretion and parallel alpha wrappers; one transparent thesis chain is easier to debug and extend.
+  - Alternatives considered: restore `three_strategy_kernel`, or keep integrated thesis as only one of several top-level strategy contracts.
+  - Consequence: future research-side strategy work should deepen `event -> mechanism -> earnings -> portfolio` instead of opening new parallel alpha trees.
+- Decision: when raw event-to-router mapping is sparse, integrated thesis may form candidates from `research_fact_store` plus router state context, but this remains a research-side join rather than a canonical truth promotion.
+  - Reason: free-source coverage is uneven, and sparse mapper outputs should not prevent the mainline from testing fact-backed convictions.
+  - Alternatives considered: drop sparse-event dates entirely, or silently elevate heuristic mappings into truth-like tables.
+  - Consequence: the mainline is more robust on partial free-data days while still keeping truth/proxy boundaries explicit.
 - Decision: the archived root-level `quant_research_hub_v5*` directories are now historical only; the live research brain is the embedded `v5_gpu_runtime`.
   - Reason: `main_research_runner.py` and `hub_v6/supervisor.py` launch the package-local V5 runtime directly.
   - Alternatives considered: treat the archived root-level copy as still active.
@@ -1533,6 +1663,34 @@
 ```
 
 ## Change Log
+### 2026-04-01 23:39
+- Type:
+  - `docs`
+- Scope:
+  - stable-section truth refresh
+- Files:
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- What changed:
+  - Corrected stable-section path references that still pointed at the protected old repo inside the local workspace handoff document.
+  - Rewrote the `Latest Live Portfolio Snapshot` block to state that no local execution snapshot is currently present under the `AshareC#` workspace roots.
+  - Clarified the session-start standalone-runtime check so future sessions verify the local `data/` mirror before assuming old-repo external dependencies.
+  - Marked `ENABLE_EXECUTION_BRIDGE` and `OMS_OUTPUT_ROOT` as environment-specific where the tracked repo cannot prove the private `local_settings.py` value.
+- Impact:
+  - Future sessions should no longer misread inherited old-repo paths as the current local workspace artifact contract.
+  - Stable sections now better match the committed manifest/path layout of `AshareC#` without inventing local runtime artifacts that do not exist.
+- Validation:
+  - inspected `SYSTEM_MANIFEST.yaml`
+  - inspected `launch_canonical.py`
+  - inspected `trade_clock_service.py`
+  - inspected `tools/register_run.py`
+  - inspected `hub_v6/local_settings.example.py`
+  - verified that local roots `data\live_execution_bridge`, `data\trade_release_v1`, and `outputs\canonical_runs` currently contain no snapshot files in this workspace
+- Compatibility:
+  - docs-only
+  - no runtime or config behavior changed
+- Rollback:
+  - restore the prior inherited stable-section text if you intentionally want the handoff document to describe the protected old live repo instead of the local `AshareC#` workspace
+
 All timestamps below are local file write times in the current workspace and should be read as Asia/Shanghai local time.
 
 ### 2026-03-31 04:12
@@ -5484,3 +5642,1402 @@ All timestamps below are local file write times in the current workspace and sho
     - `dataset='ccgp_bid_awards'`
     - `dataset='ppi_market_digest'`
   - delete the matching snapshot CSV files if these feeds must be withdrawn
+
+### [2026-04-02 00:22] Type: runtime/clock/data-update
+- Scope:
+  - `trade_clock_service.py`
+  - `tools\preflight_check.py`
+  - `scripts\publish_audit_report_to_site.ps1`
+  - `scripts\update_affordable_data_bundle.py`
+  - `tools\fetch_customs_summary_gov_cn.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\contracts\...`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\core\...`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\mechanisms\...`
+- What changed:
+  - Hardened the trade clock so subprocess spawn failures no longer crash the whole clock process:
+    - phase and auxiliary subprocess launch errors are now captured as failed artifacts/log payloads
+    - unhandled phase exceptions are now marked into runtime state instead of terminating the supervisor loop
+  - Made scheduler enablement reload on each heartbeat instead of only once at service start.
+  - Kept site publishing bound to the clock flow after `summary`, but removed the hardcoded publish Python path:
+    - publish PowerShell now accepts `-PythonExe`
+    - clock passes the configured research Python into the publish step
+  - Expanded clock-service preflight coverage to include `midday_review_only` and explicit checks for:
+    - affordable bundle script
+    - site publish script
+    - site index builder
+    - PowerShell / SSH / SCP availability
+  - Added a tracked `hub_v6\local_settings.py` shim so this workspace can boot from the committed example config and optionally overlay a private legacy settings file for local secrets and machine paths.
+  - Repaired the local `industry_router` package by restoring missing `mechanisms`, `contracts`, and `core` modules that the current workspace mirror lacked, so `hub_v6.supervisor` can import successfully under the canonical research Python.
+  - Fixed the trade-clock scheduler fallback simulation time to match the documented/sample value `09:30:35` instead of the stale `09:28:00`.
+  - Fixed affordable daily-update robustness:
+    - `update_affordable_data_bundle.py` now lazy-loads the customs helper only when `customs_summary` is actually requested
+    - `fetch_customs_summary_gov_cn.py` now falls back to stdlib `urllib` when `requests` is unavailable, so the bundle does not fail purely because that optional package is missing from the research environment
+- Impact:
+  - The clock can now stay resident through spawn-path failures and report them as phase failures instead of dying.
+  - Bound site publishing remains attached to the clock lifecycle, but it is now portable across machines/environments that do not share one hardcoded Python path.
+  - The local Rider/C# migration workspace is again import-complete enough for trade-clock and research preflight.
+  - Affordable daily updates now start correctly in the canonical research environment and no longer have an unrelated `requests` dependency crash at import time.
+- Validation:
+  - `python -m py_compile` on the touched clock, preflight, config, local-settings, site-publish, affordable-update, customs-helper, and restored `industry_router` files
+  - generated runtime config:
+    - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\hub_config.v6.runtime.daily_production.json`
+  - preflight:
+    - `python F:\quant_data\AshareC#\tools\preflight_check.py --profile daily_production --mode research_only --config F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\hub_config.v6.runtime.daily_production.json`
+    - result: `ok=true`, including `import:hub_v6.supervisor@canonical_python`
+  - clock heartbeat smoke:
+    - `C:\Users\Administrator\PyCharmMiscProject\.venv\Scripts\python.exe F:\quant_data\AshareC#\trade_clock_service.py --profile daily_production --once`
+    - result: clean heartbeat output, `phase_executed=false`, exit code `0`
+  - affordable update smoke under the canonical research Python:
+    - `...python.exe F:\quant_data\AshareC#\scripts\update_affordable_data_bundle.py --db-path F:\quant_data\AshareC#\outputs\tmp_affordable_check.sqlite3 --snapshot-root F:\quant_data\AshareC#\outputs\tmp_affordable_snap --dataset stock_basic --dataset daily --daily-lookback 1`
+    - result: `stock_basic=5819`, `daily=0` for same-day `20260402`
+  - affordable default-window smoke under the canonical research Python:
+    - `...python.exe F:\quant_data\AshareC#\scripts\update_affordable_data_bundle.py --db-path F:\quant_data\AshareC#\outputs\tmp_affordable_check_default.sqlite3 --snapshot-root F:\quant_data\AshareC#\outputs\tmp_affordable_snap_default --dataset daily`
+    - result: `20260331=5482`, `20260401=5485`, `20260402=0`, final written rows `10967`
+- Compatibility:
+  - site publish remains clock-bound; this change does not decouple it into a separate worker
+  - the new `local_settings.py` shim is additive and still allows private local overrides
+  - restored `industry_router` files align the local mirror back to the legacy runtime expectation; no old-repo files were modified
+- Rollback:
+  - revert the touched runtime/preflight/publish/affordable files if the previous behavior must be restored
+  - remove the tracked `hub_v6\local_settings.py` shim only if a different secret/bootstrap strategy replaces it
+  - if the restored `industry_router` mirror causes issues, replace those directories from a known-good local backup of this workspace rather than modifying the protected old repo
+
+### [2026-04-02 01:08] Type: portal/frontend/backend
+- Scope:
+  - `scripts\build_audit_site_index.py`
+  - `scripts\portal_backend_server.py`
+- What changed:
+  - Rebuilt the portal site generator into a clean UTF-8 version with a new visual direction and fully Chinese visible UI copy.
+  - Kept the multi-page portal structure, but refreshed the pages to make the site more usable as an operator surface:
+    - `index.html`
+    - `system-status.html`
+    - `strategy-status.html`
+    - `trade-monitor.html`
+    - `intraday-state.html`
+    - `audit-center.html`
+    - `comments.html`
+    - `admin.html`
+    - `login.html`
+    - `register.html`
+    - `about.html`
+  - Added actual built-in visualization blocks to the generated site instead of plain text-only status views:
+    - bar chart
+    - donut chart
+    - line chart
+    - timeline blocks
+  - Added admin-side manual intervention capability for current holdings in the portal frontend:
+    - create intervention work order
+    - view intervention list
+    - mark intervention as `applied` or `cancelled`
+    - quick-fill from current holdings snapshot
+  - Extended the lightweight backend API to support admin intervention workflows:
+    - `GET /api/admin/interventions`
+    - `POST /api/admin/interventions`
+    - `POST /api/admin/interventions/<id>/status`
+  - Bound intervention persistence to the portal sqlite store and sidecar audit artifacts:
+    - `manual_position_interventions.latest.json`
+    - `manual_position_interventions.log.jsonl`
+  - Normalized the main visible portal copy to Chinese, including admin flows, comments, login/register flows, and operator-facing navigation.
+- Impact:
+  - The site is now a usable operator portal instead of a partially mojibake static shell.
+  - Admin users can directly register manual intervention intent against current holdings from the website while still staying inside the safety boundary; the portal records controlled work orders rather than bypassing broker/risk controls.
+  - Visual charts are now present inside the generated site for allocation, account structure, nav history, and event timelines.
+- Validation:
+  - `python -m py_compile F:\quant_data\AshareC#\scripts\build_audit_site_index.py`
+  - `python -m py_compile F:\quant_data\AshareC#\scripts\portal_backend_server.py`
+  - static site smoke build:
+    - `python F:\quant_data\AshareC#\scripts\build_audit_site_index.py --output-dir F:\quant_data\AshareC#\tmp\portal_site_smoke`
+  - lightweight backend smoke with temp sqlite db:
+    - health check passed
+    - first registered user became `admin`
+    - admin summary endpoint passed
+    - intervention create/list/update endpoints passed
+    - intervention sidecar artifacts were written successfully
+- Compatibility:
+  - additive at the portal layer
+  - does not alter the protected old repo
+  - does not bypass existing execution/risk boundaries
+- Rollback:
+  - revert the two touched portal files if the previous portal generator/backend must be restored
+  - delete temp smoke artifacts under `F:\quant_data\AshareC#\tmp\portal_site_smoke` and temp portal sqlite files if no longer needed
+
+### [2026-04-02 02:41] Type: operator-chat/portal
+- Scope:
+  - `docs\ai_operator\system_overview.md`
+  - `docs\ai_operator\operator_rules.md`
+  - `docs\ai_operator\intent_schema.md`
+  - `scripts\operator_intent\context_builder.py`
+  - `scripts\operator_intent\decision_engine.py`
+  - `scripts\operator_intent\model_client.py`
+  - `scripts\operator_intent\parser.py`
+  - `scripts\operator_chat_backend.py`
+  - `scripts\build_audit_site_index.py`
+- What changed:
+  - Added a first-pass operator chat layer for the portal.
+  - Added fixed operator knowledge docs under `docs\ai_operator\` so the model layer can be grounded on:
+    - system overview
+    - operator rules
+    - intent schema
+  - Added runtime-context assembly under `scripts\operator_intent\context_builder.py` to summarize current release, clock, safety, health, OMS, market state, intraday state, and gap artifacts into a compact operator context.
+  - Added deterministic intent review under `scripts\operator_intent\decision_engine.py`.
+  - Added lightweight model routing under `scripts\operator_intent\model_client.py` with three modes:
+    - `stub`
+    - `ollama`
+    - `openai`
+  - Added heuristic / structured intent parsing under `scripts\operator_intent\parser.py`.
+  - Added a dedicated backend service `scripts\operator_chat_backend.py` with:
+    - `GET /api/health`
+    - `GET /api/chat/conversations`
+    - `GET /api/chat/conversations/<id>`
+    - `POST /api/chat/send`
+  - Added sqlite-backed conversation persistence:
+    - `operator_conversations`
+    - `operator_messages`
+  - Extended the portal static site with a new page:
+    - `operator-console.html`
+  - The operator console now shows:
+    - natural-language dialog
+    - assistant reply
+    - parsed intent JSON
+    - deterministic decision result
+    - runtime context
+    - model-side result
+    - knowledge-context docs used
+    - conversation history
+  - Cleaned the new operator page and surrounding portal pages so visible user-facing text is Chinese, and removed the remaining visible English footer / about-page phrases from the generated site.
+- Impact:
+  - The portal now supports transparent operator interaction instead of read-only status browsing.
+  - V1 is intentionally bounded:
+    - explain
+    - translate intent
+    - produce decision feedback
+    - persist dialog history
+  - V1 does **not** directly place orders or bypass execution / OMS / broker safety boundaries.
+  - The chat layer is now structured so future work can plug in local or cloud LLMs without changing the portal contract.
+- Validation:
+  - `python -m py_compile F:\quant_data\AshareC#\scripts\build_audit_site_index.py`
+  - `python -m py_compile F:\quant_data\AshareC#\scripts\operator_chat_backend.py`
+  - `python -m py_compile F:\quant_data\AshareC#\scripts\operator_intent\context_builder.py`
+  - `python -m py_compile F:\quant_data\AshareC#\scripts\operator_intent\decision_engine.py`
+  - `python -m py_compile F:\quant_data\AshareC#\scripts\operator_intent\model_client.py`
+  - `python -m py_compile F:\quant_data\AshareC#\scripts\operator_intent\parser.py`
+  - portal site smoke build:
+    - `python F:\quant_data\AshareC#\scripts\build_audit_site_index.py --output-dir F:\quant_data\AshareC#\tmp\portal_site_smoke_v3`
+  - generated-site checks:
+    - `operator-console.html` contains the operator console page, Chinese labels, the knowledge-context panel, and no visible leftover English footer/about text
+  - parser smoke:
+    - direct call with `今天如果市场继续走弱，帮我分析是否需要降低高波动持仓。`
+    - result: `intent_type=portfolio_adjustment`
+  - backend smoke:
+    - direct `OperatorChatBackend.chat(...)` call with the same message
+    - result: `intent_type=portfolio_adjustment`
+    - docs used: `system_overview.md`, `operator_rules.md`, `intent_schema.md`
+- Compatibility:
+  - additive to the current portal and runtime
+  - does not modify the protected old repo
+  - does not alter clock / release / execution ownership
+  - model integration remains optional; `stub` mode preserves deterministic fallback behavior
+- Rollback:
+  - revert the new operator-chat files and the portal generator changes if this V1 chat layer must be removed
+  - delete temporary smoke outputs under `F:\quant_data\AshareC#\tmp\portal_site_smoke_v3` and temporary sqlite files under `F:\quant_data\AshareC#\tmp\`
+
+### [2026-04-02 03:07] Type: portal/publish
+- Scope:
+  - `scripts\build_audit_site_index.py`
+  - `scripts\publish_audit_report_to_site.ps1`
+  - public site root `https://peng1145141919810.xyz/`
+- What changed:
+  - Adjusted the operator-console frontend so its default API base is same-origin `/api` instead of hardcoded `http://127.0.0.1:8879/api`.
+  - Fixed the publish PowerShell script to match the current site builder contract:
+    - removed the stale `--domain` argument
+    - added `site_state.json` upload
+  - Rebuilt the portal into `F:\quant_data\AshareC#\outputs\site_publish_stage`.
+  - Manually pushed the rebuilt static portal files to:
+    - `/var/www/peng1145141919810.xyz/site`
+- Impact:
+  - The new portal frontend is now live on the public site, including:
+    - `operator-console.html`
+    - updated Chinese portal copy
+    - cleaned footer/about text
+  - The operator console now points at same-origin `/api`, which is the correct public-site frontend contract.
+  - Important current limitation:
+    - only the static frontend was pushed in this step
+    - the new operator-chat backend was not deployed to the public server yet
+    - public `operator-console.html` is live, but its chat actions still require backend deployment before end-to-end public use
+- Validation:
+  - `python -m py_compile F:\quant_data\AshareC#\scripts\build_audit_site_index.py`
+  - `python F:\quant_data\AshareC#\scripts\build_audit_site_index.py --output-dir F:\quant_data\AshareC#\outputs\site_publish_stage`
+  - SSH reachability:
+    - `ssh ubuntu@43.129.28.141 "echo ok"`
+  - public checks after upload:
+    - `https://peng1145141919810.xyz/` -> `200`
+    - `https://peng1145141919810.xyz/operator-console.html` -> `200`
+    - `https://peng1145141919810.xyz/about.html` -> `200`
+    - `https://peng1145141919810.xyz/site_state.json` served the rebuilt state file
+- Compatibility:
+  - additive frontend publish only
+  - no change to the protected old repo
+  - no change yet to the public backend topology
+- Rollback:
+  - republish the previous `outputs\site_publish_stage` contents or revert the touched site-builder/publish-script files, then re-upload the site root
+
+### [2026-04-02 03:20] Type: operator-chat/public-deploy
+- Scope:
+  - `scripts\operator_intent\context_builder.py`
+  - `scripts\build_audit_site_index.py`
+  - `scripts\publish_audit_report_to_site.ps1`
+  - `scripts\deploy_operator_chat_backend_to_server.ps1`
+  - public site/API:
+    - `https://peng1145141919810.xyz/operator-console.html`
+    - `https://peng1145141919810.xyz/api/chat/health`
+    - `https://peng1145141919810.xyz/api/chat/send`
+- What changed:
+  - Added published-context fallback to `operator_intent\context_builder.py` through:
+    - `OPERATOR_RUNTIME_CONTEXT_PATH`
+  - The site builder now writes an additional public artifact:
+    - `operator_runtime_context.json`
+  - The site publish flow now uploads:
+    - `operator_runtime_context.json`
+    - `site_state.json`
+  - Added a dedicated public deployment script for the operator chat service:
+    - `scripts\deploy_operator_chat_backend_to_server.ps1`
+  - Deployed a new remote service:
+    - systemd unit: `/etc/systemd/system/ashare-operator-chat-backend.service`
+    - process: `/opt/ashare_portal/operator_chat_backend.py`
+    - package mirror: `/opt/ashare_portal/operator_intent`
+    - docs mirror: `/opt/ashare_portal/docs/ai_operator`
+    - runtime context source: `/var/www/peng1145141919810.xyz/site/operator_runtime_context.json`
+    - sqlite store: `/var/lib/ashare_portal/portal.sqlite3`
+    - listen port: `127.0.0.1:8879`
+  - Patched nginx so:
+    - `/api/chat/` proxies to `127.0.0.1:8879`
+    - existing `/api/` continues to proxy to the legacy portal backend on `127.0.0.1:8765`
+  - Adjusted `operator_chat_backend.py` so it accepts both direct and nginx-rewritten route forms:
+    - `/chat/send` and `/send`
+    - `/chat/conversations` and `/conversations`
+- Impact:
+  - The public operator console is now backed by a real remote chat service instead of a static-only page.
+  - Public chat now reuses:
+    - the same login session cookie
+    - the same portal sqlite database
+    - a published runtime-context snapshot generated from the local operator machine
+  - This means the public site can answer against a real published system snapshot without requiring the website server to host the full local quant runtime tree.
+  - Current limitation:
+    - the public operator backend reads a published snapshot, not the full live local runtime
+    - if the local machine does not republish `operator_runtime_context.json`, the public chat context will age with the published site
+    - current published context has no live positions / release on the server-side snapshot, so some adjustment requests are correctly returned as conservative `reject`
+- Validation:
+  - `python -m py_compile F:\quant_data\AshareC#\scripts\operator_chat_backend.py`
+  - rebuilt and uploaded public artifacts including `operator_runtime_context.json`
+  - remote service health:
+    - `http://127.0.0.1:8879/health` -> `ok=true`
+    - `https://peng1145141919810.xyz/api/chat/health` -> `ok=true`
+  - public end-to-end HTTPS smoke:
+    - register new user through `/api/auth/register`
+    - send chat through `/api/chat/send`
+    - list conversations through `/api/chat/conversations`
+    - conversation persistence confirmed
+  - public Chinese intent smoke using unicode-safe payload:
+    - input: `今天如果市场继续走弱，帮我分析是否需要降低高波动持仓。`
+    - result: `intent_type=portfolio_adjustment`
+    - decision: `reject` under the current published snapshot, which is expected because the public context currently has no live positions/release
+- Compatibility:
+  - additive remote deployment
+  - existing public portal backend remains in place on port `8765`
+  - Nginx routing keeps `/api/` compatibility while carving out `/api/chat/` for the new service
+- Rollback:
+  - stop/disable `ashare-operator-chat-backend`
+  - remove the `/api/chat/` nginx block and reload nginx
+  - optionally remove `/opt/ashare_portal/operator_chat_backend.py`, `/opt/ashare_portal/operator_intent`, and `/opt/ashare_portal/docs/ai_operator`
+
+### [2026-04-02 03:33] Type: operator-chat/v2/runtime-publish
+- Scope:
+  - `scripts\export_operator_runtime_context.py`
+  - `scripts\publish_operator_runtime_context_to_site.ps1`
+  - `scripts\operator_intent\decision_engine.py`
+  - `scripts\operator_chat_backend.py`
+  - `scripts\build_audit_site_index.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+- What changed:
+  - Added a lightweight operator-runtime export script:
+    - `scripts\export_operator_runtime_context.py`
+  - Added a lightweight publish script that uploads only the runtime context JSON instead of republishing the whole site:
+    - `scripts\publish_operator_runtime_context_to_site.ps1`
+  - Wired a new `operator_runtime_publish` config surface into the clock config builder.
+  - Wired `clock_supervisor.run_trade_clock(...)` so each heartbeat can publish `operator_runtime_context.json` on a bounded interval, fail-open by default.
+  - The heartbeat state now records `operator_runtime_publish`.
+  - Extended the operator decision layer so non-explain requests generate a structured `pending_execution_plan`.
+  - Added persistent pending-plan storage to the operator chat backend:
+    - `operator_pending_plans`
+    - `GET /api/chat/plans`
+  - Extended the operator console page so it now shows:
+    - current pending execution plan
+    - pending plan list
+- Impact:
+  - Public operator chat context is no longer limited to full-site publish events after `summary`; the trade clock can now refresh the public runtime-context snapshot on a lightweight heartbeat cadence.
+  - Operator chat no longer stops at explanation/decision only; it now emits a saved, reviewable, pending execution plan draft for follow-on human confirmation.
+  - These plans remain non-executing drafts; they do not bypass execution / OMS / broker controls.
+- Validation:
+  - `python -m py_compile` on:
+    - `scripts\export_operator_runtime_context.py`
+    - `scripts\build_audit_site_index.py`
+    - `scripts\operator_chat_backend.py`
+    - `scripts\operator_intent\context_builder.py`
+    - `scripts\operator_intent\decision_engine.py`
+    - `hub_v6\config_builder.py`
+    - `hub_v6\clock_supervisor.py`
+  - local operator-plan smoke:
+    - `OperatorChatBackend.chat(...)` returned `pending_plan`
+    - `OperatorChatBackend.list_plans(...)` returned one saved draft
+  - lightweight context publish smoke:
+    - `powershell -ExecutionPolicy Bypass -File F:\quant_data\AshareC#\scripts\publish_operator_runtime_context_to_site.ps1`
+    - result: `ok=true`
+  - clock heartbeat smoke:
+    - `C:\Users\Administrator\PyCharmMiscProject\.venv\Scripts\python.exe F:\quant_data\AshareC#\trade_clock_service.py --profile daily_production --once`
+    - result: exit `0`
+    - `data\trade_clock\clock_state.json` recorded `operator_runtime_publish.ok=true`
+  - public V2 smoke:
+    - public `/api/chat/send` returned `intent_type=portfolio_adjustment`
+    - public response carried `pending_plan`
+    - public `/api/chat/plans` returned a saved plan list
+- Compatibility:
+  - additive
+  - public chat remains explain/plan only; still no automatic real-order execution
+  - lightweight runtime-context publish is independent from the full post-summary site publish
+- Rollback:
+  - disable `operator_runtime_publish.enabled` in runtime config or revert the touched clock/config files
+  - remove the pending-plan table/endpoint changes from `operator_chat_backend.py` if V2 drafts must be withdrawn
+
+### [2026-04-02 03:39] Type: operator-chat/greeting-fix
+- Scope:
+  - `scripts\operator_intent\parser.py`
+  - `scripts\operator_intent\decision_engine.py`
+  - public operator chat backend deploy
+- What changed:
+  - Confirmed the public operator chat backend is currently running with `provider=stub`.
+  - Confirmed no local-model or cloud-API environment variables are configured on the public service:
+    - no `OPERATOR_CHAT_PROVIDER`
+    - no `OPENAI_API_KEY`
+  - Added explicit greeting intent handling so short greetings no longer fall through to `explain_system`.
+  - Added a natural-language greeting reply path instead of the previous mechanical intent-label response.
+  - Added a conservative short-utterance fallback so very short non-transactional messages do not get misclassified into system-explanation mode.
+- Impact:
+  - Current public chat is still rule-based fallback, not LLM-backed.
+  - The public service now behaves more naturally on greetings and short casual messages.
+  - This fix improves user interaction quality even before a real local/cloud model is attached.
+- Validation:
+  - local direct backend smoke:
+    - input `你好`
+    - result: `intent_type=greeting`
+    - reply became natural Chinese greeting text
+  - redeployed public operator chat backend after the parser change
+- Compatibility:
+  - additive parsing improvement
+  - does not change execution boundaries
+- Rollback:
+  - revert the parser/decision changes and redeploy the operator chat backend if the previous intent behavior is required
+
+### [2026-04-02 03:56] Type: operator-chat/model-cutover
+- Scope:
+  - `scripts\deploy_operator_chat_backend_to_server.ps1`
+  - `scripts\operator_intent\model_client.py`
+  - `scripts\operator_intent\parser.py`
+  - `scripts\operator_chat_backend.py`
+  - remote operator chat service `ashare-operator-chat-backend`
+- What changed:
+  - Cut the public operator chat backend over from `stub` fallback to a real hosted model path using DeepSeek's OpenAI-compatible API.
+  - The public operator chat service now carries inline systemd environment entries for:
+    - `OPERATOR_CHAT_PROVIDER=openai`
+    - `OPERATOR_OPENAI_BASE_URL=https://api.deepseek.com/v1`
+    - `OPERATOR_OPENAI_MODEL=deepseek-chat`
+    - `OPENAI_API_KEY=<local DEEPSEEK_API_KEY mirrored into the service>`
+  - Upgraded the model client so the model is now used for:
+    - intent parsing
+    - natural-language reply generation
+  - Kept deterministic decision/risk review in place after model parsing.
+  - Added parser fallback logic so if the model drifts into a weak generic intent, deterministic transactional heuristics can still take over for stronger trade-like inputs.
+- Impact:
+  - Public operator chat is no longer a pure rules fallback; it now has real LLM-backed NLP and reply generation.
+  - The current public model path is DeepSeek API, not the local Ollama model.
+  - Local Ollama remains available on the operator machine, but it is not yet bridged into the public server path.
+- Validation:
+  - Public `/api/chat/send` returned:
+    - `model_result.provider=openai`
+    - `model_result.ok=true`
+    - `reply_model_result.provider=openai`
+    - `reply_model_result.ok=true`
+  - Public replies became natural multi-line Chinese instead of pure template fallback.
+- Compatibility:
+  - additive model cutover
+  - deterministic review / execution boundary remains unchanged
+- Rollback:
+  - remove the model-related `Environment=` lines from `/etc/systemd/system/ashare-operator-chat-backend.service`
+  - reload systemd and restart the operator chat service to fall back to non-LLM mode
+
+### [2026-04-02 04:43] Type: operator-chat/provider-switch
+- Scope:
+  - `scripts\operator_chat_backend.py`
+  - `scripts\operator_intent\model_client.py`
+  - `scripts\build_audit_site_index.py`
+  - `scripts\deploy_operator_chat_backend_to_server.ps1`
+  - `scripts\start_operator_ollama_reverse_tunnel.ps1`
+  - `scripts\stop_operator_ollama_reverse_tunnel.ps1`
+  - public operator chat service `ashare-operator-chat-backend`
+  - public operator console `https://peng1145141919810.xyz/operator-console.html`
+- What changed:
+  - Added per-user model-channel preference storage to the operator chat backend:
+    - new sqlite table: `operator_model_preferences`
+    - new APIs:
+      - `GET /api/chat/provider`
+      - `POST /api/chat/provider`
+  - Upgraded the model client so each request can override provider/model config without restarting the service.
+  - The public operator console now exposes a model switcher for:
+    - `云端 API`
+    - `本地 Ollama`
+  - The provider switch intentionally does not split conversation memory:
+    - same `operator_conversations`
+    - same `operator_messages`
+    - same `operator_pending_plans`
+    - same runtime-context snapshot
+  - Added a local reverse-tunnel helper so the public server can reach the operator machine's Ollama through:
+    - remote server loopback: `http://127.0.0.1:11435`
+    - local machine Ollama: `http://127.0.0.1:11434`
+  - The public operator backend was redeployed with:
+    - DeepSeek API as the default cloud path
+    - `OPERATOR_OLLAMA_TUNNEL_BASE_URL=http://127.0.0.1:11435`
+  - Current local-model default for public chat switching is now:
+    - `qwen2.5:7b`
+  - `deepseek-r1:14b` remains selectable in the web UI, but it timed out on the local intent parse smoke under the current prompt budget and is therefore no longer the default public local-model option.
+- Impact:
+  - The public website can now switch between hosted DeepSeek API and the operator machine's local Ollama without losing chat history or plan drafts.
+  - Local-model access is no longer theoretical; it is bridged into the public server path through the reverse SSH tunnel.
+  - The same account can talk to the same conversation, switch provider, and continue in-place with shared memory/context.
+- Validation:
+  - `python -m py_compile` on:
+    - `scripts\operator_chat_backend.py`
+    - `scripts\operator_intent\model_client.py`
+    - `scripts\build_audit_site_index.py`
+  - local site build smoke:
+    - `build_audit_site_index.build_site(...)`
+    - result: `site_build_ok`
+  - local backend/provider smoke:
+    - `OperatorChatBackend.get_model_preference(...)` defaulted to `openai`
+    - `OperatorChatBackend.set_model_preference(... provider='ollama' ...)` persisted and re-read correctly
+    - `OperatorModelClient.list_ollama_models(...)` returned `ok=true`
+  - local Ollama behavior smoke:
+    - `qwen2.5:7b`:
+      - intent parse `ok=true`
+      - reply generation `ok=true`
+    - `deepseek-r1:14b`:
+      - reply generation `ok=true`
+      - intent parse timed out under the current request shape
+  - remote tunnel smoke:
+    - `ssh ubuntu@43.129.28.141 "curl -fsS http://127.0.0.1:11435/api/tags"`
+    - result returned local models:
+      - `deepseek-r1:14b`
+      - `qwen2.5:7b`
+  - public HTTPS end-to-end smoke:
+    - registered a new user
+    - logged in through `/api/auth/login`
+    - `GET /api/chat/provider` returned `provider=openai`
+    - switched to `provider=ollama` with `ollama_model=qwen2.5:7b`
+    - `POST /api/chat/send` returned:
+      - `provider_config.provider=ollama`
+      - `reply_model_result.model=qwen2.5:7b`
+    - switched back to `provider=openai`
+    - sent another message in the same `conversation_id`
+    - `reply_model_result.model=deepseek-chat`
+    - same conversation continued with `history_count=4`
+  - public health:
+    - `https://peng1145141919810.xyz/operator-console.html` -> `200`
+    - `https://peng1145141919810.xyz/api/chat/health` -> `200`
+- Compatibility:
+  - additive
+  - existing DeepSeek public path remains the default if the local tunnel is absent
+  - provider switching still does not bypass deterministic decision review or broker/execution boundaries
+- Rollback:
+  - stop the local reverse tunnel via `scripts\stop_operator_ollama_reverse_tunnel.ps1`
+  - redeploy the public operator backend without `OPERATOR_OLLAMA_TUNNEL_BASE_URL`
+  - revert the provider UI/API changes if per-user switching must be withdrawn
+
+### [2026-04-02 04:57] Type: operator-chat/history-delete
+- Scope:
+  - `scripts\operator_chat_backend.py`
+  - `scripts\build_audit_site_index.py`
+  - public operator chat service `ashare-operator-chat-backend`
+  - public operator console `https://peng1145141919810.xyz/operator-console.html`
+- What changed:
+  - Added a delete path for operator chat history:
+    - `POST /api/chat/conversations/<id>`
+    - request body carries `action='delete'`
+  - Deletion is owner-scoped only; a user can delete only their own conversation.
+  - Conversation deletion now cascades across:
+    - `operator_conversations`
+    - `operator_messages`
+    - `operator_pending_plans`
+  - Added a `删除会话` button to each conversation card in the operator console.
+  - If the currently opened conversation is deleted, the page now clears the visible reply/intent/decision/plan/context panels back to empty state.
+- Impact:
+  - Users can actively trim accumulated chat history instead of letting old operator conversations pile up.
+  - Deleting a conversation also removes its saved pending-plan drafts so there is no orphaned plan state left behind.
+- Validation:
+  - `python -m py_compile` on:
+    - `scripts\operator_chat_backend.py`
+    - `scripts\build_audit_site_index.py`
+  - local sqlite smoke:
+    - created one conversation
+    - `delete_conversation(...)` returned `True`
+    - conversation count dropped from `1` to `0`
+    - pending-plan count remained `0` after deletion
+  - local site build smoke:
+    - `build_audit_site_index.build_site(...)`
+    - result: `site_build_ok`
+  - public HTTPS smoke:
+    - registered and logged in with a fresh user
+    - created one conversation through `/api/chat/send`
+    - deleted it through `POST /api/chat/conversations/<id>`
+    - conversation list count dropped from `1` to `0`
+    - detail fetch for that id returned `messages=[]`
+- Compatibility:
+  - additive
+  - no change to provider switching, runtime context, or execution boundaries
+- Rollback:
+  - remove the delete endpoint/backend method and the front-end delete button, then redeploy the operator chat backend and portal page
+
+### [2026-04-02 05:12] Type: operator-chat/request-lock-and-shared-history
+- Scope:
+  - `scripts\operator_chat_backend.py`
+  - `scripts\operator_intent\model_client.py`
+  - `scripts\build_audit_site_index.py`
+  - public operator chat service `ashare-operator-chat-backend`
+  - public operator console `https://peng1145141919810.xyz/operator-console.html`
+- What changed:
+  - Fixed the repeated-send UI problem on the operator console:
+    - added a front-end in-flight request lock `operatorRequestInFlight`
+    - the send button now disables while a request is pending
+    - the send button text switches to `发送中...`
+    - plain `Enter` now sends once; `Shift+Enter` still inserts a newline
+  - Fixed the cross-provider shared-history bug:
+    - the operator backend now loads recent same-conversation messages before each model call
+    - both intent parsing and final reply generation now receive `conversation_history`
+    - this means switching from DeepSeek API to local Ollama, or the reverse, no longer drops the same conversation's memory
+  - The model client prompt payloads now explicitly carry recent conversation history in addition to runtime context and the current user request.
+- Impact:
+  - Users can no longer easily queue multiple duplicate sends by repeated clicking or repeated Enter while the previous request is still in flight.
+  - Same-conversation continuity is now real rather than only storage-level; stored history is actually fed back into the active model path.
+  - Cloud/local provider switching now preserves contextual memory inside one conversation id.
+- Validation:
+  - `python -m py_compile` on:
+    - `scripts\operator_chat_backend.py`
+    - `scripts\operator_intent\model_client.py`
+    - `scripts\build_audit_site_index.py`
+  - local site build smoke:
+    - `build_audit_site_index.build_site(...)`
+    - result: `site_build_ok`
+  - local backend history smoke:
+    - instrumented backend/model calls showed conversation-history length growing across turns
+    - observed lengths:
+      - second-turn path: `2`
+      - third-turn path: `4`
+  - public cross-provider memory smoke:
+    - first request on `provider=openai`:
+      - `请记住代号 ALPHA-7788，后面我会问你。`
+    - switched to `provider=ollama`
+    - second request in the same `conversation_id`:
+      - `我刚才让你记住的代号是什么？`
+    - public reply contained:
+      - `ALPHA-7788`
+    - `reply_model_result.model=qwen2.5:7b`
+    - same `conversation_id` remained in use
+  - public front-end artifact smoke:
+    - `operator-console.html` contains:
+      - `operatorRequestInFlight`
+      - `operator-send-btn`
+- Compatibility:
+  - additive
+  - no change to provider selection, execution boundaries, or broker safety contracts
+- Rollback:
+  - remove the in-flight send lock from the portal JS if the old UI behavior is intentionally preferred
+  - remove `conversation_history` wiring from the operator backend/model client if stateless prompting is intentionally preferred
+
+### [2026-04-02 05:28] Type: operator-chat/conversation-governance-and-summary
+- Scope:
+  - `scripts\operator_chat_backend.py`
+  - `scripts\build_audit_site_index.py`
+  - public operator chat service `ashare-operator-chat-backend`
+  - public operator console `https://peng1145141919810.xyz/operator-console.html`
+- What changed:
+  - Added conversation governance metadata through a new sqlite table:
+    - `operator_conversation_meta`
+  - Added per-conversation capabilities:
+    - rename
+    - pin / unpin
+    - archive / unarchive
+  - Extended the conversation update path on:
+    - `POST /api/chat/conversations/<id>`
+    - supported actions now include:
+      - `rename`
+      - `toggle_pin`
+      - `toggle_archive`
+      - `delete`
+  - The operator console history cards now expose:
+    - `重命名`
+    - `置顶 / 取消置顶`
+    - `归档 / 取消归档`
+    - `删除会话`
+  - Added lightweight long-conversation context compression:
+    - old turns are condensed into `summary_text`
+    - model prompting now uses:
+      - one stored same-conversation summary
+      - plus recent raw turns
+    - this keeps continuity while reducing prompt growth
+- Impact:
+  - Users can now manage accumulated operator history instead of treating the conversation list as append-only.
+  - Important conversations can stay visible via pinning, and inactive ones can be archived without deletion.
+  - Long conversations now keep memory more efficiently because the prompt no longer depends on replaying the full raw history every turn.
+- Validation:
+  - `python -m py_compile` on:
+    - `scripts\operator_chat_backend.py`
+    - `scripts\operator_intent\model_client.py`
+    - `scripts\build_audit_site_index.py`
+  - local metadata smoke:
+    - rename succeeded
+    - pin toggle returned `is_pinned=1`
+    - archive toggle returned `is_archived=1`
+  - local summary smoke:
+    - multi-turn test produced non-empty `summary_text`
+    - `_history_for_model(...)` returned:
+      - one summary item
+      - plus recent raw-turn items
+  - local site build smoke:
+    - `build_audit_site_index.build_site(...)`
+    - result: `site_build_ok`
+  - public HTTPS smoke:
+    - created a five-turn conversation
+    - renamed it to `Alpha Session`
+    - toggled pin and archive successfully
+    - public conversation list returned:
+      - `title=Alpha Session`
+      - `is_pinned=1`
+      - `is_archived=1`
+      - non-empty `summary_text`
+- Compatibility:
+  - additive
+  - existing chat ids, provider switching, and execution boundaries remain unchanged
+- Rollback:
+  - remove `operator_conversation_meta` usage and the new conversation actions from backend/frontend, then redeploy the operator chat backend and portal page
+
+### [2026-04-02 03:29] Type: refactor/research/portfolio
+- Scope:
+  - task brief: `D:\?Codex????????????????.md`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\integrated_thesis\__init__.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\integrated_thesis\contracts.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\integrated_thesis\event_gate.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\integrated_thesis\mechanism_join.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\integrated_thesis\earnings_validator.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\integrated_thesis\explainer.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\integrated_thesis
+untime.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\orchestrator_v6.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\context_pack.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6
+esearch_brief_engine.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6	hree_strategy_kernel.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+- What changed:
+  - Added a new `hub_v6\integrated_thesis` runtime that collapses the stock-alpha thesis into one mainline:
+    - `event trigger -> industry mechanism join -> earnings validation -> final stock conviction`
+  - The new builder writes stable artifacts under `research_root\integrated_thesis`, including:
+    - `integrated_thesis_state.json`
+    - `integrated_thesis_daily.csv`
+    - `integrated_thesis_candidates.csv`
+    - `latest_integrated_thesis.csv`
+    - `integrated_thesis_explainer.json`
+  - Wired `orchestrator_v6.py` so integrated thesis is built after `market_state` and before the legacy `three_strategy_kernel` compatibility layer.
+  - Extended `context_pack.py` and `research_brief_engine.py` so research planning now sees explicit integrated-thesis context instead of only the old three-strategy view.
+  - Reframed `three_strategy_kernel.py` as a compatibility surface:
+    - formal framework now marks it as `single_integrated_strategy_compatibility_view`
+    - the stock-alpha side is sourced from integrated thesis
+    - the remaining earnings and market-allocation views are retained for downstream compatibility only
+  - Extended `portfolio_recommendation.py` so the portfolio layer now loads integrated thesis state/table and attaches thesis score/state, primary event, primary mechanism, and earnings reason to candidate rows while continuing to respect the existing budget overlay path.
+  - Added an `integrated_thesis` config surface in `config_builder.py`.
+- Impact:
+  - Research planning, context packaging, and portfolio recommendation now align with one main stock-alpha narrative instead of implicitly treating industry, earnings, and allocation as three parallel top-level alpha strategies.
+  - Downstream readers that still depend on `three_strategy_state.json` keep working, but they now consume a compatibility view backed by the integrated thesis mainline.
+  - The new design uses real local affordable-data evidence for earnings validation rather than fabricating a separate placeholder earnings layer.
+- Validation:
+  - Inspected local affordable sqlite payload availability for:
+    - `forecast`
+    - `express`
+    - `daily_basic`
+    - `internal_expectation`
+    inside `F:\quant_data\AshareC#\data\sql_storeffordable_data_v1.sqlite3`
+  - `python -m py_compile` passed for:
+    - `hub_v6\integrated_thesis\*.py`
+    - `hub_v6\orchestrator_v6.py`
+    - `hub_v6\context_pack.py`
+    - `hub_v6
+esearch_brief_engine.py`
+    - `hub_v6	hree_strategy_kernel.py`
+    - `hub_v6\portfolio_recommendation.py`
+    - `hub_v6\config_builder.py`
+  - No full integrated run executed.
+- Compatibility:
+  - additive with compatibility bridging
+  - preserves legacy `three_strategy_kernel` artifact paths for existing downstream consumers
+  - does not alter release / OMS / execution authority boundaries
+- Rollback:
+  - stop calling `integrated_thesis` from `orchestrator_v6.py`
+  - remove the integrated-thesis context wiring from context pack / research brief / portfolio recommendation
+  - restore the previous `three_strategy_kernel` semantics if the downstream migration is intentionally abandoned
+
+### [2026-04-02 03:54] Type: refactor/research/release/audit
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\orchestrator_v6.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\context_pack.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6esearch_brief_engine.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_release.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\strategy_audit.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6	hree_strategy_kernel.py`
+  - `scripts\operator_intent\context_builder.py`
+  - `scriptsuild_audit_site_index.py`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Pathing\PathRegistry.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Program.cs`
+- What changed:
+  - Removed the newly-added `three_strategy_kernel` compatibility layer instead of preserving it.
+  - The active Python runtime now builds, stores, publishes, and consumes only `integrated_thesis` for the stock-alpha strategy contract.
+  - Cut orchestrator/context/research brief wiring so no `three_strategy` block is carried in active research context anymore.
+  - Cut portfolio sizing, release publication, strategy audit, daily clock summary, operator runtime context, and portal site reads over to `integrated_thesis_state.json`.
+  - Deleted `hub_v6	hree_strategy_kernel.py` from the active workspace copy.
+  - Replaced the old config surface with:
+    - `ENABLE_INTEGRATED_THESIS`
+    - `INTEGRATED_THESIS_ROOT`
+    - `INTEGRATED_THESIS_PORTFOLIO_BUDGET_OVERLAY`
+  - Updated the C# migration skeleton path registry so its strategy root now points at `integrated_thesis` instead of `three_strategy_kernel`.
+- Impact:
+  - There is now one live research strategy contract in the active system instead of one real contract plus one compatibility wrapper.
+  - Future readers, portal pages, and release consumers will not silently drift back to the old three-parallel-strategy mental model.
+  - Any stale external artifact or manual script still expecting `three_strategy_state.json` is now outdated and should be corrected rather than shimmed.
+- Validation:
+  - Global code search found no remaining `.py` / `.cs` references to:
+    - `three_strategy_state`
+    - `three_strategy_kernel`
+    - `load_latest_three_strategy_state`
+    in active source files.
+  - `python -m py_compile` passed for all touched Python files, including:
+    - `orchestrator_v6.py`
+    - `context_pack.py`
+    - `research_brief_engine.py`
+    - `portfolio_recommendation.py`
+    - `portfolio_release.py`
+    - `strategy_audit.py`
+    - `clock_supervisor.py`
+    - `config_builder.py`
+    - `scripts\operator_intent\context_builder.py`
+    - `scriptsuild_audit_site_index.py`
+  - No full integrated run executed.
+- Compatibility:
+  - intentionally breaking for any leftover consumer that still wants `three_strategy_state.json`
+  - release / OMS / execution authority boundaries remain unchanged
+- Rollback:
+  - restore `hub_v6	hree_strategy_kernel.py` from version control and rewire the deleted readers if a deliberate rollback to the old contract is required
+
+### [2026-04-02 05:15] Type: data-source/research/thesis
+- Scope:
+  - task brief: `D:\给Codex的补事件事实层与行业硬因子并深化主策略任务书.md`
+  - `scripts\build_event_fact_layer.py`
+  - `scripts\build_industry_hard_factor_layer.py`
+  - `scripts\probe_integrated_thesis_sql_join.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\research_fact_store.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\integrated_thesis\runtime.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\integrated_thesis\explainer.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\core\runtime_engine.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\mechanisms\trend_capex\source_ingest.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\mechanisms\trend_capex\state_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\mechanisms\price_inventory\source_ingest.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\mechanisms\price_inventory\state_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\mechanisms\macro_style\source_ingest.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\mechanisms\macro_style\state_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\industry_router\source_contracts.json`
+  - `docs\EVENT_FACT_LAYER_CN.md`
+  - `docs\INDUSTRY_HARD_FACTOR_LAYER_CN.md`
+  - `docs\INTEGRATED_MAINLINE_STRATEGY_DEEPENING_CN.md`
+- What changed:
+  - Materialized a dedicated research sqlite at `data\sql_store\research_fact_layers_v1.sqlite3` for structured event facts and industry hard factors instead of leaving both layers in a planning state.
+  - `build_event_fact_layer.py` now upserts:
+    - `event_fact_company_actions`
+    - `event_fact_contract_orders`
+    - `event_fact_supply_chain_signals`
+    from `event_store.jsonl`, Tushare `forecast` / `express`, `ccgp_bid_awards`, and optional `manual_event_proxy.jsonl`.
+  - `build_industry_hard_factor_layer.py` now upserts:
+    - `industry_factor_price_inventory_daily`
+    - `industry_factor_operation_daily`
+    - `industry_factor_customs_summary_daily`
+    from `ppi_market_digest`, `customs_summary`, Tushare futures / warehouse-receipt feeds, and curated official pages in `source_contracts.json`.
+  - Expanded the free-source contract set in `source_contracts.json` with additional official NBS and MIIT pages for industrial output, capacity utilization, material prices, and lithium-battery operations.
+  - Reworked `integrated_thesis\runtime.py` so the mainline is explicitly gated:
+    - `event_gate -> mechanism_gate -> earnings_gate -> portfolio_gate`
+    instead of relying on a loose multiplicative score.
+  - `integrated_thesis` now reads best available symbol-level event facts from `research_fact_store`, attaches `primary_event_fact_id`, gate stage, reject reason, and multi-stage reason chains, and can form fact-backed candidates from router top signals when raw event mapping is sparse.
+  - `integrated_thesis\explainer.py` and `portfolio_recommendation.py` now expose the richer thesis reason fields downstream.
+  - Fixed empty-input / probe-mode failures in `industry_router` source-ingest, state-builder, and runtime-engine paths so lightweight SQL/thesis probes do not crash when event or source frames are empty.
+- Impact:
+  - The main research strategy now has a real structured fact layer and a real hard-factor layer behind it, both sourced from free or low-cost inputs with explicit lineage.
+  - The stock-alpha contract is more transparent: operators can now inspect which fact id, which mechanism link, which earnings check, and which portfolio gate drove a symbol into `build`, `pilot`, `watch`, or `reject`.
+  - The system is more robust on partial free-data days because `integrated_thesis` no longer depends solely on perfect raw event-to-stock mapping to express a fact-backed view.
+- Validation:
+  - Ran `scripts\build_event_fact_layer.py --lookback-days 60` with the canonical research Python; resulting table counts are:
+    - `event_fact_company_actions = 207`
+    - `event_fact_contract_orders = 80`
+    - `event_fact_supply_chain_signals = 28`
+  - Ran `scripts\build_industry_hard_factor_layer.py --lookback-days 3` with the canonical research Python; resulting table counts are:
+    - `industry_factor_price_inventory_daily = 49`
+    - `industry_factor_operation_daily = 8`
+    - `industry_factor_customs_summary_daily = 6`
+  - `python -m py_compile` passed for all touched strategy / fact-layer / router files.
+  - Ran `scripts\probe_integrated_thesis_sql_join.py`; result:
+    - `industry_router_status = ok`
+    - `industry_router_signal_rows = 24`
+    - `integrated_thesis_status = ok`
+    - `integrated_thesis_symbol_count = 10`
+    - `integrated_thesis_accepted_count = 1`
+    - sample accepted row:
+      - `symbol = 600309.SH`
+      - `primary_event_fact_id = express::600309.SH::20260317`
+      - `thesis_gate_stage = portfolio_gate_passed`
+  - No full integrated supervisor run executed.
+- Compatibility:
+  - additive on the data/research side only
+  - does not alter release / OMS / execution authority boundaries
+  - intentionally keeps the new fact/factor layer outside canonical truth tables
+- Rollback:
+  - stop calling the new builders and remove `research_fact_layers_v1.sqlite3` consumers from `integrated_thesis`
+  - revert the `industry_router` empty-input guards if the unified router architecture is intentionally abandoned
+  - remove the added official-source contracts from `source_contracts.json` if a narrower source set is required
+
+### [2026-04-02 09:50] Type: runtime/data-source/industry-focus
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `tools\preflight_check.py`
+  - `scripts\build_industry_hard_factor_layer.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\industry_router\source_contracts.json`
+- What changed:
+  - Added a formal `research_fact_refresh` config surface and wired it into `clock_supervisor` so both:
+    - `build_event_fact_layer.py`
+    - `build_industry_hard_factor_layer.py`
+    now run automatically before `research` and `research_refresh`.
+  - Added the matching script checks to `preflight_check.py` so clock startup now validates the event-fact and hard-factor builders instead of assuming only the affordable bundle exists.
+  - Expanded hard-factor sector focus in `build_industry_hard_factor_layer.py` so classification is more explicit for:
+    - `化工`
+    - `有色`
+    - `新能源金属`
+    - `电子`
+    with additional keyword mappings such as:
+    - `甲醇`
+    - `苯乙烯`
+    - `氧化铝`
+    - `电解铜`
+    - `电解铝`
+    - `锂电池`
+    - `集成电路`
+    - `服务器`
+  - Fixed one classification bug where official chemical pages containing generic power/electricity wording could be misrouted into `能源` instead of staying in `化工`.
+  - Expanded curated free-source contracts with additional official pages:
+    - `工信部2025年上半年电子信息制造业运行情况`
+    - `工信部石化化工行业稳增长工作方案解读`
+    - `工信部铝产业高质量发展实施方案解读`
+- Impact:
+  - The research-side structured fact/hard-factor layer is now part of the daily automation path instead of requiring manual builder runs.
+  - Focus industries are clearer in local SQL, so thesis and router analysis can directly read stronger hard-factor coverage for the user-prioritized sectors.
+  - The resulting artifacts continue to write directly into the local workspace sqlite:
+    - `F:\quant_data\AshareC#\data\sql_store\research_fact_layers_v1.sqlite3`
+- Validation:
+  - `python -m py_compile` passed for:
+    - `hub_v6\local_settings.example.py`
+    - `hub_v6\config_builder.py`
+    - `hub_v6\clock_supervisor.py`
+    - `tools\preflight_check.py`
+    - `scripts\build_industry_hard_factor_layer.py`
+  - Direct helper smoke:
+    - called `_run_research_fact_refresh(...)` from the canonical research Python
+    - result: `ok = true`
+    - local output confirmed both substeps succeeded
+  - Refreshed hard-factor table counts now stand at:
+    - `industry_factor_price_inventory_daily = 88`
+    - `industry_factor_operation_daily = 10`
+    - `industry_factor_customs_summary_daily = 6`
+  - Current local hard-factor focus counts in SQL:
+    - price/inventory:
+      - `有色 = 25`
+      - `化工 = 24`
+      - `钢铁 = 13`
+      - `能源 = 12`
+      - `新能源金属 = 9`
+    - operation:
+      - `电子 = 3`
+      - `能源 = 3`
+  - `preflight_check.py --profile daily_production --mode research_only` passed after regenerating the runtime config.
+  - `trade_clock_service.py --once` was started to regenerate config and verify the live path, but the foreground invocation timed out in this IDE session before I treated it as a clean validation artifact.
+- Compatibility:
+  - additive on the research/data side
+  - release / OMS / execution authority boundaries remain unchanged
+  - continues to use the canonical research Python, not `gmtrade39`
+- Rollback:
+  - disable `ENABLE_RESEARCH_FACT_REFRESH`
+  - remove the `research_fact_refresh` block from `config_builder.py`
+  - remove the new source-contract entries and revert the added sector-classification mappings if a narrower factor scope is required
+
+### [2026-04-02 12:20] Type: router/mainline-join
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\core\common.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\mechanisms\trend_capex\state_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\industry_router\mechanisms\price_inventory\state_builder.py`
+- What changed:
+  - Added explicit sector-alias normalization and SQL factor payload merging inside `industry_router.core.common`.
+  - `trend_capex` and `price_inventory` state builders now resolve local SQL factor context through alias-aware matching instead of exact `industry_name == affected_industry` string equality.
+  - The active alias bridge now covers the user-priority hard-factor sectors:
+    - `半导体` / `元器件` / `通信设备` / `电信运营` -> `电子`
+    - `化工原料` / `化学制品` / `MDI` / `甲醇` -> `化工`
+    - `铜` / `铝` / `小金属` / `稀土` -> `有色`
+    - `锂` / `锂电池` / `碳酸锂` / `工业硅` / `光伏材料` -> `新能源金属`
+  - Router state `notes` now include `sql_industry_match=...` so the explanation chain can see which local SQL industry bucket fed the mechanism state.
+- Impact:
+  - The newly daily-refreshed local hard-factor tables in:
+    - `F:\quant_data\AshareC#\data\sql_store\research_fact_layers_v1.sqlite3`
+    are now materially joinable to the router's narrower stock/event industry labels instead of being stranded behind broad-sector naming.
+  - This makes the integrated mainline thesis less dependent on exact historical label conventions and increases the amount of router state directly backed by local SQL.
+- Validation:
+  - `python -m py_compile` passed for:
+    - `hub_v6\industry_router\core\common.py`
+    - `hub_v6\industry_router\mechanisms\trend_capex\state_builder.py`
+    - `hub_v6\industry_router\mechanisms\price_inventory\state_builder.py`
+  - Direct alias-resolution smoke passed with examples confirming:
+    - `半导体` -> `电子`
+    - `通信设备` -> `电子`
+    - `铜` / `小金属` -> `有色`
+    - `化工原料` -> `化工`
+    - `锂` -> `新能源金属`
+  - `scripts\probe_integrated_thesis_sql_join.py` passed after the change:
+    - `industry_router_status = ok`
+    - `industry_router_signal_rows = 34`
+    - `integrated_thesis_status = ok`
+    - `integrated_thesis_accepted_count = 1`
+- Compatibility:
+  - deliberately changes router join semantics on the research side
+  - does not alter release / execution / OMS boundaries
+  - keeps all writes inside the local workspace sql store and router artifact tree
+- Rollback:
+  - remove the alias helper and restore exact `by_industry[industry_key]` lookup in the two state builders
+  - remove `sql_industry_match` from router notes if the extra explainability field is not desired
+
+### [2026-04-02 12:29] Type: audit/mainline-attribution
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\strategy_audit.py`
+  - `scripts\build_audit_site_index.py`
+- What changed:
+  - Extended the strategy audit pack with a new `pnl_source_analysis` block so the audit layer can explain "money source" instead of only showing NAV, excess return, and admission/fill ratios.
+  - The new audit attribution now rolls up contribution by:
+    - `mechanism_primary`
+    - `primary_event_type`
+    - `earnings_reason`
+    - top winning / losing symbols
+  - Attribution source selection is now explicit:
+    - prefer OMS latest `position_ledger_latest.csv` when available and use current `unrealized_pnl` as the live proxy contribution metric
+    - otherwise fall back to a release-weight proxy that uses local target positions plus integrated-thesis fields
+  - Updated the audit HTML page to render Chinese "money source" sections and updated the portal audit center table to expose the top money-source mechanism and attribution mode.
+- Impact:
+  - Audit output is now materially closer to the user's requirement of understanding how money is being made.
+  - Even on machines without a full OMS ledger history yet, the audit can still produce a research-side proxy attribution instead of showing only abstract portfolio quality metrics.
+- Validation:
+  - `python -m py_compile` passed for:
+    - `hub_v6\strategy_audit.py`
+    - `scripts\build_audit_site_index.py`
+  - Smoke build passed using a minimal synthetic release payload:
+    - generated `tmp\strategy_audit_money_source_smoke\pack\strategy_audit.json`
+    - generated `tmp\strategy_audit_money_source_smoke\pack\strategy_audit.html`
+    - audit payload confirmed:
+      - `pnl_source_analysis.available = true`
+      - `pnl_source_analysis.mode = release_weight_proxy`
+      - top mechanism resolved to `price_inventory`
+      - top event resolved to `earnings_guidance`
+- Compatibility:
+  - additive on the audit / portal side
+  - does not change release / execution / OMS authority boundaries
+  - "money source" remains explicitly marked as proxy attribution unless a fuller realized-PnL ledger is available
+- Rollback:
+  - remove `pnl_source_analysis` generation from `strategy_audit.py`
+  - restore the old audit-center report table fields in `build_audit_site_index.py`
+
+### [2026-04-02 12:37] Type: audit/site-refresh
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\strategy_audit.py`
+  - `scripts\build_audit_site_index.py`
+  - `site_portal\*.html`
+- What changed:
+  - Extended audit output again with `mechanism_realism_analysis`, which reads OMS `mechanism_realism_rollup.csv` when present and surfaces:
+    - top realized mechanisms
+    - top friction / non-executable mechanisms
+  - Updated the audit HTML to show not only "money source" attribution but also mechanism realization efficiency and mechanism deployment friction.
+  - Cleaned portal copy that still showed stale `three-strategy` wording or placeholder labels like `??? Alpha`; the public portal now consistently describes the active mainline strategy architecture.
+  - Rebuilt the static portal and re-published the updated pages to:
+    - `https://peng1145141919810.xyz/`
+    - `https://peng1145141919810.xyz/audit-center.html`
+    - `https://peng1145141919810.xyz/about.html`
+- Impact:
+  - The public audit portal now better answers both:
+    - where money is coming from
+    - which mechanisms are monetizing well versus getting stuck in live deployment
+  - Public wording is now aligned with the actual single-mainline strategy architecture instead of old multi-strategy migration language.
+- Validation:
+  - `python -m py_compile` passed again for:
+    - `hub_v6\strategy_audit.py`
+    - `scripts\build_audit_site_index.py`
+  - Smoke audit build passed again from the local synthetic pack:
+    - `pnl_mode = release_weight_proxy`
+    - top mechanism remained `price_inventory`
+  - Static site rebuild passed:
+    - `python scripts\build_audit_site_index.py --reports-root ... --output-dir F:\quant_data\AshareC#\site_portal`
+  - Online checks after publish:
+    - `200 https://peng1145141919810.xyz/`
+    - `200 https://peng1145141919810.xyz/audit-center.html`
+    - `200 https://peng1145141919810.xyz/about.html`
+- Compatibility:
+  - additive on audit / portal
+  - `mechanism_realism_analysis` gracefully degrades when OMS feedback files are absent
+  - no release / execution authority boundary changes
+- Rollback:
+  - remove `mechanism_realism_analysis` from the audit payload and HTML
+  - revert the portal wording and republish the previous static pages
+
+### [2026-04-02 12:43] Type: audit/execution-flow
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\strategy_audit.py`
+  - `scripts\build_audit_site_index.py`
+  - `outputs\site_publish_stage\reports\audit_probe_20260402`
+- What changed:
+  - Added `execution_flow_analysis` to the audit pack so the audit layer now reports real trading-flow attribution from:
+    - `fill_ledger_latest.csv`
+    - `intent_ledger_latest.csv`
+    - target-position metadata
+  - The new execution-flow view rolls up:
+    - turnover by mechanism
+    - turnover by action type
+    - highest-turnover symbols
+    - fees and net sell amount
+  - Rebuilt the portal and published a fresh probe report containing the new audit schema:
+    - `https://peng1145141919810.xyz/reports/audit_probe_20260402/strategy_audit.html`
+- Impact:
+  - Audit now covers three progressively more practical layers:
+    - thesis/release proxy attribution
+    - live position unrealized-PnL proxy attribution
+    - actual execution-flow attribution from OMS ledgers
+  - This still is not a full realized-PnL ledger, but it materially improves visibility into what is truly being traded versus what only looks good in the research layer.
+- Validation:
+  - `python -m py_compile` passed again for `hub_v6\strategy_audit.py`
+  - Synthetic OMS-ledger smoke passed:
+    - `execution_flow_analysis.available = true`
+    - `gross_turnover = 30520.0`
+    - top mechanism resolved to `trend_capex`
+    - top action resolved to `new`
+  - Public checks passed:
+    - `200 https://peng1145141919810.xyz/audit-center.html`
+    - `200 https://peng1145141919810.xyz/reports/audit_probe_20260402/strategy_audit.html`
+- Compatibility:
+  - additive on audit / portal only
+  - execution-flow attribution degrades cleanly when OMS fill/intention ledgers are absent
+  - no change to release / execution authority boundaries
+- Rollback:
+  - remove `execution_flow_analysis` from `strategy_audit.py`
+  - remove the fresh probe report from `outputs\site_publish_stage\reports`
+  - rebuild and republish the previous static portal
+
+### [2026-04-02 12:50] Type: audit/realized-pnl-approx
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\strategy_audit.py`
+  - `outputs\site_publish_stage\reports\audit_probe_20260402_realized`
+- What changed:
+  - Added `realized_pnl_analysis` to the strategy audit pack.
+  - This layer rebuilds an approximate realized-PnL ledger from cumulative OMS `fill_ledger_latest.csv` order flow:
+    - buy fills accumulate inventory cost
+    - sell fills release cost and produce approximate realized PnL
+    - missing inventory history is tracked explicitly as `inventory_shortfall_qty` instead of being silently treated as zero-cost profit
+  - The audit HTML now includes:
+    - realized-PnL summary
+    - realized-PnL by mechanism
+    - realized-PnL by event type
+    - top realized winners
+  - Published a fresh public probe report containing the new realized-PnL section:
+    - `https://peng1145141919810.xyz/reports/audit_probe_20260402_realized/strategy_audit.html`
+- Impact:
+  - Audit now has a bridge from execution flow to approximate realized PnL, which is materially closer to a true money-made ledger than weight-only or unrealized-only proxy attribution.
+  - This is still not a fully authoritative broker realized-PnL ledger, but it is a meaningful intermediate layer that uses actual fill history and cost carry logic.
+- Validation:
+  - `python -m py_compile` passed for `hub_v6\strategy_audit.py`
+  - Synthetic fill-ledger smoke passed:
+    - `realized_pnl_analysis.available = true`
+    - `realized_total_pnl = 989.0`
+    - top mechanism resolved to `price_inventory`
+  - Public check passed:
+    - `200 https://peng1145141919810.xyz/reports/audit_probe_20260402_realized/strategy_audit.html`
+- Compatibility:
+  - additive on audit only
+  - explicitly marked as approximate when fill history does not start from a clean inventory baseline
+  - no release / execution / OMS authority changes
+- Rollback:
+  - remove `realized_pnl_analysis` from `strategy_audit.py`
+  - remove the published realized probe report
+  - rebuild and republish the previous static audit pages
+
+### [2026-04-02 12:55] Type: runtime/profile-clarification
+- Scope:
+  - `RUN_PROFILES.yaml`
+  - `trade_clock_service.py`
+  - `scripts\start_trade_clock.ps1`
+  - `data\trade_clock\clock_state.json`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\hub_config.v6.runtime.daily_production.json`
+- What changed:
+  - No runtime behavior change was required; this entry records the verified current truth after checking the live trade-clock state and runtime config.
+  - Confirmed the always-on automated process is currently running with scheduler profile `daily_production`, not `quick_test`.
+  - Confirmed the effective V5/XGBoost-style research depth is controlled by:
+    - `supervisor.v5_gpu_max_cycles_per_tick`
+  - Confirmed current profile mapping:
+    - `quick_test = 1`
+    - `daily_production = 3`
+    - `overnight = 8`
+  - Confirmed the apparent top-level `execution.max_cycles = 1` in the runtime json is not the controlling V5/XGBoost cycle field and should not be used to judge research depth.
+- Impact:
+  - The automated clock is already on the user's intended stable 3-cycle mode.
+  - No profile switch was needed.
+- Validation:
+  - `data\trade_clock\clock_state.json` showed:
+    - `scheduler_profile = daily_production`
+    - `runtime.service_profile = daily_production`
+  - `scripts\start_trade_clock.ps1` default profile remains `daily_production`
+  - runtime profile overrides confirmed:
+    - `daily_production -> supervisor.v5_gpu_max_cycles_per_tick = 3`
+  - generated runtime config confirmed:
+    - `hub_config.v6.runtime.daily_production.json -> supervisor.v5_gpu_max_cycles_per_tick = 3`
+- Compatibility:
+  - documentation / operator-truth clarification only
+  - no code-path or runtime behavior changes
+- Rollback:
+  - none needed
+
+### [2026-04-02 13:18] Type: feature/csharp-observability
+- Scope:
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Pathing\PathRegistry.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Program.cs`
+  - `csharp_runtime_skeleton\README.md`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Updated the C# path registry so research-side SQL and site-publish artifacts now point at the local workspace as first-class truth, even when runtime live-control artifacts still fall back to `F:\quant_data\Ashare\data`.
+  - Replaced the stale C# research SQLite reference `research_data_v1.sqlite3` with the current structured fact/factor store:
+    - `data\sql_store\research_fact_layers_v1.sqlite3`
+  - Added explicit C# registry paths for:
+    - `position_ledger_latest.csv`
+    - `mechanism_realism_rollup.csv`
+    - `outputs\site_publish_stage`
+    - `outputs\site_publish_stage\reports`
+    - `outputs\site_publish_stage\operator_runtime_context.json`
+  - Added new operator CLI commands:
+    - `runtime-profile`
+    - `audit-status`
+  - `runtime-profile` now reads the live clock profile plus runtime config and prints:
+    - scheduler/service profile
+    - effective runtime config path
+    - `supervisor.v5_gpu_max_cycles_per_tick`
+    - `execution.max_cycles` with an explicit warning that it is not the V5/XGBoost cycle control
+  - `audit-status` now inspects the staged public audit reports and reports availability for:
+    - `pnl_source_analysis`
+    - `mechanism_realism_analysis`
+    - `execution_flow_analysis`
+    - `realized_pnl_analysis`
+  - Hardened C# JSON reading for audit packs by sanitizing non-standard `NaN` / `Infinity` tokens before parse, so the operator CLI can still inspect current Python-generated audit JSON.
+  - Updated the C# skeleton README so it no longer advertises the stale research SQL path and now documents the new observability commands.
+- Impact:
+  - The C# wrapper can now answer two operator-critical questions without dropping to Python or manually opening JSON:
+    - what profile/cycle depth is the automation actually running
+    - which audit layers are currently available in the staged public report set
+  - The C# skeleton is closer to the current single-mainline, SQL-first runtime truth instead of preserving stale migration assumptions.
+- Validation:
+  - `dotnet run --project F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj -c Release -- paths F:\quant_data\AshareC#`
+    - confirmed local SQL/site paths and current fallback state
+  - `dotnet run --project F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj -c Release -- runtime-profile F:\quant_data\AshareC#`
+    - confirmed `daily_production`
+    - confirmed `v5_gpu_max_cycles_per_tick = 3`
+  - `dotnet run --project F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj -c Release -- audit-status F:\quant_data\AshareC#`
+    - confirmed current staged report and section availability:
+      - `pnl_source_analysis = available`
+      - `execution_flow_analysis = available`
+      - `realized_pnl_analysis = available`
+  - `dotnet build` was attempted but local locked `dotnet` processes in `bin/obj` prevented a clean full-solution write pass in this session; command-level Release validation succeeded.
+- Compatibility:
+  - additive on the C# control-plane wrapper
+  - no Python research/release/execution authority was moved into C#
+  - live runtime fallback to the old repo for control-plane artifacts remains unchanged
+- Rollback:
+  - remove the added CLI commands and registry paths
+  - restore the previous README wording and this log entry
+
+### [2026-04-02 13:27] Type: ops/csharp-build-and-site-status
+- Scope:
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Program.cs`
+  - `csharp_runtime_skeleton\README.md`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added a third C# observability command:
+    - `site-status`
+  - `site-status` now summarizes the local staged portal contract from `outputs\site_publish_stage`, including:
+    - page existence for `index.html`, `audit-center.html`, and `operator-console.html`
+    - `site_state.json`
+    - `operator_runtime_context.json`
+    - staged audit report directory count and latest report directory
+    - current staged runtime gate summary
+  - Cleared the local locked `dotnet` processes that were holding `bin/obj` artifacts from prior CLI runs.
+  - Re-ran a clean Release build of the full C# solution after clearing those stale processes.
+- Impact:
+  - The C# wrapper now covers runtime profile, audit pack, and staged portal state as one coherent operator inspection surface.
+  - Clean solution build status is re-established, so the skeleton is back to a known-good buildable state on this machine.
+- Validation:
+  - `dotnet build F:\quant_data\AshareC#\csharp_runtime_skeleton\Ashare.RuntimeSkeleton.sln -c Release`
+    - success
+    - `0` warnings, `0` errors
+  - `dotnet run --project F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj -c Release -- site-status F:\quant_data\AshareC#`
+    - success
+    - confirmed staged pages exist
+    - confirmed current staged runtime is `HALT` with missing `latest_release.json`
+- Compatibility:
+  - additive on C# operator inspection only
+  - no Python runtime behavior or authority boundary changed
+- Rollback:
+  - remove `site-status` from the CLI and README
+  - revert this log entry
+
+### [2026-04-02 14:12] Type: feature/t-audit-and-intraday-execution
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\t_audit.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\timing_rules.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\t_overlay.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\midday_review.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\strategy_audit.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\t_overlay\t_audit_policy.json`
+  - `scripts\build_audit_site_index.py`
+  - `scripts\probe_t_audit.py`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Pathing\PathRegistry.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Program.cs`
+  - `csharp_runtime_skeleton\README.md`
+  - `docs\T_AUDIT_CN.md`
+  - `docs\T_EXECUTION_OPTIMIZATION_CN.md`
+- What changed:
+  - Added a formal local `t_audit.py` module that reads intraday sidecar artifacts and emits:
+    - `latest_t_audit.json`
+    - window / reject-reason / mechanism / event / quality rollup CSVs
+  - Added a machine-readable T policy config at:
+    - `configs\t_overlay\t_audit_policy.json`
+  - Tightened intraday execution behavior so `timing_rules.py` and `t_overlay.py` no longer rely only on global thresholds; they now resolve per-symbol T policy from:
+    - mechanism
+    - event type
+    - lifecycle state
+    - timing window
+    - feature quality
+  - Wired the strategy audit pack to embed `t_overlay_analysis` and write `t_audit.json` into each report pack.
+  - Wired midday review to include `t_audit_summary` so afternoon execution planning can see current T fit / blocking context.
+  - Updated the site builder so audit-center report rows now show:
+    - `T适配机制`
+    - `T主阻断`
+  - Fixed the site builder default reports root so it now points to the current staged reports contract:
+    - `outputs\site_publish_stage\reports`
+    - instead of the stale `reports\strategy_audits`
+  - Added a lightweight `scripts\probe_t_audit.py` probe that can still run when local `latest_release.json` is absent by falling back to a synthetic minimal release doc.
+  - Extended the C# wrapper path registry and observability commands so `audit-status` / `site-status` now see the local T audit artifacts.
+- Impact:
+  - T is now audited as a bounded execution overlay with a stable local artifact contract instead of being buried in ad hoc intraday state.
+  - Python audit packs, local staged site reports, and the C# wrapper now point at the same T-audit truth.
+  - The local staged site builder no longer silently empties the report list when invoked without an explicit `--reports-root`.
+- Validation:
+  - `python -m py_compile` on:
+    - `hub_v6\t_audit.py`
+    - `hub_v6\intraday_state_machine\timing_rules.py`
+    - `hub_v6\intraday_state_machine\t_overlay.py`
+    - `hub_v6\midday_review.py`
+    - `hub_v6\strategy_audit.py`
+    - `scripts\build_audit_site_index.py`
+    - `scripts\probe_t_audit.py`
+  - `python F:\quant_data\AshareC#\scripts\probe_t_audit.py`
+    - success
+    - confirmed `t_audit_available = true`
+    - confirmed `t_top_reject_reason = system_halt`
+    - confirmed local strategy audit pack with embedded `t_overlay_analysis`
+  - `dotnet build F:\quant_data\AshareC#\csharp_runtime_skeleton\Ashare.RuntimeSkeleton.sln -c Release`
+    - success
+    - `0` warnings, `0` errors
+  - `dotnet run --project ... -- audit-status F:\quant_data\AshareC#`
+    - confirmed `t_overlay_analysis = available`
+    - confirmed `t_overlay_analysis_mode = intraday_overlay_sidecar_audit`
+  - `dotnet run --project ... -- site-status F:\quant_data\AshareC#`
+    - confirmed:
+      - `latest_t_audit_json_exists = True`
+      - `t_audit_available = True`
+  - `python scripts\build_audit_site_index.py --repo-root F:\quant_data\AshareC# --reports-root F:\quant_data\AshareC#\outputs\site_publish_stage\reports --output-dir F:\quant_data\AshareC#\outputs\site_publish_stage`
+    - success
+    - confirmed local `audit-center.html` now includes `T适配机制` and `T主阻断`
+- Compatibility:
+  - additive on audit / intraday execution inspection
+  - does not change release authority, OMS authority, or broker-dispatch authority
+  - current T-audit evaluation still uses execution-quality proxies such as `desired_vs_actual_gap` improvement and `fill_ratio`; it is not a realized intraday PnL ledger
+- Rollback:
+  - remove `t_audit.py`, related config/doc/probe files, and the `t_overlay_analysis` wiring
+  - restore the prior site-builder default reports root if needed
+
+### [2026-04-02 14:41] Type: ops/t-audit-feedback-and-publish
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `scripts\publish_audit_report_to_site.ps1`
+  - `scripts\publish_operator_runtime_context_to_site.ps1`
+  - `outputs\site_publish_stage\reports\strategy`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Extended afternoon execution-plan overlay in `clock_supervisor.py` so it now reads the latest local `latest_t_audit.json` and feeds back:
+    - `t_audit_top_reject_reason`
+    - `t_audit_top_suited_mechanism`
+    - `t_audit_policy_change_suggestions`
+  - Current execution feedback behavior:
+    - if T-audit top reject reason is `system_halt`, `snapshot_degraded`, or `quality_below_minimum`, the afternoon plan is pushed toward reconcile-only / no-new-risk behavior
+    - if a usable top-suited mechanism exists, it is carried into the execution plan as `preferred_t_mechanism`
+  - Published the current staged site and operator runtime context to the public site.
+  - Published the latest T-audit-focused report pack to the public reports tree at:
+    - `https://peng1145141919810.xyz/reports/strategy/strategy_audit.html`
+- Impact:
+  - T audit is no longer just retrospective reporting; it now feeds back into current afternoon execution planning.
+  - Public site now reflects the current local staged audit-center/index content and runtime context.
+- Validation:
+  - `python -m py_compile ...\hub_v6\clock_supervisor.py`
+    - success
+  - `powershell -ExecutionPolicy Bypass -File scripts\publish_operator_runtime_context_to_site.ps1 -PythonExe <absolute-python-path>`
+    - success
+  - `powershell -ExecutionPolicy Bypass -File scripts\publish_audit_report_to_site.ps1 -PythonExe <absolute-python-path> -ReportDir F:\quant_data\AshareC#\tmp\t_audit_probe\strategy`
+    - success
+  - `Invoke-WebRequest https://peng1145141919810.xyz/audit-center.html`
+    - `200`
+  - `Invoke-WebRequest https://peng1145141919810.xyz/reports/strategy/strategy_audit.html`
+    - `200`
+- Compatibility:
+  - additive on afternoon execution planning
+  - still does not bypass release / OMS / broker authority boundaries
+- Rollback:
+  - remove the T-audit feedback fields from `clock_supervisor.py`
+  - republish the prior desired report directory if the public `strategy` report slot should not be reused
