@@ -7106,7 +7106,7 @@ esearch_brief_engine.py`
   - Added V5 adaptive-loop resume support in `v5_gpu_runtime\hub\cli_v5.py`:
     - when `controller_state.json` exists with unfinished history and no `stop_reason`, the next run resumes from `current_cycle_index + 1`
     - prior cycle `history` is preserved instead of being discarded
-  - Materialized `v5_gpu_runtime\configs\hub_config.v5_1.local.json` in the local workspace so supervisor-side V5 config generation no longer fails on a missing template.
+  - Hardened V5 config generation so supervisor now falls back to `v5_gpu_runtime\configs\hub_config.v5_1.example.json` when `hub_config.v5_1.local.json` is absent.
   - Relaxed `safety_guard.py` for simulation account mode:
     - broker health probe is no longer a hard HALT prerequisite in `simulation`
     - simulation mode now records `account_health.status = skipped_simulation_mode`

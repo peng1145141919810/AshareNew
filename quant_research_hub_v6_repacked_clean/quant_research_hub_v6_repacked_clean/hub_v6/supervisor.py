@@ -219,7 +219,10 @@ def _apply_strategy_feedback(template: Dict[str, Any], feedback: Dict[str, Any])
 
 def _build_v5_gpu_config(config: Dict[str, Any], project_root: Path, feedback: Dict[str, Any] | None = None) -> Path:
     v5_root = project_root / 'v5_gpu_runtime'
-    template = json.loads((v5_root / 'configs' / 'hub_config.v5_1.local.json').read_text(encoding='utf-8'))
+    local_template_path = v5_root / 'configs' / 'hub_config.v5_1.local.json'
+    example_template_path = v5_root / 'configs' / 'hub_config.v5_1.example.json'
+    template_path = local_template_path if local_template_path.exists() else example_template_path
+    template = json.loads(template_path.read_text(encoding='utf-8'))
     runtime_cfg = dict(config.get('v5_gpu_runtime', {}))
     template['project_root'] = str(runtime_cfg['project_root'])
     template['train_table_dir'] = str(runtime_cfg['train_table_dir'])
