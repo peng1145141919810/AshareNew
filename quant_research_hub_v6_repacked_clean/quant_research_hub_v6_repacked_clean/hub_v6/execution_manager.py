@@ -17,11 +17,20 @@ from .safety_guard import (
     record_incident,
     save_system_safety_state,
 )
+from .sql_store import ensure_schema, resolve_sqlite_path, sql_store_enabled, sqlite_connection, upsert_runtime_json_artifact
 from .trading_clock import clock_now, current_execution_window, is_trading_day, market_stage
 
 
 def _trade_clock_root(config: Dict[str, Any]) -> Path:
     return ensure_dir(Path(str(config.get("paths", {}).get("trade_clock_root", "") or "")).resolve())
+
+
+def _mirror_json_to_sql(config: Dict[str, Any], path: Path, payload: Dict[str, Any]) -> None:
+    if not sql_store_enabled(config):
+        return
+    with sqlite_connection(resolve_sqlite_path(config)) as conn:
+        ensure_schema(conn)
+        upsert_runtime_json_artifact(conn, path, payload)
 
 
 def _parse_iso(text: str) -> datetime | None:
@@ -34,7 +43,22 @@ def _parse_iso(text: str) -> datetime | None:
         return None
 
 
+def _latest_t_audit_summary(config: Dict[str, Any]) -> Dict[str, Any]:
+    audit_cfg = dict(config.get("t_audit", {}) or {})
+    root = Path(str(audit_cfg.get("artifact_root", "") or "")).resolve()
+    path = root / "latest" / "latest_t_audit.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
 def _load_release(config: Dict[str, Any], release_id: str = "") -> Dict[str, Any]:
+    from . import portfolio_release as _release_mod
+
+    _release_mod._load_json._active_config = config
     if str(release_id).strip():
         return load_release_by_id(config=config, release_id=str(release_id).strip())
     return load_latest_release(config=config)
@@ -242,6 +266,14 @@ def run_execution_only(
         "shadow_run": shadow_run,
         "shadow_reason": "shadow_run_bypass" if shadow_run and (not bool(gate.get("should_execute", False)) or not bool(safety.get("allow_execution", False))) else "",
     }
+    latest_t_audit = _latest_t_audit_summary(config)
+    if bool(latest_t_audit.get("available", False)):
+        top_suited_mechanism = str(latest_t_audit.get("top_suited_mechanism", "") or "").strip()
+        if top_suited_mechanism and top_suited_mechanism not in {"unknown", "unlabeled"}:
+            release_context["preferred_t_mechanism"] = top_suited_mechanism
+            release_context["preferred_t_mechanism_source"] = "latest_t_audit"
+        release_context["t_audit_top_reject_reason"] = str(latest_t_audit.get("top_reject_reason", "") or "")
+        release_context["t_audit_policy_change_suggestions"] = list(latest_t_audit.get("policy_change_suggestions", []) or [])[:3]
     execution_config = apply_execution_safety_overrides(config=config, safety_report=safety)
     execution_config = _apply_market_state_execution_overrides(config=execution_config, market_state=market_state)
     try:
@@ -296,10 +328,13 @@ def run_execution_only(
         "allow_unfinished_orders_reconcile": bool(config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile", False)),
     }
     dispatch_path.write_text(json.dumps(dispatch_doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    _mirror_json_to_sql(config, dispatch_path, dispatch_doc)
     latest_path = _trade_clock_root(config) / "latest_execution_dispatch.json"
     if namespace != "main":
         latest_path = _trade_clock_root(config) / f"latest_execution_dispatch.{namespace}.json"
     latest_path.write_text(json.dumps(dispatch_doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    _mirror_json_to_sql(config, latest_path, dispatch_doc)
+    record_release_execution._active_config = config
     history_paths = record_release_execution(
         release_doc=release_doc,
         execution_record={

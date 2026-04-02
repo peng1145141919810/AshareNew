@@ -28,6 +28,9 @@ def load_control_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "dev_log_top_holdings": max(3, safe_int(raw.get("dev_log_top_holdings", 8), 8)),
         "allow_odd_lot_exit": bool(raw.get("allow_odd_lot_exit", True)),
         "reduce_only": bool(raw.get("reduce_only", False)),
+        "preferred_t_mechanism": str(raw.get("preferred_t_mechanism", "") or "").strip(),
+        "preferred_t_mechanism_enforced": bool(raw.get("preferred_t_mechanism_enforced", False)),
+        "preferred_t_mechanism_buy_only": bool(raw.get("preferred_t_mechanism_buy_only", True)),
         "codex_dev_log_path": str(raw.get("codex_dev_log_path", "") or "").strip(),
     }
 
@@ -52,6 +55,8 @@ def _target_meta_map(target_positions: List[TargetPosition]) -> Dict[str, Dict[s
             "desired_action": str(raw.get("desired_action", raw.get("recommended_action", "")) or ""),
             "recommended_action": str(raw.get("recommended_action", "") or ""),
             "position_action_intent": str(raw.get("position_action_intent", "") or ""),
+            "mechanism_primary": str(raw.get("mechanism_primary", raw.get("preferred_mechanism", "")) or ""),
+            "primary_event_type": str(raw.get("primary_event_type", "") or ""),
             "size_confidence": safe_float(raw.get("size_confidence", 0.0), 0.0),
             "target_weight_cap_v2a": safe_float(raw.get("target_weight_cap_v2a", 0.0), 0.0),
             "proposal_target_weight": safe_float(raw.get("proposal_target_weight", 0.0), 0.0),
@@ -153,6 +158,8 @@ def _build_symbol_rows(
                 "desired_action": str(target_meta.get("desired_action", "") or ""),
                 "recommended_action": str(target_meta.get("recommended_action", "") or ""),
                 "position_action_intent": str(target_meta.get("position_action_intent", "") or ""),
+                "mechanism_primary": str(target_meta.get("mechanism_primary", "") or ""),
+                "primary_event_type": str(target_meta.get("primary_event_type", "") or ""),
                 "size_confidence": round(float(target_meta.get("size_confidence", 0.0) or 0.0), 6),
                 "target_weight_cap_v2a": round(float(target_meta.get("target_weight_cap_v2a", 0.0) or 0.0), 6),
                 "proposal_target_weight": round(float(target_meta.get("proposal_target_weight", 0.0) or 0.0), 6),
@@ -472,6 +479,39 @@ def _apply_turnover_budget(
     }
 
 
+def _apply_preferred_t_mechanism(
+    orders: List[OrderIntent],
+    control_cfg: Dict[str, Any],
+    target_meta_map: Dict[str, Dict[str, Any]],
+) -> Tuple[List[OrderIntent], List[Dict[str, Any]]]:
+    preferred = str(control_cfg.get("preferred_t_mechanism", "") or "").strip()
+    if not preferred or not bool(control_cfg.get("preferred_t_mechanism_enforced", False)):
+        return list(orders), []
+    buy_only = bool(control_cfg.get("preferred_t_mechanism_buy_only", True))
+    allowed: List[OrderIntent] = []
+    blocked: List[Dict[str, Any]] = []
+    for order in list(orders or []):
+        if buy_only and order.side != "BUY":
+            allowed.append(order)
+            continue
+        meta = dict(target_meta_map.get(order.symbol, {}) or {})
+        actual = str(meta.get("mechanism_primary", "") or "").strip()
+        if actual == preferred:
+            allowed.append(order)
+            continue
+        blocked.append(
+            {
+                "symbol": order.symbol,
+                "side": order.side,
+                "control_action": "skip_preferred_t_mechanism",
+                "planned_shares": int(order.delta_shares),
+                "final_shares": 0,
+                "reason": f"preferred_t_mechanism={preferred}; actual_mechanism={actual or 'unlabeled'}",
+            }
+        )
+    return allowed, blocked
+
+
 def plan_portfolio_control(
     account_state: AccountState,
     target_positions: List[TargetPosition],
@@ -531,6 +571,12 @@ def plan_portfolio_control(
                     }
                 )
         final_orders = [order for order in final_orders if order.side != "BUY"]
+    preferred_mechanism_blocked_orders: List[Dict[str, Any]] = []
+    final_orders, preferred_mechanism_blocked_orders = _apply_preferred_t_mechanism(
+        orders=final_orders,
+        control_cfg=control_cfg,
+        target_meta_map=target_meta_map,
+    )
     pending_buy_map: Dict[str, int] = {}
     pending_sell_map: Dict[str, int] = {}
     for order in final_orders:
@@ -571,6 +617,9 @@ def plan_portfolio_control(
             "max_daily_turnover_ratio": float(control_cfg.get("max_daily_turnover_ratio", 0.0)),
             "allow_odd_lot_exit": bool(control_cfg.get("allow_odd_lot_exit", True)),
             "reduce_only": bool(control_cfg.get("reduce_only", False)),
+            "preferred_t_mechanism": str(control_cfg.get("preferred_t_mechanism", "") or ""),
+            "preferred_t_mechanism_enforced": bool(control_cfg.get("preferred_t_mechanism_enforced", False)),
+            "preferred_t_mechanism_buy_only": bool(control_cfg.get("preferred_t_mechanism_buy_only", True)),
         },
         "account_nav": float(account_state.nav()),
         "raw_turnover_value": float(budget_result["raw_turnover_value"]),
@@ -581,8 +630,8 @@ def plan_portfolio_control(
         "n_raw_orders": len(raw_orders),
         "n_final_orders": len(final_orders),
         "n_drift_skipped_symbols": drift_skipped,
-        "n_turnover_adjustments": len(list(budget_result.get("truncated_orders", []) or [])) + len(reduce_only_blocked_orders),
-        "turnover_adjustments": list(budget_result.get("truncated_orders", []) or []) + reduce_only_blocked_orders,
+        "n_turnover_adjustments": len(list(budget_result.get("truncated_orders", []) or [])) + len(reduce_only_blocked_orders) + len(preferred_mechanism_blocked_orders),
+        "turnover_adjustments": list(budget_result.get("truncated_orders", []) or []) + reduce_only_blocked_orders + preferred_mechanism_blocked_orders,
         "symbol_controls": before_state["positions"],
     }
     return {
@@ -600,8 +649,9 @@ def plan_portfolio_control(
             "n_drift_skipped_symbols": drift_skipped,
             "raw_turnover_ratio": float(budget_result["raw_turnover_ratio"]),
             "final_turnover_ratio": float(sum(order.notional() for order in final_orders) / max(account_state.nav(), 1e-9)),
-            "n_turnover_adjustments": len(list(budget_result.get("truncated_orders", []) or [])) + len(reduce_only_blocked_orders),
+            "n_turnover_adjustments": len(list(budget_result.get("truncated_orders", []) or [])) + len(reduce_only_blocked_orders) + len(preferred_mechanism_blocked_orders),
             "n_reduce_only_blocked_orders": len(reduce_only_blocked_orders),
+            "n_preferred_t_mechanism_blocked_orders": len(preferred_mechanism_blocked_orders),
         },
     }
 

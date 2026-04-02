@@ -7041,3 +7041,44 @@ esearch_brief_engine.py`
 - Rollback:
   - remove the T-audit feedback fields from `clock_supervisor.py`
   - republish the prior desired report directory if the public `strategy` report slot should not be reused
+
+### [2026-04-02 13:50] Type: feature/t-dispatch-mechanism-enforcement
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_manager.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\oms\runtime.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\portfolio_control.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Extended `execution_manager.py` to read the latest local `latest_t_audit.json` before broker dispatch and carry these hints into `release_context`:
+    - `preferred_t_mechanism`
+    - `preferred_t_mechanism_source`
+    - `t_audit_top_reject_reason`
+    - `t_audit_policy_change_suggestions`
+  - Extended `oms\runtime.py` so OMS portfolio-control execution now promotes `release_context.preferred_t_mechanism` into active control config for the current cycle.
+  - Extended `live_execution_bridge\portfolio_control.py` so portfolio control now:
+    - preserves `mechanism_primary` and `primary_event_type` from target-position metadata
+    - enforces `preferred_t_mechanism` as a buy-side dispatch filter when enabled
+    - blocks only non-matching buy orders
+    - leaves sell / exit / reconcile orders untouched
+    - records blocked orders into rebalance audit with `control_action = skip_preferred_t_mechanism`
+- Impact:
+  - The T-audit feedback loop now reaches actual execution dispatch constraints instead of stopping at phase-plan annotations.
+  - Afternoon execution can prefer the currently best-suited T mechanism while still allowing sell-side de-risking and reconciliation to proceed.
+  - Rebalance audit output can now explain why a buy candidate was withheld due to mechanism mismatch.
+- Validation:
+  - `python -m py_compile` on:
+    - `live_execution_bridge\portfolio_control.py`
+    - `hub_v6\oms\runtime.py`
+    - `hub_v6\execution_manager.py`
+    - success
+  - Inline targeted probe of `_apply_preferred_t_mechanism(...)`
+    - confirmed matching buy order kept
+    - confirmed non-matching buy order blocked
+    - confirmed sell order preserved
+- Compatibility:
+  - additive on current execution dispatch control
+  - does not bypass OMS / broker authority
+  - mechanism preference currently applies to buy-side dispatch only, by design
+- Rollback:
+  - remove `preferred_t_mechanism` propagation from `execution_manager.py` and `oms\runtime.py`
+  - remove preferred-mechanism filtering from `live_execution_bridge\portfolio_control.py`

@@ -50,6 +50,7 @@ from .core import (
     write_latest_ledger,
 )
 from .paths import build_oms_paths
+from ..sql_store import load_runtime_json_artifact, resolve_sqlite_path, sql_store_enabled, sqlite_connection
 
 
 def _account_payload(account_state: AccountState, broker_health: Dict[str, Any], release_id: str, account_mode: str) -> Dict[str, Any]:
@@ -107,6 +108,16 @@ def _load_latest_release_id(config: Dict[str, Any]) -> str:
 
 def load_latest_oms_actual_state(config: Dict[str, Any]) -> Dict[str, Any]:
     path = build_oms_paths(config)["latest_actual_portfolio_state"]
+    if sql_store_enabled(config):
+        db_path = resolve_sqlite_path(config)
+        if db_path.exists():
+            try:
+                with sqlite_connection(db_path) as conn:
+                    payload = load_runtime_json_artifact(conn, path)
+                if payload:
+                    return payload
+            except Exception:
+                pass
     if not path.exists():
         return {}
     try:
@@ -117,6 +128,16 @@ def load_latest_oms_actual_state(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def load_latest_oms_control_feedback(config: Dict[str, Any]) -> Dict[str, Any]:
     path = build_oms_paths(config)["control_feedback_latest"]
+    if sql_store_enabled(config):
+        db_path = resolve_sqlite_path(config)
+        if db_path.exists():
+            try:
+                with sqlite_connection(db_path) as conn:
+                    payload = load_runtime_json_artifact(conn, path)
+                if payload:
+                    return payload
+            except Exception:
+                pass
     if not path.exists():
         return {}
     try:
@@ -181,6 +202,13 @@ def run_oms_cycle(config: Dict[str, Any]) -> Dict[str, Any]:
     shadow_run = bool(execution_policy.get("shadow_run", False))
     oms_cfg = load_oms_config(config)
     oms_paths = build_oms_paths(config)
+    load_ledger_frame._active_config = config
+    write_latest_ledger._active_config = config
+    append_actual_state_daily._active_config = config
+    append_frame_rows._active_config = config
+    write_json_artifact._active_config = config
+    ensure_manual_overrides._active_config = config
+    record_manual_intervention_state._active_config = config
     overrides = ensure_manual_overrides(oms_paths["manual_overrides"])
     manual_override_summary = build_manual_override_summary(overrides=overrides)
 
@@ -197,6 +225,11 @@ def run_oms_cycle(config: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     control_cfg = load_control_config(config)
+    preferred_t_mechanism = str(release_context.get("preferred_t_mechanism", "") or "").strip()
+    if preferred_t_mechanism:
+        control_cfg["preferred_t_mechanism"] = preferred_t_mechanism
+        control_cfg["preferred_t_mechanism_enforced"] = True
+        control_cfg["preferred_t_mechanism_buy_only"] = True
     broker_cfg = dict(config.get("broker", {}) or {})
     control_result = plan_portfolio_control(
         account_state=before_state,
