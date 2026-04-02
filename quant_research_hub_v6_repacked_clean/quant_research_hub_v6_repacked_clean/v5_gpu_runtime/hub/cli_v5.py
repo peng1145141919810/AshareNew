@@ -125,6 +125,28 @@ def _prepare_cycle(config: Dict[str, Any], cycle_index: int) -> Dict[str, Any]:
     return {'hub_root': hub_root, 'registry_path': registry_path, 'registry_df': registry_df, 'cycle_dir': cycle_dir, 'cycle_id': cycle_id, 'diagnosis': diagnosis, 'scout_result': scout_result, 'llm_client': llm_client, 'plan': plan}
 
 
+def _load_resume_state(hub_root: Path) -> Dict[str, Any]:
+    controller_path = hub_root / 'controller_state.json'
+    if not controller_path.exists():
+        return {'next_cycle': 1, 'history': [], 'resume': False}
+    try:
+        import json
+        payload = json.loads(controller_path.read_text(encoding='utf-8'))
+    except Exception:
+        return {'next_cycle': 1, 'history': [], 'resume': False}
+    history = list(payload.get('history', []) or [])
+    stop_reason = str(payload.get('stop_reason', '') or '').strip()
+    current_cycle_index = int(payload.get('current_cycle_index', 0) or 0)
+    if not history or stop_reason:
+        return {'next_cycle': 1, 'history': [], 'resume': False}
+    return {
+        'next_cycle': max(current_cycle_index + 1, 1),
+        'history': history,
+        'resume': True,
+        'last_cycle_id': str(payload.get('last_cycle_id', '') or ''),
+    }
+
+
 def run_plan_only(config: Dict[str, Any]) -> Dict[str, Any]:
     """只生成计划。
 
@@ -203,9 +225,25 @@ def run_adaptive_research_brain(config: Dict[str, Any], dry_run: bool, max_cycle
     if sleep_seconds is None:
         sleep_seconds = int(brain_cfg.get('sleep_seconds', 0) or 0)
 
-    cycle = 1
-    history: List[Dict[str, Any]] = []
+    resume_state = _load_resume_state(hub_root)
+    cycle = int(resume_state.get('next_cycle', 1) or 1)
+    history: List[Dict[str, Any]] = list(resume_state.get('history', []) or [])
     stop_reason = ''
+    if bool(resume_state.get('resume', False)):
+        log.info('检测到未完成 controller_state，断点续跑从 cycle=%s 开始。last_cycle_id=%s', cycle, str(resume_state.get('last_cycle_id', '') or ''))
+    if max_cycles is not None and history and cycle > int(max_cycles):
+        stop_reason = 'max_cycles_already_reached'
+        final = {'n_cycles': len(history), 'history': history, 'stop_reason': stop_reason}
+        write_json(hub_root / 'adaptive_loop_final.json', final)
+        write_json(hub_root / 'controller_state.json', {
+            'current_cycle_index': history[-1]['cycle_index'],
+            'last_cycle_id': history[-1]['cycle_id'],
+            'last_budget': history[-1]['budget'],
+            'last_issues': history[-1]['issues'],
+            'history': history,
+            'stop_reason': stop_reason,
+        })
+        return final
     while True:
         summary = run_batch(config=config, dry_run=dry_run, cycle_index=cycle)
         top_score = max([float(r.get('total_score', 0.0) or 0.0) for r in summary.get('results', [])] + [0.0])

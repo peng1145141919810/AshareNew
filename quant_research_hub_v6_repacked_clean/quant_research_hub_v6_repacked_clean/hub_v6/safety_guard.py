@@ -12,6 +12,15 @@ import pandas as pd
 
 from .config_utils import ensure_dir
 from .execution_bridge_runner import run_execution_health_probe
+from .sql_store import (
+    append_runtime_jsonl_record,
+    ensure_schema,
+    load_runtime_json_artifact,
+    resolve_sqlite_path,
+    sql_store_enabled,
+    sqlite_connection,
+    upsert_runtime_json_artifact,
+)
 from .trading_clock import clock_now
 
 SYSTEM_NORMAL = "NORMAL"
@@ -32,10 +41,20 @@ def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> Path:
 
 
 def _dump_json(path: Path, payload: Dict[str, Any]) -> Path:
+    config = getattr(_dump_json, "_active_config", None)
+    if isinstance(config, dict) and sql_store_enabled(config):
+        with sqlite_connection(resolve_sqlite_path(config)) as conn:
+            ensure_schema(conn)
+            upsert_runtime_json_artifact(conn, path, payload)
     return _atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _append_jsonl(path: Path, payload: Dict[str, Any]) -> Path:
+    config = getattr(_append_jsonl, "_active_config", None)
+    if isinstance(config, dict) and sql_store_enabled(config):
+        with sqlite_connection(resolve_sqlite_path(config)) as conn:
+            ensure_schema(conn)
+            append_runtime_jsonl_record(conn, path, payload)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -100,7 +119,27 @@ def _default_manual_overrides(now_text: str = "") -> Dict[str, Any]:
 
 
 def load_manual_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
+    _dump_json._active_config = config
+    _append_jsonl._active_config = config
     path = _paths(config)["manual_overrides"]
+    if sql_store_enabled(config):
+        db_path = resolve_sqlite_path(config)
+        if db_path.exists():
+            try:
+                with sqlite_connection(db_path) as conn:
+                    payload = load_runtime_json_artifact(conn, path)
+                if isinstance(payload, dict) and payload:
+                    normalized = {
+                        "updated_at": str(payload.get("updated_at", "") or ""),
+                        "updated_by": str(payload.get("updated_by", "operator") or "operator"),
+                        "manual_halt": bool(payload.get("manual_halt", False)),
+                        "manual_reduce_only": bool(payload.get("manual_reduce_only", False)),
+                        "note": str(payload.get("note", "") or ""),
+                    }
+                    if normalized["updated_at"]:
+                        return normalized
+            except Exception:
+                pass
     if not path.exists():
         payload = _default_manual_overrides(
             clock_now(str(config.get("trade_clock", {}).get("timezone", "Asia/Shanghai") or "Asia/Shanghai")).isoformat(timespec="seconds")
@@ -162,7 +201,21 @@ def _default_system_state(now_text: str = "") -> Dict[str, Any]:
 
 
 def load_system_safety_state(config: Dict[str, Any]) -> Dict[str, Any]:
+    _dump_json._active_config = config
+    _append_jsonl._active_config = config
     path = _paths(config)["system_state"]
+    if sql_store_enabled(config):
+        db_path = resolve_sqlite_path(config)
+        if db_path.exists():
+            try:
+                with sqlite_connection(db_path) as conn:
+                    payload = load_runtime_json_artifact(conn, path)
+                if isinstance(payload, dict) and payload:
+                    base = _default_system_state()
+                    base.update(payload)
+                    return base
+            except Exception:
+                pass
     if not path.exists():
         return _default_system_state()
     try:
@@ -175,6 +228,7 @@ def load_system_safety_state(config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def save_system_safety_state(config: Dict[str, Any], state: Dict[str, Any]) -> Path:
+    _dump_json._active_config = config
     return _dump_json(_paths(config)["system_state"], state)
 
 
@@ -456,6 +510,8 @@ def assess_system_safety(
     current_mode: str,
     force_account_refresh: bool = False,
 ) -> Dict[str, Any]:
+    _dump_json._active_config = config
+    _append_jsonl._active_config = config
     timezone_name = str(config.get("trade_clock", {}).get("timezone", "Asia/Shanghai") or "Asia/Shanghai")
     now = clock_now(timezone_name)
     if not bool(_safety_cfg(config).get("enabled", True)):
@@ -511,9 +567,20 @@ def assess_system_safety(
     release_age = _seconds_since(str(release_doc.get("generated_at", "") or ""), now)
     safety_cfg = _safety_cfg(config)
     execution_policy = dict(config.get("execution_policy", {}) or {})
+    account_mode = str(execution_policy.get("account_mode", "simulation") or "simulation").strip().lower()
     panic_reduce_only_ignored = bool(execution_policy.get("ignore_market_panic_reduce_only", False))
     allow_unfinished_orders_reconcile = bool(execution_policy.get("allow_unfinished_orders_reconcile", False))
     unfinished_orders_reconcile_allowed = False
+    if account_mode != "precision":
+        account_health = {
+            "ok": True,
+            "status": "skipped_simulation_mode",
+            "timestamp": now.isoformat(timespec="seconds"),
+            "positions_count": 0,
+            "order_health": {"summary": {}},
+        }
+        account_age = 0.0
+        position_age = 0.0
 
     if bool(overrides.get("manual_halt", False)):
         system_mode = SYSTEM_HALT

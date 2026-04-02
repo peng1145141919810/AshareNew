@@ -133,6 +133,12 @@
     - `T适配机制`
     - `T主阻断`
   - midday review now includes a `t_audit_summary` block so afternoon execution planning can see current T fit and blocking patterns
+- Trade-clock simulation automation behavior:
+  - the simulation phase now defaults to true simulation execution semantics in the local workspace config:
+    - `TRADE_CLOCK_SIMULATION_EXECUTION_MODE = simulation`
+    - `TRADE_CLOCK_SIMULATION_PRECISION_TRADE = false`
+  - safety assessment now skips broker health-probe hard requirements when the active execution account mode is `simulation`
+  - current V5 research-brain loop can resume from `data\research_hub_v5_1_gpu_integrated\controller_state.json` when an adaptive run is interrupted before reaching `max_cycles`
 - Source-truth governance:
   - from `2026-03-30` onward, no new field may enter a production or canonical table unless its source class is explicitly labeled as one of:
     - `official_truth`
@@ -7082,3 +7088,70 @@ esearch_brief_engine.py`
 - Rollback:
   - remove `preferred_t_mechanism` propagation from `execution_manager.py` and `oms\runtime.py`
   - remove preferred-mechanism filtering from `live_execution_bridge\portfolio_control.py`
+
+### [2026-04-02 19:08] Type: ops/research-resume-and-simulation-clock-recovery
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\safety_guard.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime\hub\cli_v5.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime\configs\hub_config.v5_1.local.json`
+  - `data\trade_release_v1\latest_release.json`
+  - `data\trade_clock\system_safety_state.json`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Fixed a local workspace config bug in `local_settings.example.py` by replacing the undefined `PROJECT_ROOT` reference in `T_AUDIT_POLICY_PATH` with `PACKAGE_ROOT`.
+  - Corrected local simulation defaults so the trade-clock simulation phase now uses:
+    - `execution_mode = simulation`
+    - `precision_trade = false`
+  - Added V5 adaptive-loop resume support in `v5_gpu_runtime\hub\cli_v5.py`:
+    - when `controller_state.json` exists with unfinished history and no `stop_reason`, the next run resumes from `current_cycle_index + 1`
+    - prior cycle `history` is preserved instead of being discarded
+  - Materialized `v5_gpu_runtime\configs\hub_config.v5_1.local.json` in the local workspace so supervisor-side V5 config generation no longer fails on a missing template.
+  - Relaxed `safety_guard.py` for simulation account mode:
+    - broker health probe is no longer a hard HALT prerequisite in `simulation`
+    - simulation mode now records `account_health.status = skipped_simulation_mode`
+  - Re-ran canonical `research_only` after the interruption; V5 resumed from `cycle_003` and completed.
+  - The recovered research run published a fresh release:
+    - `release_id = release_20260402_190349_344a3bdc`
+    - `trade_date = 2026-04-03`
+    - `target_count_verified = 18`
+  - Restarted the local trade clock in simulation mode and confirmed the overnight scheduler is back in a live state.
+- Impact:
+  - An interrupted V5 research run can now continue instead of wasting prior completed cycles.
+  - The local automated simulation clock can stay armed overnight without being falsely halted by missing gmtrade probe artifacts.
+  - Tomorrow morning's automation now has a valid `2026-04-03` release available before preopen.
+- Validation:
+  - `python -m py_compile` on:
+    - `hub_v6\local_settings.example.py`
+    - `hub_v6\safety_guard.py`
+    - `v5_gpu_runtime\hub\cli_v5.py`
+    - success
+  - Targeted V5 resume probe under the research Python:
+    - confirmed `_load_resume_state(...) -> next_cycle = 3`
+  - Canonical research rerun:
+    - `python launch_canonical.py --mode research_only --profile daily_production`
+    - success
+    - confirmed log line:
+      - `检测到未完成 controller_state，断点续跑从 cycle=3 开始`
+    - confirmed V5 completed with `stop_reason = max_cycles_reached`
+  - Trade-clock single-heartbeat validation:
+    - `python trade_clock_service.py --profile daily_production --execution-mode simulation --precision-trade off --once`
+    - success
+    - confirmed heartbeat `system_mode = NORMAL`
+  - Trade-clock background restart:
+    - `powershell -ExecutionPolicy Bypass -File scripts\start_trade_clock.ps1 -Profile daily_production -ExecutionMode simulation -PrecisionTrade off`
+    - confirmed live status via `scripts\show_trade_clock_status.ps1`
+    - confirmed:
+      - `service_alive = True`
+      - `scheduler_profile = daily_production`
+      - `latest_release = release_20260402_190349_344a3bdc`
+      - `trade_date = 2026-04-03`
+      - `system_mode = NORMAL`
+- Compatibility:
+  - additive on local workspace automation recovery
+  - precision / live broker authority boundary remains unchanged
+  - simulation-only relaxation does not weaken precision-mode safety checks
+- Rollback:
+  - remove V5 resume logic from `v5_gpu_runtime\hub\cli_v5.py`
+  - restore prior simulation defaults in `local_settings.example.py`
+  - restore prior broker-probe halt behavior in `safety_guard.py` if simulation should again hard-require gmtrade health
