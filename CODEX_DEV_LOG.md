@@ -9685,3 +9685,31 @@ esearch_brief_engine.py`
   - `trade_discipline` is now a first-class field in `portfolio_recommendation.json` and `strategy_audit.json`.
 - Rollback:
   - Revert the listed files if you need the earlier slower phase-only intraday proxy refresh and the looser pre-discipline allocation path.
+
+---
+
+## Change Log Entry - 2026-04-10 12:40 (local)
+- Type: `feature` / `trade-discipline-downstream-into-execution`
+- Scope:
+  - carrying the new central trade-discipline layer down into the real execution constraint arbiter
+  - making execution-time posture reflect the same book-level discipline already used in portfolio construction and intraday T
+- Files:
+  - `src/ashare/engine/constraint_brain.py`
+  - `src/ashare/engine/execution_manager.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - `ConstraintBrain.evaluate(...)` now accepts `trade_discipline` as a first-class input.
+  - Added a dedicated `trade_discipline` signal dimension that can push execution into `caution` / `reduce_only` posture when the portfolio summary says the book should be defensive or reduce-only.
+  - Constraint aggregation weights now include `trade_discipline` instead of pretending execution can ignore the portfolio-level discipline posture.
+  - `execution_manager.py` now loads the current release's `portfolio_summary_path`, extracts `trade_discipline`, feeds it into `ConstraintBrain`, and writes it into the execution release context for later forensic review.
+- Impact:
+  - The execution layer now shares the same central discipline truth as the allocator and intraday-intent arbiter.
+  - `reduce_only` / defensive portfolio posture is less likely to get lost between recommendation time and execution time.
+- Validation:
+  - `python -m py_compile src/ashare/engine/constraint_brain.py src/ashare/engine/execution_manager.py`
+  - targeted Python probe passed for:
+    - `ConstraintBrain.evaluate(...)` with defensive `trade_discipline`
+- Compatibility:
+  - Execution audit payloads now carry a `trade_discipline` section in `release` context.
+- Rollback:
+  - Revert the listed files if you need the earlier execution arbiter that ignored portfolio discipline posture.
