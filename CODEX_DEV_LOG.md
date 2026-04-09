@@ -59,6 +59,11 @@
   - operator CLI audit/site observability now also covers the local T overlay audit artifacts:
     - `data\audit_v1\latest\latest_t_audit.json`
     - `data\audit_v1\latest\t_overlay_window_daily.csv`
+  - operator CLI paths / `audit-status` / `site-status` also surface intraday tactical artifacts:
+    - `data\audit_v1\latest\latest_intraday_tactical_audit.json`
+    - `data\trade_clock\intraday_tactics\latest\intraday_tactical_orders.json`
+    - latest `strategy_audit.json` section `intraday_tactical_analysis` (when the Python pack has run)
+    - `site_state.json` keys `intraday_tactical_*` when the portal generator has run
   - the C# path registry now treats local workspace SQL/site artifacts as first-class local paths:
     - `data\sql_store\research_fact_layers_v1.sqlite3`
     - `data\sql_store\affordable_data_v1.sqlite3`
@@ -74,14 +79,163 @@
     - total code lines: `478992`
 
 ## Latest Stable Snapshot
-- Snapshot date: `2026-04-02`
+- Snapshot date: `2026-04-10`
 - Workspace operator mirror: `F:\quant_data\AshareC#\launch_canonical.py`
 - Workspace trade-clock service mirror: `F:\quant_data\AshareC#\trade_clock_service.py`
 - Workspace business root mirror: `F:\quant_data\AshareC#\main_research_runner.py`
+- Active Python runtime root now resolves to the real workspace source tree:
+  - `F:\quant_data\AshareC#\src\ashare`
+- `SYSTEM_MANIFEST.yaml` canonical runtime-root pointers now target `src\ashare` instead of the stale missing repacked paths.
+- Unified control-plane helper package: `F:\quant_data\AshareC#\ashare_control`
+- Unified control-plane snapshot path: `F:\quant_data\AshareC#\site_portal\control_plane_snapshot.json`
 - Current live operator repo still: `F:\quant_data\Ashare`
 - Default mode: `integrated_supervisor`
 - Default profile: `quick_test`
+- Trade-clock service startup hardening now in force:
+  - preflight failure no longer kills the always-on loop unless `--once` is explicitly used
+  - latest preflight status is persisted to `data\trade_clock\runtime\preflight_status.json`
+  - operator/runtime entrypoints now prefer manifest-declared roots with a real `engine\` directory and fall back to `src\ashare`
+- Automation bug fixes now in force:
+  - auxiliary subprocess JSON parsing now uses the explicit result markers instead of naive first-`{` / last-`}` slicing
+  - release fallback now requires same-trade-date evidence and a shorter default freshness window (`18h`, configurable)
+  - runtime-state exceptions are no longer immediately overwritten by `idle` with an empty `last_exception`
+  - operator runtime site publish now stages through a temporary remote folder before replacing the live files
+  - heartbeat now marks `service_status = degraded_operator_runtime_publish` when runtime publish fails but remains fail-open
+  - daily automation report headings were normalized back to ASCII to avoid mojibake in generated report files
+  - execution bridge stdout must now parse into a real JSON object or it is treated as a failure instead of a fake success
+  - `supervisor.py` no longer hard-imports the V6 planner and portfolio builder at module import time
+  - release `latest\` optional artifacts are cleared before the current release is copied in, preventing stale leftovers
+  - `shadow_run` execution no longer records itself into formal release execution history as if it were a real fill-bearing run
+  - canonical run manifests are now finalized on broad launcher failures, not only `CalledProcessError`
+  - `--preflight-only` can no longer be combined with `--skip-preflight`
+  - intraday state machine no longer falls back to another trade date's phase-state / latest release when the requested trade date has no matching artifacts
+  - intraday tactical execution no longer forces `ignore_window=True`
+  - control-plane snapshots now prefer explicit/staged runtime artifacts over `site_portal\` source leftovers, and operator-runtime publish writes the staged snapshot directly instead of reusing a possibly stale source copy
+  - control-plane site builds now remove stale files from the publish-stage root before copying the current portal bundle, reducing old-page residue in later publishes
+  - intraday proxy snapshots now stamp `captured_at` / `trade_date` from the configured trade-clock timezone instead of the host OS default clock
+  - execution constraint arbitration now actually receives the latest intraday phase-state and clock-account snapshot instead of silently defaulting those dimensions to empty
+  - C# path/runtime truth now points at `src\ashare` and published control-plane artifacts instead of stale repacked/source-only assumptions
+  - C# execution-only launches now always use the research Python to enter `launch_canonical.py`; broker environment switching remains Python-internal
+  - C# summary phase no longer returns a fake local success and now delegates to a real Python summary script
+  - the C# solution no longer references the missing `Ashare.RuntimeSkeleton.LiveGateway` project and `Ashare.RuntimeSkeleton.sln` builds again
+  - C# OMS lifecycle now reads ledgers from the real `oms_v1\ledgers\` directory instead of the wrong root path
+  - C# execution backend now parses the Python result envelope and distinguishes `executed` / `shadow_executed` / `skipped` / `safety_blocked` / `execution_error` instead of trusting process exit code alone
+  - C# runtime-state gating now blocks release/clock trade-date or release-id mismatches instead of treating “files exist” as sufficient
+- Integrated thesis now supports soft-gate admission:
+  - `earnings_gate` failure no longer forces thesis rejection when event/mechanism are strong
+  - `portfolio_gate` failure is downgraded into a soft admission state for outer allocation instead of inner rejection
+- Portfolio selection now supports an outer intelligent allocator:
+  - candidate ranking can be driven by `outer_intelligence_priority`
+  - technical confirmation defaults to feature input, not a hard internal gate
+  - weak thesis pools are widened by default instead of collapsing to near-empty candidate sets
+- Portfolio candidate activation now includes a dedicated SQL + LLM activation layer:
+  - `strategy_activation.py` merges runtime SQL facts, research fact layers, industry signals, and account context into `data_activation_score`
+  - candidate pools now carry `activation_alpha_family` and `alpha_activation_priority` before final outer allocation
+  - a dedicated activation LLM overlay can reprioritize favored symbols and alpha families without becoming a hard execution veto
+- Alpha governance is starting to become first-class instead of remaining implicit:
+  - `alpha_registry.py` now gives the live candidate pool explicit alpha-family metadata such as horizon / capacity / style
+  - candidate-pool summaries and strategy activation summaries now surface alpha-family registry counts instead of burying family logic inside scoring code
+  - `strategy_audit.py` now includes `alpha_attribution` so target weights and pnl proxies can be read by alpha family
+  - `alpha_lifecycle.py` now turns those families into explicit lifecycle states (`promote` / `live` / `shadow` / `demote` / `inactive`) using candidate strength, exposure, concentration, and pnl-proxy evidence
+  - `portfolio_recommendation.py` now writes both `alpha_attribution` and `alpha_lifecycle` into the live summary so alpha promotion/demotion can become an operating concept instead of only a verbal goal
+  - `alpha_attribution.py` now also surfaces family-level `pnl_yield`, active symbol counts, and average target weight so lifecycle/audit can distinguish bad alpha from merely inactive alpha
+  - `alpha_lifecycle` no longer stops at reporting; `portfolio_recommendation.py` now uses it to bias portfolio weights so promoted families can gain budget and shadow/demoted families can be naturally leaned against
+  - `alpha_lifecycle.py` now treats strongly negative family `pnl_yield` as a true demotion/inactivation input instead of only reading raw pnl proxy
+  - the six currently data-backed families are now more explicitly treated as independent operating families instead of hidden score dimensions:
+    - `event_drive`
+    - `order_flow`
+    - `revision`
+    - `industry`
+    - `valuation`
+    - `liquidity`
+  - `alpha_registry.py` now carries source/data-column metadata plus allocator priority for those six families
+  - `strategy_activation.py` now writes family score means and family-to-data mappings into the activation summary
+  - registered family budgeting now happens before lifecycle biasing so family capital preference is expressed centrally instead of through scattered local gates
+- Portfolio candidate and construction flow are no longer meant to live in one monolithic file:
+  - candidate orchestration now belongs in `candidate_pipeline.py`
+  - account-size/executable-weight construction now belongs in `portfolio_construction_pipeline.py`
+- Account-aware allocation is moving from raw executable math toward true allocator posture:
+  - `portfolio_construction_pipeline.py` now computes an account allocator profile (`micro` / `small` / `mid` / `large` / `institutional`)
+  - portfolio construction now writes an explicit diversification objective and flattens weights toward slot-based concentration targets instead of only clipping by caps
+  - diversification now also leans against over-concentration by alpha family and by industry, not just by single-name cap
+- Trade discipline is now becoming a central operating layer instead of a scattered collection of local opinions:
+  - `trade_discipline.py` now computes one portfolio-level discipline snapshot covering posture, cash posture, add budget, sell pressure, family bias, and sell-priority symbols
+  - `portfolio_recommendation.py` now applies this discipline layer centrally after family/lifecycle budgeting and before diversification/executable-floor cleanup
+  - `strategy_audit.py` now exposes trade-discipline lines alongside alpha lifecycle lines
+- Trade-clock phase registration and remote delegation now have dedicated modules:
+  - `clock_phase_registry.py` owns dynamic tactical phase ordering instead of hard-coded fixed names in `clock_supervisor.py`
+  - `remote_clock_delegate.py` provides an SSH-based path for delegating non-broker phases to a remote worker when explicitly enabled
+- Constraint arbitration is now partially externalized:
+  - execution-side hard blocks are intended to remain only for true emergency conditions (`HALT`, market panic, broker unreachable with open positions)
+  - market/LLM/account/technical signals are increasingly treated as degraders or scoring inputs, not distributed inner vetoes
+- Stable architecture principle now in force:
+  - do not introduce new local hard rules, scattered vetoes, or duplicate mini-schedulers when the same behavior can be expressed through the outer intelligence / unified scheduler layer
+  - local modules should prefer exporting state, evidence, advisory scores, and explicit hard-stop reasons
+  - non-emergency constraints should be centralized into the intelligent scheduler / allocator / constraint brain instead of being enforced piecemeal inside trigger, timing, or portfolio submodules
+  - only true emergency boundaries should remain as local hard stops:
+    - `HALT`
+    - explicit reconcile-only states
+    - broker unreachable with live positions
+    - severe symbol-level execution impossibility
+- Intraday tactical constraints are now more explicitly routed through the outer intelligence layer:
+  - `timing_rules.py` now distinguishes hard freeze reasons from advisory reasons instead of freezing on every dirty local condition
+  - `outer_intelligence.arbitrate_intraday_intents(...)` now consumes timing advisory strength, account-size bucket, cash ratio, concentration, and diversification targets when scaling or suppressing intraday intents
+  - `priority_arbiter.py` now breaks same-symbol conflicts using symbol context and outer-intelligence state instead of a purely static class/side tiebreak
+  - `PANIC` is increasingly treated as degrade-not-zero for intraday T/add logic, while `HALT` remains the true hard stop
+  - `trigger_engine.py` now tags tactical intents with portfolio-service roles such as `reduce_risk`, `rebuild_core`, and `expand_diversified_winner`, so the outer intelligence layer can optimize T for the whole book instead of only for the local trigger
+  - `intraday_tactics/context_loader.py` now refuses to silently consume mismatched-trade-date `latest_release`, phase-state, or proxy/account snapshots when a tactical run requests a specific trade date
+  - `market_state/runtime.py` now timestamps market-state artifacts with the configured trade-clock timezone instead of the host OS local clock
+  - `clock_supervisor.py` heartbeat now carries explicit `current_trade_date` / `trade_date` / `next_trade_date`, so downstream runtime publish no longer falls back to a blind `now.date()`
+  - `load_latest_market_state(...)` fallback payloads and `intraday_tactics/runtime.py` tactical timestamps now also use the configured trade-clock timezone, reducing host-clock leakage in fallback/runtime paths
+  - LLM black-box control is now being made explicit:
+  - `llm_trace.py` records prompt hashes, prompt previews, normalized decisions, raw model status, and stage metadata for major LLM decision points
+  - strategy activation, candidate-pool review, and execution review now ask the model to emit `decision_basis`, `uncertainty_flags`, and `overfit_guard`
+  - the live design direction is to let LLMs participate heavily while forcing them to leave a structured forensic trail instead of acting as silent score injectors
+  - `llm_trace.py` now also writes an explicit `decision_log` view for those fields so model-side reasoning can be audited faster
+  - `llm_operating_brain.py` now introduces a structured LLM research/dispatch/operations layer that leaves artifacts and traces instead of acting like an invisible score source
+  - `clock_supervisor.py` now reads the latest operating-brain posture/watch/incident guidance from the portfolio summary and surfaces it into heartbeat, daily pack, and phase-exception payloads
+- Portal status:
+  - the live public portal has been rolled back to the earlier legacy static bundle from `tmp\portal_site_provider_switch\*.html`
+  - the active public page set is again centered on the older inline-style portal pages:
+    - `site_portal/index.html`
+    - `site_portal/system-status.html`
+    - `site_portal/strategy-status.html`
+    - `site_portal/trade-monitor.html`
+    - `site_portal/intraday-state.html`
+    - `site_portal/audit-center.html`
+    - `site_portal/operator-console.html`
+    - `site_portal/about.html`
+    - `site_portal/comments.html`
+    - `site_portal/admin.html`
+    - `site_portal/login.html`
+    - `site_portal/register.html`
+  - newer experimental shell files should not remain staged alongside the legacy portal baseline after the rollback
+  - a compact operator retrieval index now exists at `CODEX_DEV_LOG_INDEX.md` to help future sessions search the large main dev log faster
 - Trade-clock scheduler profile currently observed live: `daily_production`
+- External research refresh is now wired into `research` / `research_refresh` before the main research subprocess:
+  - `Qianzhan` member/web pages -> `qianzhan_indicator_daily` / `qianzhan_knowledge_cards`
+  - `ggzy.gov.cn` notice index -> `ggzy_notice_index` and mapped `event_fact_contract_orders`
+- Intraday proxy refresh is now wired into the live-snapshot helper:
+  - `Tushare realtime_quote / realtime_list / realtime_tick` feed `data\trade_clock\intraday_proxy\latest`
+  - normalized account truth sidecar is written to `account_truth_snapshot.json`
+  - `Tushare rt_min` is now supported as an additional official realtime minute-bar layer for tracked symbols
+  - the trade clock can now run an experimental rapid intraday proxy loop during the active market session; this is a bounded seconds-level refresh path, not a broker/websocket tick stream
+- Trade-clock heartbeat now embeds and atomically writes `account_snapshot` (NAV/cash, concentration top1/HHI, risk tier) to `data\trade_clock\clock_account_snapshot.json` for intraday/T overlay and C# `site-status`
+- **Intraday tactical layer** (`engine/intraday_tactics`): incremental intents + `intraday_tactical_orders.json` merged into OMS `final_orders` when `intraday_tactical_orders_path` is set; clock can run `intraday_tactical_*` phases; runner mode `intraday_tactics_only`; `strategy_audit` embeds `intraday_tactical_analysis`; static portal (`scripts/build_audit_site_index.py`) surfaces tactical counts, reason_code chart, orders/conflicts, and `site_state.json` fields `intraday_tactical_*`
+- **Intraday state machine phase gate**: before subprocess phases `preopen_gate`, `simulation`, `shadow`, `midday_review`, `afternoon_execution`, `afternoon_shadow`, and `intraday_tactical_*`, the clock runs `_run_intraday_state_refresh` and attaches `pre_intraday_state_refresh` to the phase result payload; optional `intraday_state_machine.strict_pre_execution_gate` (from `INTRADAY_STATE_MACHINE_STRICT_PRE_EXECUTION_GATE`) skips the phase when refresh ran and `ok` is false
+- **Validation / tuning helpers**: `scripts/run_validation_tiers.py` runs `py_compile` + `hub_v6.oms.tests.test_tactical_merge` (+ optional `probe_intraday_tactics.py`); `scripts/tune_intraday_tactics_thresholds.py` grids `reason_thresholds` offline against `load_tactical_context` + `run_triggers` + `arbitrate` (no broker execution)
+- **Runtime research SQLite (`research_data_v1.sqlite3`)**: `config_builder` now emits `data_store.enabled` (default true via `ENABLE_RUNTIME_DATA_SQL_STORE`) and `paths.data_sqlite_path`; intraday tactics + intraday state machine artifacts are mirrored into `runtime_json_artifacts` / `runtime_table_rows` on write; `intraday_tactical_audit_pack` and `t_audit` intraday loaders use SQL-first reads with filesystem fallback
+- **Constraint arbitration**: `OPERATOR_CONSTRAINT_MODE` 已删除。执行约束现由 `engine/constraint_brain.py` 的 `ConstraintBrain` 统一评估：收集 safety / market_state / LLM review / account / concentration / intraday_state 等所有信号，多维评分，输出单一 verdict（`proceed` / `proceed_degraded` / `reduce_only` / `defer` / `block`）+ 合并好的 config_overrides，在 `execution_manager.py` 里一次应用，替换原来 4 层串行 override 链。Hard-block 仅保留 3 种真正紧急情况（系统 HALT / 市场熔断 / broker 失联+持仓非零），其余情况产生梯度降级而非一刀切拦截。
+- Trade-clock morning refresh/execution semantics currently in force:
+  - `research_refresh` now runs with `quick_test` depth by default, not full `daily_production`
+  - default pre-open refresh cutoffs are:
+    - `research_refresh.timeout_minutes = 15`
+    - `release_refresh.timeout_minutes = 10`
+  - the morning `simulation` phase is now aligned with current operator semantics and targets the precision matching account:
+    - `simulation_execution_mode = precision`
+    - `simulation_precision_trade = true`
+    - `simulation_namespace = precision`
+  - `release` / `release_refresh` launched by the trade clock now carry the phase trade date explicitly via `--release-trade-date`, preventing late recovery runs from overwriting `latest_release.json` with a future trade date
 - V5/XGBoost research-depth cycle mapping currently in force:
   - `quick_test = 1`
   - `daily_production = 3`
@@ -113,6 +267,16 @@
     - event attribution
     - earnings-validation attribution
     - top winners / top losers
+- Public site publish hygiene:
+  - the static portal now includes a dedicated `research-backtest.html` page sourced from:
+    - `data\research_hub_v5_1_gpu_integrated\strategy_family\strategy_family_state.csv`
+    - `data\research_hub_v5_1_gpu_integrated\cycles\<latest>\cycle_summary.json`
+  - the workspace portal source of truth now lives under `site_portal\*.html` and is copied into `outputs\site_publish_stage` by `scripts\build_control_plane_site.py`
+  - `control_plane_snapshot.json` is now generated locally and staged alongside `operator_runtime_context.json` before public publish
+  - `site_build_manifest.json` now records the staged control-plane site bundle root, release pointer, focus mode, and clock phase
+  - the public publish script now clears staged and remote `reports/` contents before uploading the current canonical report
+  - previous temporary probe folders such as `audit_probe_*` are no longer retained on the staged or public site after a normal publish
+  - current public site state should therefore reflect only the latest canonical report bundle instead of accumulated test-report debris
 - T intraday execution behavior:
   - T remains a bounded intraday execution overlay, not a separate alpha line
   - the active runtime now resolves T policy per symbol using:
@@ -352,7 +516,7 @@
   - `F:\quant_data\AshareC#\outputs\canonical_runs`
 - Root layout note:
   - active migration-workspace code now remains under `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean`
-  - the mirrored V5.1 research brain is embedded under `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime`
+  - the mirrored V5.1 research brain is embedded under `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\research_brain`
   - runtime data root is now `F:\quant_data\AshareC#\data`
   - hybrid-runtime truth:
     - formal business runtime still executes through the Python operator chain
@@ -369,10 +533,10 @@
   - the first standalone migration skeleton is now published separately at `https://github.com/peng1145141919810/AshareCSharp-runtime-skeleton` and currently stays `private`
   - use `$env:DISABLE_AUTO_PUSH='1'; git commit -m "..."; Remove-Item Env:DISABLE_AUTO_PUSH` when a local-only commit is needed in PowerShell
 - Google Drive dev-log mirror:
-  - `CODEX_DEV_LOG.md` can be mirrored into `H:\我的云端硬盘\AshareCSharp_backups\codex_dev_log_mirror`
-  - versioned script snapshots now live under `H:\我的云端硬盘\AshareCSharp_backups\script_versions`
-  - versioned runtime skeleton exports now live under `H:\我的云端硬盘\AshareCSharp_backups\runtime_skeleton_versions`
-  - snapshot catalog now lives at `H:\我的云端硬盘\AshareCSharp_backups\VERSION_CATALOG.md`
+  - `CODEX_DEV_LOG.md` can be mirrored into `G:\我的云端硬盘\AshareCSharp_backups\codex_dev_log_mirror`
+  - versioned script snapshots now live under `G:\我的云端硬盘\AshareCSharp_backups\script_versions`
+  - versioned runtime skeleton exports now live under `G:\我的云端硬盘\AshareCSharp_backups\runtime_skeleton_versions`
+  - snapshot catalog now lives at `G:\我的云端硬盘\AshareCSharp_backups\VERSION_CATALOG.md`
   - current naming scheme:
     - `LEGACY-YYYYMMDD-RNNN` for milestone / layout-transition snapshots
     - `SCRIPT-YYYYMMDD-RNNN` for script-only repo snapshots without `data/`, `outputs/`, virtualenvs, caches, or private `local_settings.py`
@@ -632,7 +796,7 @@
   - current low-risk scope is `ledger + drift threshold + daily turnover budget + execution feedback + dev-log portfolio snapshot`
   - industry/theme exposure and staged build/reduce are intentionally deferred for now
 - Portfolio V2A:
-  - the research-side portfolio layer now has a formal deterministic V2A posture engine, lifecycle engine, and admission/replacement layer under `hub_v6\portfolio_v2a`
+  - the research-side portfolio layer now has a formal deterministic V2A posture engine, lifecycle engine, and admission/replacement layer under `hub_v6\portfolio`
   - V2A now upgrades target generation from flat rank-weight output into:
     - portfolio posture
     - per-name lifecycle state
@@ -773,34 +937,34 @@
 
 | What You Want To Change | Where To Change It | Current Truth |
 | --- | --- | --- |
-| default run mode | `hub_v6/local_settings.py` -> `RUN_MODE` | `integrated_supervisor` |
-| default profile | `hub_v6/local_settings.py` -> `DEFAULT_RUN_PROFILE` | `quick_test` |
+| default run mode | `engine/local_settings.py` -> `RUN_MODE` | `integrated_supervisor` |
+| default profile | `engine/local_settings.py` -> `DEFAULT_RUN_PROFILE` | `quick_test` |
 | one-off run mode override | `launch_canonical.py --mode ...` or `main_research_runner.py --mode ...` | operator override only; does not rewrite defaults |
 | one-off profile override | `launch_canonical.py --profile overnight|daily_production|quick_test` | operator override only |
-| default account mode | `hub_v6/local_settings.py` -> `EXECUTION_ACCOUNT_MODE` | `precision` |
+| default account mode | `engine/local_settings.py` -> `EXECUTION_ACCOUNT_MODE` | `precision` |
 | one-off account mode override | `--execution-mode simulation|precision` | operator override only |
-| precision live-trade master switch | `hub_v6/local_settings.py` -> `PRECISION_TRADE_ENABLED` | `False` |
+| precision live-trade master switch | `engine/local_settings.py` -> `PRECISION_TRADE_ENABLED` | `False` |
 | one-off precision-trade override | `--precision-trade on|off` | operator override only |
 | manual scheduler start/stop | `scripts/start_trade_clock.ps1`, `scripts/stop_trade_clock.ps1` | manual operator process; no autostart |
 | scheduler status view | `scripts/show_trade_clock_status.ps1` | concise read-only operator summary over clock / release / safety / phase / OMS |
-| scheduler default profile | `hub_v6/local_settings.py` -> `TRADE_CLOCK_SCHEDULER_PROFILE` | `daily_production` |
-| scheduler phase times | `hub_v6/local_settings.py` -> `TRADE_CLOCK_PHASE_*_TIME` | research=15:05, release=15:10, preopen_gate=09:20, simulation=09:30:35, shadow=09:35, summary=15:20 |
-| scheduler phase timeouts | `hub_v6/local_settings.py` -> `TRADE_CLOCK_*_TIMEOUT_MINUTES` | current local values; bounded per phase |
-| automation pack root | `hub_v6/local_settings.py` -> `AUTOMATION_RUNS_ROOT` | `F:\quant_data\AshareC#\outputs\automation_runs` |
-| scheduler simulation/shadow namespace split | `hub_v6/local_settings.py` -> `TRADE_CLOCK_SIMULATION_NAMESPACE`, `TRADE_CLOCK_SHADOW_NAMESPACE` | `simulation` / `shadow` |
+| scheduler default profile | `engine/local_settings.py` -> `TRADE_CLOCK_SCHEDULER_PROFILE` | `daily_production` |
+| scheduler phase times | `engine/local_settings.py` -> `TRADE_CLOCK_PHASE_*_TIME` | research=15:05, release=15:10, preopen_gate=09:20, simulation=09:30:35, shadow=09:35, summary=15:20 |
+| scheduler phase timeouts | `engine/local_settings.py` -> `TRADE_CLOCK_*_TIMEOUT_MINUTES` | current local values; bounded per phase |
+| automation pack root | `engine/local_settings.py` -> `AUTOMATION_RUNS_ROOT` | `F:\quant_data\AshareC#\outputs\automation_runs` |
+| scheduler simulation/shadow namespace split | `engine/local_settings.py` -> `TRADE_CLOCK_SIMULATION_NAMESPACE`, `TRADE_CLOCK_SHADOW_NAMESPACE` | `simulation` / `shadow` |
 | one-off execution namespace override | `--execution-namespace ...` | operator override only |
 | one-off shadow execution flag | `--shadow-run` | operator override only |
-| whether integrated modes may directly execute precision | `hub_v6/local_settings.py` -> `ALLOW_INTEGRATED_PRECISION_EXECUTION` | `False` |
+| whether integrated modes may directly execute precision | `engine/local_settings.py` -> `ALLOW_INTEGRATED_PRECISION_EXECUTION` | `False` |
 | simulation / precision account ids | `configs/gmtrade_runtime_config.local.json` -> `broker.account_profiles` | simulation=`4d74746e-243c-11f1-a169-00163e022aa6`; precision=`e18905e4-254f-11f1-b37d-00163e022aa6` |
 | broker endpoint / buy-sell ratios / lot size / min trade value / cash reserve | `configs/gmtrade_runtime_config.local.json` | current live local template |
-| trade release validity time | `hub_v6/local_settings.py` -> `TRADE_RELEASE_VALID_AFTER_TIME`, `TRADE_RELEASE_EXPIRES_AT_TIME` | `09:30:30` / `15:00:00` |
-| clock polling interval | `hub_v6/local_settings.py` -> `TRADE_CLOCK_POLL_SECONDS` | `30` |
-| automatic execution windows | `hub_v6/local_settings.py` -> `TRADE_CLOCK_EXECUTION_WINDOWS` | `09:30:30-10:00:00` |
-| industry-router master switch | `hub_v6/local_settings.py` -> `ENABLE_INDUSTRY_ROUTER` | `True` |
-| industry-router contract root | `hub_v6/local_settings.py` -> `INDUSTRY_ROUTER_CONTRACT_ROOT` | `...\configs\industry_router` |
-| industry-router artifact root | `hub_v6/local_settings.py` -> `INDUSTRY_ROUTER_OUTPUT_ROOT` | `data\event_lake_v6\research\industry_router` |
-| industry-router history window | `hub_v6/local_settings.py` -> `INDUSTRY_ROUTER_HISTORY_LOOKBACK_DAYS` | `14` |
-| industry-router split backtest config | `hub_v6/local_settings.py` -> `INDUSTRY_ROUTER_ENABLE_BACKTEST`, `INDUSTRY_ROUTER_BACKTEST_HORIZONS`, `INDUSTRY_ROUTER_BACKTEST_TOP_K` | `True / [1, 2] / 3` |
+| trade release validity time | `engine/local_settings.py` -> `TRADE_RELEASE_VALID_AFTER_TIME`, `TRADE_RELEASE_EXPIRES_AT_TIME` | `09:30:30` / `15:00:00` |
+| clock polling interval | `engine/local_settings.py` -> `TRADE_CLOCK_POLL_SECONDS` | `30` |
+| automatic execution windows | `engine/local_settings.py` -> `TRADE_CLOCK_EXECUTION_WINDOWS` | `09:30:30-10:00:00` |
+| industry-router master switch | `engine/local_settings.py` -> `ENABLE_INDUSTRY_ROUTER` | `True` |
+| industry-router contract root | `engine/local_settings.py` -> `INDUSTRY_ROUTER_CONTRACT_ROOT` | `...\configs\industry_router` |
+| industry-router artifact root | `engine/local_settings.py` -> `INDUSTRY_ROUTER_OUTPUT_ROOT` | `data\event_lake_v6\research\industry_router` |
+| industry-router history window | `engine/local_settings.py` -> `INDUSTRY_ROUTER_HISTORY_LOOKBACK_DAYS` | `14` |
+| industry-router split backtest config | `engine/local_settings.py` -> `INDUSTRY_ROUTER_ENABLE_BACKTEST`, `INDUSTRY_ROUTER_BACKTEST_HORIZONS`, `INDUSTRY_ROUTER_BACKTEST_TOP_K` | `True / [1, 2] / 3` |
 
 - Practical operator rule:
   - for formal precise-style operation, prefer `research_only -> release_only if needed -> execution_only`
@@ -939,7 +1103,7 @@
   - `execution_and_safety`: `6197` lines
   - `entry_and_governance`: `3723` lines
   - `portfolio_and_market_policy`: `2212` lines
-  - `v5_gpu_runtime`: `2537` lines
+  - `research_brain`: `2537` lines
 - Immediate high-fit C# migration surface:
   - wrapper / governance entrypoints
   - runtime config loading and validation
@@ -1000,16 +1164,16 @@
 
 ## Authority Structure
 - Research power:
-  - `hub_v6/portfolio_recommendation.py`, `hub_v6/portfolio_v2a/*`, V6, and V5.1 may define hypotheses, ranking, desired target weights, and desired lifecycle suggestions.
+  - `engine/portfolio_recommendation.py`, `engine/portfolio/*`, V6, and V5.1 may define hypotheses, ranking, desired target weights, and desired lifecycle suggestions.
   - Research is not allowed to define broker/account/order/fill truth.
 - Release power:
-  - `hub_v6/portfolio_release.py` freezes the contract for execution consumption.
+  - `engine/portfolio_release.py` freezes the contract for execution consumption.
   - Release does not learn from broker noise and does not derive actual-state truth.
 - Safety/gate power:
   - `trade_clock_service.py`, `execution_manager.py`, and the safety truth files decide whether execution may be attempted.
   - Safety does not author account truth or lifecycle truth.
 - OMS power:
-  - `hub_v6/oms/*` owns:
+  - `engine/oms/*` owns:
     - broker/account snapshots
     - position/order/fill ledgers
     - desired-vs-actual gap
@@ -1018,7 +1182,7 @@
   - OMS consumes gate truth but does not replace the global safety layer.
 - Execution power:
   - `live_execution_bridge` submits orders and reads broker replies under OMS governance.
-  - `live_execution_bridge/runtime.py` is now a compatibility wrapper; the canonical execution-side truth runtime is `hub_v6/oms/runtime.py`.
+  - `live_execution_bridge/runtime.py` is now a compatibility wrapper; the canonical execution-side truth runtime is `engine/oms/runtime.py`.
 - Feedback buckets:
   - Bucket A `truth feedback` stays inside OMS ledgers/artifacts only.
   - Bucket B `control feedback` flows from OMS into V2A posture pacing.
@@ -1033,9 +1197,9 @@
 - Active V6 orchestrator and supervisor:
   - `...\hub_v6`
 - Active V5.1 research brain and iterator:
-  - `...\v5_gpu_runtime`
-  - launcher: `...\v5_gpu_runtime\run_research_hub_v5_1_local.py`
-  - main control: `...\v5_gpu_runtime\hub\cli_v5.py`
+  - `...\research_brain`
+  - launcher: `...\research_brain\run_research_hub_v5_1_local.py`
+  - main control: `...\research_brain\hub\cli_v5.py`
 - Active downstream outputs:
   - external dependency today: `F:\quant_data\Ashare\data`
   - workspace formal trace root: `F:\quant_data\AshareC#\outputs\canonical_runs`
@@ -1044,7 +1208,7 @@
   - `F:\quant_data\早期实验数据\Ashare_legacy_code_20260321\quant_research_hub_v5_1`
 - Operator warning:
   - The archived root-level `quant_research_hub_v5*` folders are not the live research engine anymore.
-  - If you need the real research brain, inspect `v5_gpu_runtime` inside the active package tree, not the archived root copies.
+  - If you need the real research brain, inspect `research_brain` inside the active package tree, not the archived root copies.
 
 ## Core Module Relationship Map
 - Root entry and runtime config:
@@ -1052,30 +1216,30 @@
   - `main_research_runner.py` is the wrapped business root entry.
   - `launch_canonical.py` also writes `run_manifest.json` through `tools/register_run.py` under `outputs\canonical_runs\<run_id>\`.
   - The wrapper does not replace business logic; it only performs governance-layer selection and preflight before dispatching to the wrapped root.
-  - It reads `hub_v6/local_settings.py`, calls `hub_v6/config_builder.py`, and generates `configs/hub_config.v6.runtime.<profile>.json`.
+  - It reads `engine/local_settings.py`, calls `engine/config_builder.py`, and generates `configs/hub_config.v6.runtime.<profile>.json`.
   - It then dispatches by mode:
-    - `integrated_supervisor` -> `hub_v6/supervisor.py`
-    - `resume_downstream` -> `hub_v6/supervisor.py::run_resume_downstream`
-    - other V6 partial modes -> `hub_v6/orchestrator_v6.py`
+    - `integrated_supervisor` -> `engine/supervisor.py`
+    - `resume_downstream` -> `engine/supervisor.py::run_resume_downstream`
+    - other V6 partial modes -> `engine/orchestrator_v6.py`
 - Supervisor layer:
-  - `hub_v6/supervisor.py` is the daily conductor for the full chain.
-  - It calls `hub_v6/market_pipeline.py`, refreshes strategy feedback, decides whether V6 planning should run, launches V5 GPU research, then calls portfolio recommendation and the execution bridge.
+  - `engine/supervisor.py` is the daily conductor for the full chain.
+  - It calls `engine/market_pipeline.py`, refreshes strategy feedback, decides whether V6 planning should run, launches V5 GPU research, then calls portfolio recommendation and the execution bridge.
   - It writes top-level run state to `data/event_lake_v6/research/supervisor/supervisor_state.json`.
   - During runtime it now updates `current_stage`, per-stage status, and recent stage history incrementally so operators can see where the chain is currently sitting.
 - Market and event layer:
-  - `hub_v6/market_pipeline.py` updates HS300, enriched daily files, price snapshots, and the training table.
-  - `hub_v6/event_ingest.py` collects raw announcements and Tushare news into the event lake.
-  - `hub_v6/event_extract.py` converts raw event text into structured event objects with quality and anti-overfit metadata.
-  - `hub_v6/industry_router/` now sits between extracted events and the higher research context as the formal stock/mechanism skeleton.
-  - `hub_v6/industry_router/runtime.py` builds `stock_master`, `event_instances`, `event_stock_mapping`, `mechanism_state_daily`, and `stock_signal_daily`.
-  - `hub_v6/industry_router/backtest.py` runs the split mechanism backtest skeleton over the generated signal table.
-  - `hub_v6/market_state/runtime.py` builds market-state regime truth from trend, breadth, liquidity proxies, style balance, and industry-router bias.
-  - `hub_v6/data_gap_engine.py` identifies missing derived features or refresh actions.
-  - `hub_v6/context_pack.py` now merges extracted events, industry-router summary, market-state truth, gap findings, and bridge context into `research_context_pack.json`.
+  - `engine/market_pipeline.py` updates HS300, enriched daily files, price snapshots, and the training table.
+  - `engine/event_ingest.py` collects raw announcements and Tushare news into the event lake.
+  - `engine/event_extract.py` converts raw event text into structured event objects with quality and anti-overfit metadata.
+  - `engine/industry_router/` now sits between extracted events and the higher research context as the formal stock/mechanism skeleton.
+  - `engine/industry_router/runtime.py` builds `stock_master`, `event_instances`, `event_stock_mapping`, `mechanism_state_daily`, and `stock_signal_daily`.
+  - `engine/industry_router/backtest.py` runs the split mechanism backtest skeleton over the generated signal table.
+  - `engine/market_state/runtime.py` builds market-state regime truth from trend, breadth, liquidity proxies, style balance, and industry-router bias.
+  - `engine/data_gap_engine.py` identifies missing derived features or refresh actions.
+  - `engine/context_pack.py` now merges extracted events, industry-router summary, market-state truth, gap findings, and bridge context into `research_context_pack.json`.
 - V6 planning layer:
-  - `hub_v6/research_brief_engine.py` reads the context pack, including market-state truth and mechanism-aware context, and produces `research_brief.json`.
-  - `hub_v6/llm_router.py` is the provider abstraction for OpenAI / DeepSeek / local Ollama.
-  - `hub_v6/v5_bridge.py` converts the research brief into bridge artifacts such as `candidate_override.json` under `data/event_lake_v6/bridge`.
+  - `engine/research_brief_engine.py` reads the context pack, including market-state truth and mechanism-aware context, and produces `research_brief.json`.
+  - `engine/llm_router.py` is the provider abstraction for OpenAI / DeepSeek / local Ollama.
+  - `engine/v5_bridge.py` converts the research brief into bridge artifacts such as `candidate_override.json` under `data/event_lake_v6/bridge`.
 - Bridge boundary between V6 and V5:
   - `data/event_lake_v6/bridge` is the main handoff directory between the supervisor/V6 side and the V5 research engine.
   - Important bridge files include:
@@ -1084,10 +1248,10 @@
     - `performance_feedback.json`
     - `last_token_plan.json`
 - V5.1 GPU research runtime:
-  - The live V5.1 runtime is the embedded package tree `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime`.
+  - The live V5.1 runtime is the embedded package tree `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\research_brain`.
   - The archived root-level `quant_research_hub_v5` and `quant_research_hub_v5_1` directories are not imported by `main_research_runner.py`.
-  - `v5_gpu_runtime/run_research_hub_v5_1_local.py` launches the research brain and immediately hands off to `v5_gpu_runtime/hub/cli_v5.py`.
-  - `v5_gpu_runtime/hub/cli_v5.py` drives the adaptive research loop and writes `controller_state.json` plus per-cycle `cycle_summary.json`.
+  - `research_brain/run_research_hub_v5_1_local.py` launches the research brain and immediately hands off to `research_brain/hub/cli_v5.py`.
+  - `research_brain/hub/cli_v5.py` drives the adaptive research loop and writes `controller_state.json` plus per-cycle `cycle_summary.json`.
   - `candidate_factory.py` creates route/model/feature candidates, partly influenced by bridge overrides and performance feedback.
   - `codegen.py` builds candidate-local feature/model/training files in each lab workspace.
   - `single_run_v5.py` runs one candidate end-to-end.
@@ -1096,18 +1260,18 @@
   - `registry.py` appends run-level results into `registry/experiment_registry.csv`.
   - `strategy_family.py` and deployment gates summarize family-level status after each cycle.
 - Portfolio recommendation layer:
-  - `hub_v6/portfolio_v2a/` is now the formal deterministic posture/state/admission engine between raw candidate ranking and final target-book publication.
-  - `portfolio_v2a/exposure_engine.py` turns market-state + safety linkage + current book posture into total-cap, new-entry-budget, add-budget, and rebalance mode.
-  - `portfolio_v2a/lifecycle_engine.py` turns each candidate into lifecycle state, action intent, size confidence, target cap, and proposal weight.
-  - `portfolio_v2a/admission_engine.py` decides new-entry admission and replacement pressure when slots are limited.
-  - `portfolio_v2a/runtime.py` writes formal sidecars:
+  - `engine/portfolio/` is now the formal deterministic posture/state/admission engine between raw candidate ranking and final target-book publication.
+  - `portfolio/exposure_engine.py` turns market-state + safety linkage + current book posture into total-cap, new-entry-budget, add-budget, and rebalance mode.
+  - `portfolio/lifecycle_engine.py` turns each candidate into lifecycle state, action intent, size confidence, target cap, and proposal weight.
+  - `portfolio/admission_engine.py` decides new-entry admission and replacement pressure when slots are limited.
+  - `portfolio/runtime.py` writes formal sidecars:
     - `latest_portfolio_posture.json`
     - `latest_position_lifecycle.csv`
     - `position_lifecycle_daily.csv`
     - `admission_replacement_audit.json`
     - `portfolio_control_summary.json`
-  - `hub_v6/technical_confirmation/runtime.py` scores candidate-level trend, volume, stretch, and hold-health confirmation before final portfolio selection.
-  - `hub_v6/portfolio_recommendation.py` reads the latest valid V5 result, resolves the corresponding run directory, loads `latest_portfolio_v1.csv`, applies market-state-aware sizing plus technical confirmation, attaches price context, and writes:
+  - `engine/technical_confirmation/runtime.py` scores candidate-level trend, volume, stretch, and hold-health confirmation before final portfolio selection.
+  - `engine/portfolio_recommendation.py` reads the latest valid V5 result, resolves the corresponding run directory, loads `latest_portfolio_v1.csv`, applies market-state-aware sizing plus technical confirmation, attaches price context, and writes:
     - `portfolio_recommendation.json`
     - `target_positions.csv`
     - `rebalance_orders.csv`
@@ -1124,7 +1288,7 @@
     - proposal target weight
     - admission/replacement outcome
 - Release layer:
-  - `hub_v6/portfolio_release.py` is the new middle layer between research and execution.
+  - `engine/portfolio_release.py` is the new middle layer between research and execution.
   - It reads the latest portfolio recommendation artifacts and publishes a versioned release under `data\trade_release_v1\releases\<release_id>\`.
   - The release manifest now also snapshots market-state truth and technical-confirmation summary so execution can read one coherent release contract instead of recomputing posture.
   - It now also snapshots V2A posture and lifecycle-sidecar pointers so release consumers can inspect the portfolio state machine without rerunning research logic.
@@ -1133,12 +1297,12 @@
     - `latest\release_manifest.json`
     - `latest\target_positions.csv`
 - Precision execution gate:
-  - `hub_v6/execution_manager.py` owns `execution_only`.
+  - `engine/execution_manager.py` owns `execution_only`.
   - It reads the published release, checks trading day plus execution window, evaluates safety, applies market-state turnover and reduce-only posture, and only then dispatches the execution bridge.
-  - `hub_v6/trading_clock.py` owns A-share clock windows and the cached trade-calendar check.
-  - `hub_v6/clock_supervisor.py` is the lightweight heartbeat loop used by `trade_clock_service.py`.
+  - `engine/trading_clock.py` owns A-share clock windows and the cached trade-calendar check.
+  - `engine/clock_supervisor.py` is the lightweight heartbeat loop used by `trade_clock_service.py`.
 - Execution layer:
-  - `hub_v6/oms/runtime.py` is now the canonical execution-side truth runtime.
+  - `engine/oms/runtime.py` is now the canonical execution-side truth runtime.
   - It owns:
     - account ledger
     - position ledger
@@ -1165,16 +1329,16 @@
     - `latest_account_state.json` (compatibility snapshot only; OMS artifacts are authoritative)
     - `equity_curve.csv`
 - Feedback loop:
-  - After execution, `hub_v6/supervisor.py` reads `equity_curve.csv` and writes `performance_feedback.json`.
+  - After execution, `engine/supervisor.py` reads `equity_curve.csv` and writes `performance_feedback.json`.
   - OMS also emits:
     - Bucket A truth feedback into OMS ledgers/artifacts only
     - Bucket B control feedback into `control_feedback_latest.json` for V2A posture pacing
     - Bucket C research meta feedback into `research_meta_feedback_latest.json`, which is now injected into the research context pack as aggregated execution realism
     - Bucket D narrative feedback into a non-authoritative human-readable sidecar
   - That feedback is then consumed on the next run by:
-    - `hub_v6/supervisor.py` itself
-    - `v5_gpu_runtime/hub/candidate_factory.py`
-    - `hub_v6/portfolio_recommendation.py`
+    - `engine/supervisor.py` itself
+    - `research_brain/hub/candidate_factory.py`
+    - `engine/portfolio_recommendation.py`
 - Downstream recovery mode:
   - `resume_downstream` intentionally skips market update, V6 planning, and V5 research.
   - It starts from the latest completed V5 artifacts and reruns only:
@@ -1188,6 +1352,11 @@
 | `supervisor_state.json` | integrated supervisor | operator / debugging | `F:\quant_data\AshareC#\data\event_lake_v6\research\supervisor\supervisor_state.json` | JSON | first stop for top-level step status; now includes `current_stage`, `stages`, and `stage_history` during runtime |
 | `runtime_stage_notes.json` | supervisor local explainer sidecar | operator / debugging | `F:\quant_data\AshareC#\data\event_lake_v6\research\supervisor\runtime_stage_notes.json` | JSON | rolling operator notes for selected long stages with suggested watch files |
 | `market_pipeline_report.json` | market pipeline | operator / debugging | `F:\quant_data\AshareC#\data\daily_cache_v6\market_pipeline_report.json` | JSON | shows data sync and train append status |
+| `external_research_refresh_manifest.json` | external research refresh | operator / website / research debugging | `F:\quant_data\AshareC#\data\external_research_feeds\latest\external_research_refresh_manifest.json` | JSON | daily bounded refresh summary for Qianzhan and GGZY ingestion |
+| `qianzhan_pages\*.json` | external research refresh | research debugging / manual source review | `F:\quant_data\AshareC#\data\external_research_feeds\latest\qianzhan_pages\*.json` | JSON | raw captured member/web page excerpts and bounded LLM tags |
+| `ggzy_notices\*.json` | external research refresh | research debugging / manual source review | `F:\quant_data\AshareC#\data\external_research_feeds\latest\ggzy_notices\*.json` | JSON | raw GGZY detail-page captures used for notice indexing |
+| `intraday_proxy_manifest.json` | intraday proxy refresh | operator / website / execution debugging | `F:\quant_data\AshareC#\data\trade_clock\intraday_proxy\latest\intraday_proxy_manifest.json` | JSON | summary for realtime quote/list/tick refresh and normalized account-truth snapshot |
+| `account_truth_snapshot.json` | intraday proxy refresh | website / operator / execution debugging | `F:\quant_data\AshareC#\data\trade_clock\intraday_proxy\latest\account_truth_snapshot.json` | JSON | normalized account-truth bridge using broker health + OMS snapshot + pending-order counts |
 | `research_context_pack.json` | context pack builder | research brief engine / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\context_pack\research_context_pack.json` | JSON | full evidence pack |
 | `announcement_evidence_cards.json` | V6 additive local evidence-card sidecar | research brief engine / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\evidence_cards\announcement_evidence_cards.json` | JSON | compact high-value announcement evidence cards; additive only |
 | `research_brief.json` | V6 research planner | V5 bridge / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\briefs\research_brief.json` | JSON | core planning artifact |
@@ -1225,11 +1394,11 @@
 | `candidate_override.json` | V5 bridge | V5.1 runtime | `F:\quant_data\AshareC#\data\event_lake_v6\bridge\candidate_override.json` | JSON | tells V5 what routes, models, labels to favor |
 | `latest_v5_cycle_review.json` | supervisor local V5 review sidecar | operator / debugging | `F:\quant_data\AshareC#\data\research_hub_v5_1_gpu_integrated\reviews\latest_v5_cycle_review.json` | JSON | concise local review over latest completed V5 cycle; additive only |
 | `portfolio_recommendation.json` | portfolio recommendation layer | operator / execution bridge | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio_recommendation.json` | JSON | summary of selected strategy and portfolio state, now also including market-state posture, technical-confirmation summary, and post-filter reweight totals |
-| `latest_portfolio_posture.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio_v2a\latest_portfolio_posture.json` | JSON | portfolio-level posture contract with exposure cap, new-entry budget, add budget, rebalance mode, safety linkage, and replacement aggressiveness |
-| `latest_position_lifecycle.csv` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio_v2a\latest_position_lifecycle.csv` | CSV | latest per-name lifecycle state, action intent, proposal weight, final weight, cap, and reason fields |
-| `position_lifecycle_daily.csv` | portfolio V2A runtime | operator / replay / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio_v2a\position_lifecycle_daily.csv` | CSV | rolling history of lifecycle states for replay and threshold scans |
-| `admission_replacement_audit.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio_v2a\admission_replacement_audit.json` | JSON | explains which new names were admitted, denied, or used to replace weaker incumbents |
-| `portfolio_control_summary.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio_v2a\portfolio_control_summary.json` | JSON | V2A state counts, exposure usage, replacement counts, and soft-crowding snapshot |
+| `latest_portfolio_posture.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio\latest_portfolio_posture.json` | JSON | portfolio-level posture contract with exposure cap, new-entry budget, add budget, rebalance mode, safety linkage, and replacement aggressiveness |
+| `latest_position_lifecycle.csv` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio\latest_position_lifecycle.csv` | CSV | latest per-name lifecycle state, action intent, proposal weight, final weight, cap, and reason fields |
+| `position_lifecycle_daily.csv` | portfolio V2A runtime | operator / replay / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio\position_lifecycle_daily.csv` | CSV | rolling history of lifecycle states for replay and threshold scans |
+| `admission_replacement_audit.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio\admission_replacement_audit.json` | JSON | explains which new names were admitted, denied, or used to replace weaker incumbents |
+| `portfolio_control_summary.json` | portfolio V2A runtime | operator / release / audit | `F:\quant_data\AshareC#\data\portfolio_recommendation_v6\portfolio\portfolio_control_summary.json` | JSON | V2A state counts, exposure usage, replacement counts, and soft-crowding snapshot |
 | `latest_technical_confirmation.csv` | technical-confirmation runtime | portfolio recommendation / release / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\technical_confirmation\latest_technical_confirmation.csv` | CSV | latest candidate-level technical gate output with entry allow flag, gate reason, and weight multiplier |
 | `technical_confirmation_daily.csv` | technical-confirmation runtime | operator / debugging | `F:\quant_data\AshareC#\data\event_lake_v6\research\technical_confirmation\technical_confirmation_daily.csv` | CSV | rolling technical-confirmation history across candidate symbols and dates |
 | `technical_confirmation_summary.json` | technical-confirmation runtime | portfolio recommendation / release / operator | `F:\quant_data\AshareC#\data\event_lake_v6\research\technical_confirmation\technical_confirmation_summary.json` | JSON | latest confirmation counts, strictness level, and summary posture |
@@ -1288,107 +1457,113 @@
 ## Config Surface
 | Config | Location | Current | Impact |
 | --- | --- | --- | --- |
-| `DEFAULT_RUN_PROFILE` | `hub_v6/local_settings.py` | `quick_test` | changes which runtime profile is used when no `--profile` is passed |
-| `TOKEN_PLAN_MIN_INTERVAL_HOURS` | `hub_v6/local_settings.py` | `24` | controls V6 research-plan reuse frequency |
-| `OVERNIGHT_V5_GPU_MAX_CYCLES_PER_TICK` | `hub_v6/local_settings.py` | `8` | controls overnight runtime and research depth |
-| `QUICK_TEST_V5_GPU_MAX_CYCLES_PER_TICK` | `hub_v6/local_settings.py` | `1` | controls quick_test runtime and debugging speed |
-| `ENABLE_EXECUTION_BRIDGE` | `hub_v6/local_settings.py` | `private local_settings.py value; example default = False` | actual execution-bridge enablement is environment-specific because the tracked repo does not include the private operator `local_settings.py` |
-| `PORTFOLIO_ENFORCE_EXECUTABLE_UNIVERSE` | `hub_v6/local_settings.py` | `True` | filters research-side candidates to broker-executable symbols before release publication, currently restricted to `.SH` / `.SZ` |
-| `PORTFOLIO_EXECUTABLE_ALLOWED_SUFFIXES` / `PORTFOLIO_EXECUTABLE_REQUIRE_TRADABLE_BASIC` | `hub_v6/local_settings.py` | `.SH,.SZ / True` | enforces exchange suffix and tradable-basic checks so `.BJ` and non-tradable rows do not leak into the formal target book |
-| `PORTFOLIO_ENABLE_POST_FILTER_REWEIGHT` | `hub_v6/local_settings.py` | `True` | allows filtered target weights to be re-expanded toward a meaningful exposure floor when regime capacity still exists |
-| `PORTFOLIO_MIN_EXPOSURE_FILL_RATIO` | `hub_v6/local_settings.py` | `0.75` | target fraction of the current total-exposure cap used by post-filter reweighting when the filtered book is too sparse |
-| `ENABLE_PORTFOLIO_V2A` | `hub_v6/local_settings.py` | `True` | enables the deterministic V2A posture/lifecycle/admission engine inside portfolio recommendation |
-| `ENABLE_INTEGRATED_THESIS` / `INTEGRATED_THESIS_ROOT` / `INTEGRATED_THESIS_PORTFOLIO_BUDGET_OVERLAY` | `hub_v6/local_settings.py` | `True / <research_root>\integrated_thesis / True` | controls the single-mainline stock-alpha builder, its artifact root, and whether portfolio sizing reads the thesis alpha-budget multiplier |
-| `RESEARCH_FACT_SQLITE_PATH` | `hub_v6/local_settings.py` | `F:\quant_data\AshareC#\data\sql_store\research_fact_layers_v1.sqlite3` | points the research-side structured fact/factor layer used by integrated thesis and router factor joins |
-| `MANUAL_EVENT_PROXY_PATH` | `hub_v6/local_settings.py` | `<research_root>\manual_event_proxy\manual_event_proxy.jsonl` | optional operator-maintained research-only event supplement; must stay outside canonical truth |
-| `ENABLE_RESEARCH_FACT_REFRESH` / `RESEARCH_FACT_REFRESH_RUN_BEFORE_RESEARCH` / `RESEARCH_FACT_REFRESH_FAIL_OPEN` | `hub_v6/local_settings.py` | `True / True / True` | controls whether the trade clock refreshes the research-side event-fact and hard-factor sqlite before research phases |
-| `RESEARCH_FACT_EVENT_LOOKBACK_DAYS` / `RESEARCH_FACT_HARD_FACTOR_LOOKBACK_DAYS` / `RESEARCH_FACT_REFRESH_TIMEOUT_MINUTES` | `hub_v6/local_settings.py` | `60 / 5 / 90` | controls daily refresh depth and timeout for event-fact and hard-factor builders |
-| `RESEARCH_FACT_EVENT_SCRIPT_PATH` / `RESEARCH_FACT_HARD_FACTOR_SCRIPT_PATH` | `hub_v6/local_settings.py` | `scripts\build_event_fact_layer.py / scripts\build_industry_hard_factor_layer.py` | explicit builder entrypoints used by the clock-side daily refresh |
-| `PORTFOLIO_ENABLE_LIFECYCLE_STATE_MACHINE` | `hub_v6/local_settings.py` | `True` | enables lifecycle-state assignment before final target-book publication |
-| `PORTFOLIO_ENABLE_ADMISSION_REPLACEMENT` | `hub_v6/local_settings.py` | `True` | enables new-entry admission and weak-incumbent replacement logic when slots are constrained |
-| `PORTFOLIO_ENABLE_SOFT_CROWDING_PENALTY` | `hub_v6/local_settings.py` | `True` | enables soft crowding penalties as a ranking/weight modifier instead of hard blocking |
-| `PORTFOLIO_ENABLE_RICH_PORTFOLIO_AUDIT` | `hub_v6/local_settings.py` | `True` | enables richer V2A sidecars and release/audit metadata |
-| `PORTFOLIO_V2A_PILOT_MAX_WEIGHT` | `hub_v6/local_settings.py` | `0.04` | maximum default size for `pilot` positions before post-filter reweight and single-name caps are applied |
-| `PORTFOLIO_V2A_BUILD_SPEED` / `PORTFOLIO_V2A_TRIM_SPEED` | `hub_v6/local_settings.py` | `1.25 / 0.72` | controls how quickly V2A expands strong incumbents and trims weakening names |
-| `PORTFOLIO_V2A_REPLACEMENT_IMPROVEMENT_THRESHOLD` | `hub_v6/local_settings.py` | `0.08` | minimum admission-vs-retention improvement needed before replacing a weaker incumbent |
-| `PORTFOLIO_V2A_SOFT_CROWDING_PENALTY_STRENGTH` | `hub_v6/local_settings.py` | `0.08` | strength of soft crowding penalties inside V2A admission/retention scoring |
-| `ENABLE_PORTFOLIO_CONTROL` | `hub_v6/local_settings.py` | `True` | enables the low-risk portfolio control audit and constraint layer inside execution |
-| `PORTFOLIO_CONTROL_DRIFT_THRESHOLD` | `hub_v6/local_settings.py` | `0.005` | small weight gaps below this threshold are skipped instead of traded |
-| `PORTFOLIO_CONTROL_MAX_DAILY_TURNOVER_RATIO` | `hub_v6/local_settings.py` | `0.25` | caps planned daily turnover and truncates lower-priority orders when exceeded |
-| `PORTFOLIO_CONTROL_ENABLE_EXECUTION_FEEDBACK` | `hub_v6/local_settings.py` | `True` | writes normalized planned/submitted/filled/skipped execution feedback |
-| `PORTFOLIO_CONTROL_ENABLE_DEV_LOG_SNAPSHOT` | `hub_v6/local_settings.py` | `True` | refreshes the live portfolio snapshot block inside `CODEX_DEV_LOG.md` after execution |
-| `PORTFOLIO_CONTROL_DEV_LOG_TOP_HOLDINGS` | `hub_v6/local_settings.py` | `8` | controls how many top holdings are written into the dev-log snapshot |
-| `PORTFOLIO_CONTROL_ALLOW_ODD_LOT_EXIT` | `hub_v6/local_settings.py` | `True` | allows cleanup of residual odd-lot sell quantities in the control layer |
-| `ENABLE_OMS` | `hub_v6/local_settings.py` | `True` | turns the broker-truth-first OMS layer on beneath `execution_only` and the gmtrade bridge |
-| `OMS_OUTPUT_ROOT` | `hub_v6/local_settings.py` | `private local_settings.py value; example default = F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1` | authoritative OMS ledger/artifact root; stable workspace default root is local `AshareC#\data` |
-| `OMS_USE_BROKER_TRUTH_FOR_V2A_CONTINUITY` | `hub_v6/local_settings.py` | `True` | makes V2A prefer OMS actual-state truth over previous target/lifecycle sidecars when continuity is available |
-| `OMS_INTENT_EXPIRY_DAYS` | `hub_v6/local_settings.py` | `3` | default expiry window for OMS intents before they should be treated as stale |
-| `OMS_CONTROL_FEEDBACK_LOOKBACK_RUNS` / `OMS_RESEARCH_META_LOOKBACK_RUNS` | `hub_v6/local_settings.py` | `20 / 60` | lookback windows for Bucket B control feedback and Bucket C research meta feedback aggregation |
-| `OMS_COMPAT_WRITE_LATEST_ACCOUNT_STATE` | `hub_v6/local_settings.py` | `True` | keeps writing `latest_account_state.json` for legacy consumers even though OMS artifacts are authoritative |
-| OMS_ENABLE_BROKER_CANCEL | hub_v6/local_settings.py | True | allows OMS cancel/replace logic to request broker-side order_cancel when unresolved open orders are superseded or operator-cancelled |
-| `EXECUTION_ACCOUNT_MODE` | `hub_v6/local_settings.py` | `precision` | selects which gmtrade account profile is active by default: `simulation` or `precision` |
-| `PRECISION_TRADE_ENABLED` | `hub_v6/local_settings.py` | `False` | when `False`, precision mode still refreshes heartbeat/gate logs but refuses to call the execution bridge |
-| `ALLOW_INTEGRATED_PRECISION_EXECUTION` | `hub_v6/local_settings.py` | `False` | keeps `integrated_supervisor` and `resume_downstream` from directly executing against the precision account unless explicitly allowed |
-| `EXECUTION_IGNORE_MARKET_PANIC_REDUCE_ONLY` | `hub_v6/local_settings.py` | `False` | keeps normal execution fail-closed under `PANIC`; use explicit overrides when a controlled precision probe must place new buys |
-| `ENABLE_TRADE_RELEASE` | `hub_v6/local_settings.py` | `True` | turns the middle release layer on after research-side portfolio generation |
-| `TRADE_RELEASE_VALID_AFTER_TIME` / `TRADE_RELEASE_EXPIRES_AT_TIME` | `hub_v6/local_settings.py` | `09:30:30 / 15:00:00` | defines the default release validity window consumed by `execution_only` |
+| `DEFAULT_RUN_PROFILE` | `engine/local_settings.py` | `quick_test` | changes which runtime profile is used when no `--profile` is passed |
+| `TOKEN_PLAN_MIN_INTERVAL_HOURS` | `engine/local_settings.py` | `24` | controls V6 research-plan reuse frequency |
+| `OVERNIGHT_V5_GPU_MAX_CYCLES_PER_TICK` | `engine/local_settings.py` | `8` | controls overnight runtime and research depth |
+| `QUICK_TEST_V5_GPU_MAX_CYCLES_PER_TICK` | `engine/local_settings.py` | `1` | controls quick_test runtime and debugging speed |
+| `ENABLE_EXECUTION_BRIDGE` | `engine/local_settings.py` | `private local_settings.py value; example default = False` | actual execution-bridge enablement is environment-specific because the tracked repo does not include the private operator `local_settings.py` |
+| `PORTFOLIO_ENFORCE_EXECUTABLE_UNIVERSE` | `engine/local_settings.py` | `True` | filters research-side candidates to broker-executable symbols before release publication, currently restricted to `.SH` / `.SZ` |
+| `ENABLE_EXTERNAL_RESEARCH_REFRESH` | `engine/local_settings.py` | `True` | enables bounded daily external research refresh before `research` / `research_refresh` |
+| `EXTERNAL_RESEARCH_QIANZHAN_DAILY_PAGE_BUDGET` | `engine/local_settings.py` | `24` | caps daily Qianzhan member/web page pulls to avoid over-polling and membership abuse |
+| `EXTERNAL_RESEARCH_GGZY_MAX_NOTICES_PER_RUN` | `engine/local_settings.py` | `36` | caps GGZY notice-detail pulls per refresh run |
+| `ENABLE_TUSHARE_REALTIME_LIST` | `engine/local_settings.py` | `True` | enables `realtime_list` for intraday breadth proxy refresh |
+| `ENABLE_TUSHARE_REALTIME_TICK` | `engine/local_settings.py` | `True` | enables bounded `realtime_tick` summary refresh for tracked symbols |
+| `TUSHARE_REALTIME_TICK_SYMBOL_LIMIT` | `engine/local_settings.py` | `6` | caps per-refresh tracked-symbol tick pulls to control realtime quota pressure |
+| `PORTFOLIO_EXECUTABLE_ALLOWED_SUFFIXES` / `PORTFOLIO_EXECUTABLE_REQUIRE_TRADABLE_BASIC` | `engine/local_settings.py` | `.SH,.SZ / True` | enforces exchange suffix and tradable-basic checks so `.BJ` and non-tradable rows do not leak into the formal target book |
+| `PORTFOLIO_ENABLE_POST_FILTER_REWEIGHT` | `engine/local_settings.py` | `True` | allows filtered target weights to be re-expanded toward a meaningful exposure floor when regime capacity still exists |
+| `PORTFOLIO_MIN_EXPOSURE_FILL_RATIO` | `engine/local_settings.py` | `0.75` | target fraction of the current total-exposure cap used by post-filter reweighting when the filtered book is too sparse |
+| `ENABLE_PORTFOLIO_V2A` | `engine/local_settings.py` | `True` | enables the deterministic V2A posture/lifecycle/admission engine inside portfolio recommendation |
+| `ENABLE_INTEGRATED_THESIS` / `INTEGRATED_THESIS_ROOT` / `INTEGRATED_THESIS_PORTFOLIO_BUDGET_OVERLAY` | `engine/local_settings.py` | `True / <research_root>\integrated_thesis / True` | controls the single-mainline stock-alpha builder, its artifact root, and whether portfolio sizing reads the thesis alpha-budget multiplier |
+| `RESEARCH_FACT_SQLITE_PATH` | `engine/local_settings.py` | `F:\quant_data\AshareC#\data\sql_store\research_fact_layers_v1.sqlite3` | points the research-side structured fact/factor layer used by integrated thesis and router factor joins |
+| `MANUAL_EVENT_PROXY_PATH` | `engine/local_settings.py` | `<research_root>\manual_event_proxy\manual_event_proxy.jsonl` | optional operator-maintained research-only event supplement; must stay outside canonical truth |
+| `ENABLE_RESEARCH_FACT_REFRESH` / `RESEARCH_FACT_REFRESH_RUN_BEFORE_RESEARCH` / `RESEARCH_FACT_REFRESH_FAIL_OPEN` | `engine/local_settings.py` | `True / True / True` | controls whether the trade clock refreshes the research-side event-fact and hard-factor sqlite before research phases |
+| `RESEARCH_FACT_EVENT_LOOKBACK_DAYS` / `RESEARCH_FACT_HARD_FACTOR_LOOKBACK_DAYS` / `RESEARCH_FACT_REFRESH_TIMEOUT_MINUTES` | `engine/local_settings.py` | `60 / 5 / 90` | controls daily refresh depth and timeout for event-fact and hard-factor builders |
+| `RESEARCH_FACT_EVENT_SCRIPT_PATH` / `RESEARCH_FACT_HARD_FACTOR_SCRIPT_PATH` | `engine/local_settings.py` | `scripts\build_event_fact_layer.py / scripts\build_industry_hard_factor_layer.py` | explicit builder entrypoints used by the clock-side daily refresh |
+| `PORTFOLIO_ENABLE_LIFECYCLE_STATE_MACHINE` | `engine/local_settings.py` | `True` | enables lifecycle-state assignment before final target-book publication |
+| `PORTFOLIO_ENABLE_ADMISSION_REPLACEMENT` | `engine/local_settings.py` | `True` | enables new-entry admission and weak-incumbent replacement logic when slots are constrained |
+| `PORTFOLIO_ENABLE_SOFT_CROWDING_PENALTY` | `engine/local_settings.py` | `True` | enables soft crowding penalties as a ranking/weight modifier instead of hard blocking |
+| `PORTFOLIO_ENABLE_RICH_PORTFOLIO_AUDIT` | `engine/local_settings.py` | `True` | enables richer V2A sidecars and release/audit metadata |
+| `PORTFOLIO_V2A_PILOT_MAX_WEIGHT` | `engine/local_settings.py` | `0.04` | maximum default size for `pilot` positions before post-filter reweight and single-name caps are applied |
+| `PORTFOLIO_V2A_BUILD_SPEED` / `PORTFOLIO_V2A_TRIM_SPEED` | `engine/local_settings.py` | `1.25 / 0.72` | controls how quickly V2A expands strong incumbents and trims weakening names |
+| `PORTFOLIO_V2A_REPLACEMENT_IMPROVEMENT_THRESHOLD` | `engine/local_settings.py` | `0.08` | minimum admission-vs-retention improvement needed before replacing a weaker incumbent |
+| `PORTFOLIO_V2A_SOFT_CROWDING_PENALTY_STRENGTH` | `engine/local_settings.py` | `0.08` | strength of soft crowding penalties inside V2A admission/retention scoring |
+| `ENABLE_PORTFOLIO_CONTROL` | `engine/local_settings.py` | `True` | enables the low-risk portfolio control audit and constraint layer inside execution |
+| `PORTFOLIO_CONTROL_DRIFT_THRESHOLD` | `engine/local_settings.py` | `0.005` | small weight gaps below this threshold are skipped instead of traded |
+| `PORTFOLIO_CONTROL_MAX_DAILY_TURNOVER_RATIO` | `engine/local_settings.py` | `0.25` | caps planned daily turnover and truncates lower-priority orders when exceeded |
+| `PORTFOLIO_CONTROL_ENABLE_EXECUTION_FEEDBACK` | `engine/local_settings.py` | `True` | writes normalized planned/submitted/filled/skipped execution feedback |
+| `PORTFOLIO_CONTROL_ENABLE_DEV_LOG_SNAPSHOT` | `engine/local_settings.py` | `True` | refreshes the live portfolio snapshot block inside `CODEX_DEV_LOG.md` after execution |
+| `PORTFOLIO_CONTROL_DEV_LOG_TOP_HOLDINGS` | `engine/local_settings.py` | `8` | controls how many top holdings are written into the dev-log snapshot |
+| `PORTFOLIO_CONTROL_ALLOW_ODD_LOT_EXIT` | `engine/local_settings.py` | `True` | allows cleanup of residual odd-lot sell quantities in the control layer |
+| `ENABLE_OMS` | `engine/local_settings.py` | `True` | turns the broker-truth-first OMS layer on beneath `execution_only` and the gmtrade bridge |
+| `OMS_OUTPUT_ROOT` | `engine/local_settings.py` | `private local_settings.py value; example default = F:\quant_data\AshareC#\data\live_execution_bridge\oms_v1` | authoritative OMS ledger/artifact root; stable workspace default root is local `AshareC#\data` |
+| `OMS_USE_BROKER_TRUTH_FOR_V2A_CONTINUITY` | `engine/local_settings.py` | `True` | makes V2A prefer OMS actual-state truth over previous target/lifecycle sidecars when continuity is available |
+| `OMS_INTENT_EXPIRY_DAYS` | `engine/local_settings.py` | `3` | default expiry window for OMS intents before they should be treated as stale |
+| `OMS_CONTROL_FEEDBACK_LOOKBACK_RUNS` / `OMS_RESEARCH_META_LOOKBACK_RUNS` | `engine/local_settings.py` | `20 / 60` | lookback windows for Bucket B control feedback and Bucket C research meta feedback aggregation |
+| `OMS_COMPAT_WRITE_LATEST_ACCOUNT_STATE` | `engine/local_settings.py` | `True` | keeps writing `latest_account_state.json` for legacy consumers even though OMS artifacts are authoritative |
+| OMS_ENABLE_BROKER_CANCEL | engine/local_settings.py | True | allows OMS cancel/replace logic to request broker-side order_cancel when unresolved open orders are superseded or operator-cancelled |
+| `EXECUTION_ACCOUNT_MODE` | `engine/local_settings.py` | `precision` | selects which gmtrade account profile is active by default: `simulation` or `precision` |
+| `PRECISION_TRADE_ENABLED` | `engine/local_settings.py` | `False` | when `False`, precision mode still refreshes heartbeat/gate logs but refuses to call the execution bridge |
+| `ALLOW_INTEGRATED_PRECISION_EXECUTION` | `engine/local_settings.py` | `False` | keeps `integrated_supervisor` and `resume_downstream` from directly executing against the precision account unless explicitly allowed |
+| `EXECUTION_IGNORE_MARKET_PANIC_REDUCE_ONLY` | `engine/local_settings.py` | `False` | keeps normal execution fail-closed under `PANIC`; use explicit overrides when a controlled precision probe must place new buys |
+| `ENABLE_TRADE_RELEASE` | `engine/local_settings.py` | `True` | turns the middle release layer on after research-side portfolio generation |
+| `TRADE_RELEASE_VALID_AFTER_TIME` / `TRADE_RELEASE_EXPIRES_AT_TIME` | `engine/local_settings.py` | `09:30:30 / 15:00:00` | defines the default release validity window consumed by `execution_only` |
 | `--release-trade-date` | `launch_canonical.py` / `main_research_runner.py` | operator override | release-only escape hatch for an explicitly forced same-day trading-date publication when the normal release resolver would move the book to the next trading day |
-| `ENABLE_TRADE_CLOCK` | `hub_v6/local_settings.py` | `True` | enables the lightweight always-on clock-service path |
-| `ENABLE_SAFETY_LAYER` | `hub_v6/local_settings.py` | `True` | enables fail-closed safety evaluation, manual overrides, incident logging, and gmtrade health probes on the execution side |
-| `SAFETY_HEALTH_PROBE_INTERVAL_SECONDS` | `hub_v6/local_settings.py` | `300` | controls how often the clock may refresh the broker/account health snapshot via the dedicated `gmtrade39` probe |
-| `SAFETY_ACCOUNT_STATE_MAX_AGE_SECONDS` / `SAFETY_POSITION_SYNC_MAX_AGE_SECONDS` | `hub_v6/local_settings.py` | `900 / 900` | if account/position truth is older than this, execution flips to `HALT` instead of guessing |
-| `SAFETY_FAIL_ON_UNFINISHED_ORDERS` / `SAFETY_FAIL_ON_UNKNOWN_ORDER_STATUS` | `hub_v6/local_settings.py` | `True / True` | blocks new execution when broker order truth is incomplete or not understood |
-| `SAFETY_CAUTION_*` / `SAFETY_PANIC_*` | `hub_v6/local_settings.py` | current local values | market-safety thresholds for broad-selloff detection from daily snapshot + HS300 |
-| `SAFETY_EXECUTION_FAIL_RATIO_DEGRADED` / `SAFETY_EXECUTION_FAIL_RATIO_HALT` | `hub_v6/local_settings.py` | `0.35 / 0.75` | recent execution failure ratios above these thresholds degrade or halt execution-side behavior |
-| `INDUSTRY_ROUTER_ENABLE_SOURCE_FETCH` | `hub_v6/local_settings.py` | `True` | turns the official-source sidecar on for the industry router |
-| `INDUSTRY_ROUTER_SOURCE_FETCH_TIMEOUT_SECONDS` | `hub_v6/local_settings.py` | `8` | caps per-source official-page fetch time so the sidecar stays lightweight |
-| `INDUSTRY_ROUTER_SOURCE_FETCH_CACHE_HOURS` | `hub_v6/local_settings.py` | `12` | controls reuse of cached official-source snapshots under `source_snapshots` |
-| `INDUSTRY_ROUTER_SOURCE_FETCH_MAX_SOURCES_PER_RUN` | `hub_v6/local_settings.py` | `9` | caps the number of official sources fetched in a single `industry_router` run |
-| `TRADE_CLOCK_POLL_SECONDS` | `hub_v6/local_settings.py` | `30` | controls the sleeping heartbeat interval of the clock supervisor |
-| `TRADE_CLOCK_EXECUTION_WINDOWS` | `hub_v6/local_settings.py` | `[{label=morning_primary,start=09:30:30,end=10:00:00},{label=afternoon_primary,start=13:00:00,end=14:50:00}]` | defines the currently recognized trading-session windows for `execution_only`; the scheduler phase graph is still separate from this list |
-| `TRADE_CLOCK_SIMULATION_IGNORE_MARKET_PANIC_REDUCE_ONLY` / `TRADE_CLOCK_SHADOW_IGNORE_MARKET_PANIC_REDUCE_ONLY` | `hub_v6/local_settings.py` | `True / True` | allows the trade clock’s simulation and shadow child phases to keep probing new-entry flow even on `PANIC` days instead of being silently forced to sell-only |
-| `ENABLE_INTRADAY_STATE_MACHINE` | `hub_v6/local_settings.py` | `True` | enables the formal intraday state machine sidecar refresh inside the trade-clock flow |
-| `INTRADAY_STATE_MACHINE_SHADOW_MODE` | `hub_v6/local_settings.py` | `True` | when `True`, the intraday state machine writes sidecars only; when `False`, afternoon bounded-takeover overlay is allowed |
-| `INTRADAY_STATE_MACHINE_ENABLE_AFTERNOON_OVERLAY` | `hub_v6/local_settings.py` | `True` | allows `clock_supervisor` to read `intraday_control_summary.json` and constrain the afternoon leg when not in shadow mode |
-| `INTRADAY_STATE_MACHINE_STALE_ORDER_MINUTES` | `hub_v6/local_settings.py` | `20` | default stale threshold used when mapping OMS orders/intents into `stale_pending` / `replace_required` style intraday states |
-| `INTRADAY_STATE_MACHINE_REFRESH_PHASES` | `hub_v6/local_settings.py` | `preopen_gate,simulation,shadow,midday_review,afternoon_execution,afternoon_shadow,summary` | controls which trade-clock phases trigger a sidecar refresh |
-| `ENABLE_EXECUTION_TIMING_LAYER` | `hub_v6/local_settings.py` | `True` | turns on the intraday timing-score layer that writes `timing_state`, timing scores, and timing-window summary into the formal intraday sidecars |
-| `TIMING_LAYER_BUY_SCORE_THRESHOLD` / `TIMING_LAYER_SELL_SCORE_THRESHOLD` | `hub_v6/local_settings.py` | `0.58 / 0.62` | controls when a symbol is promoted from watch/observe into `buy_ready` or `sell_ready` |
-| `TIMING_LAYER_REQUIRE_OMS_CLEAN_STATE` / `TIMING_LAYER_REQUIRE_FLOW_CONFIRMATION` | `hub_v6/local_settings.py` | `True / True` | blocks timing-ready states when OMS intent state is dirty or flow confirmation is missing |
-| `TIMING_LAYER_ENABLE_AFTERNOON_SECOND_LEG` | `hub_v6/local_settings.py` | `True` | allows the T overlay second leg to complete in the afternoon windows |
-| `TIMING_LAYER_WINDOW_CONFIG` | `hub_v6/local_settings.py` | `open_noise,morning_primary,mid_morning_low_speed,afternoon_primary,late_afternoon_reconcile,post_1450_close_only` | defines the formal intraday timing windows and which action families are open inside each window |
-| `ENABLE_T_OVERLAY` | `hub_v6/local_settings.py` | `True` | enables formal positive-T / reverse-T shadow evaluation on top of lifecycle-approved holdings |
-| `T_OVERLAY_MAX_ROUNDS_PER_SYMBOL_PER_DAY` / `T_OVERLAY_MAX_RATIO_PER_SYMBOL` | `hub_v6/local_settings.py` | `1 / 0.20` | caps how many T rounds can happen per symbol per day and how large the overlay can be relative to the base position |
-| `T_OVERLAY_DISABLE_ON_PANIC` / `T_OVERLAY_DISABLE_ON_MAJOR_EVENT` | `hub_v6/local_settings.py` | `True / True` | freezes T overlay when market panic or message-veto conditions are present |
-| `ENABLE_AUDIT_SITE_PUBLISH` / `AUDIT_SITE_PUBLISH_RUN_AFTER_SUMMARY` | `hub_v6/local_settings.py` | `True / True` | automatically publishes the latest audit pack and portal pages to the public site after `summary` |
-| `AUDIT_SITE_PUBLISH_REMOTE_HOST` / `AUDIT_SITE_PUBLISH_DOMAIN` | `hub_v6/local_settings.py` | `43.129.28.141 / peng1145141919810.xyz` | defines the SSH publish target and public domain used by the post-summary portal publish step |
+| `ENABLE_TRADE_CLOCK` | `engine/local_settings.py` | `True` | enables the lightweight always-on clock-service path |
+| `ENABLE_SAFETY_LAYER` | `engine/local_settings.py` | `True` | enables fail-closed safety evaluation, manual overrides, incident logging, and gmtrade health probes on the execution side |
+| `SAFETY_HEALTH_PROBE_INTERVAL_SECONDS` | `engine/local_settings.py` | `300` | controls how often the clock may refresh the broker/account health snapshot via the dedicated `gmtrade39` probe |
+| `SAFETY_ACCOUNT_STATE_MAX_AGE_SECONDS` / `SAFETY_POSITION_SYNC_MAX_AGE_SECONDS` | `engine/local_settings.py` | `900 / 900` | if account/position truth is older than this, execution flips to `HALT` instead of guessing |
+| `SAFETY_FAIL_ON_UNFINISHED_ORDERS` / `SAFETY_FAIL_ON_UNKNOWN_ORDER_STATUS` | `engine/local_settings.py` | `True / True` | blocks new execution when broker order truth is incomplete or not understood |
+| `SAFETY_CAUTION_*` / `SAFETY_PANIC_*` | `engine/local_settings.py` | current local values | market-safety thresholds for broad-selloff detection from daily snapshot + HS300 |
+| `SAFETY_EXECUTION_FAIL_RATIO_DEGRADED` / `SAFETY_EXECUTION_FAIL_RATIO_HALT` | `engine/local_settings.py` | `0.35 / 0.75` | recent execution failure ratios above these thresholds degrade or halt execution-side behavior |
+| `INDUSTRY_ROUTER_ENABLE_SOURCE_FETCH` | `engine/local_settings.py` | `True` | turns the official-source sidecar on for the industry router |
+| `INDUSTRY_ROUTER_SOURCE_FETCH_TIMEOUT_SECONDS` | `engine/local_settings.py` | `8` | caps per-source official-page fetch time so the sidecar stays lightweight |
+| `INDUSTRY_ROUTER_SOURCE_FETCH_CACHE_HOURS` | `engine/local_settings.py` | `12` | controls reuse of cached official-source snapshots under `source_snapshots` |
+| `INDUSTRY_ROUTER_SOURCE_FETCH_MAX_SOURCES_PER_RUN` | `engine/local_settings.py` | `9` | caps the number of official sources fetched in a single `industry_router` run |
+| `TRADE_CLOCK_POLL_SECONDS` | `engine/local_settings.py` | `30` | controls the sleeping heartbeat interval of the clock supervisor |
+| `TRADE_CLOCK_EXECUTION_WINDOWS` | `engine/local_settings.py` | `[{label=morning_primary,start=09:30:30,end=10:00:00},{label=afternoon_primary,start=13:00:00,end=14:50:00}]` | defines the currently recognized trading-session windows for `execution_only`; the scheduler phase graph is still separate from this list |
+| `TRADE_CLOCK_SIMULATION_IGNORE_MARKET_PANIC_REDUCE_ONLY` / `TRADE_CLOCK_SHADOW_IGNORE_MARKET_PANIC_REDUCE_ONLY` | `engine/local_settings.py` | `True / True` | allows the trade clock’s simulation and shadow child phases to keep probing new-entry flow even on `PANIC` days instead of being silently forced to sell-only |
+| `ENABLE_INTRADAY_STATE_MACHINE` | `engine/local_settings.py` | `True` | enables the formal intraday state machine sidecar refresh inside the trade-clock flow |
+| `INTRADAY_STATE_MACHINE_SHADOW_MODE` | `engine/local_settings.py` | `True` | when `True`, the intraday state machine writes sidecars only; when `False`, afternoon bounded-takeover overlay is allowed |
+| `INTRADAY_STATE_MACHINE_ENABLE_AFTERNOON_OVERLAY` | `engine/local_settings.py` | `True` | allows `clock_supervisor` to read `intraday_control_summary.json` and constrain the afternoon leg when not in shadow mode |
+| `INTRADAY_STATE_MACHINE_STALE_ORDER_MINUTES` | `engine/local_settings.py` | `20` | default stale threshold used when mapping OMS orders/intents into `stale_pending` / `replace_required` style intraday states |
+| `INTRADAY_STATE_MACHINE_REFRESH_PHASES` | `engine/local_settings.py` | `preopen_gate,simulation,shadow,midday_review,afternoon_execution,afternoon_shadow,summary` | controls which trade-clock phases trigger a sidecar refresh |
+| `ENABLE_EXECUTION_TIMING_LAYER` | `engine/local_settings.py` | `True` | turns on the intraday timing-score layer that writes `timing_state`, timing scores, and timing-window summary into the formal intraday sidecars |
+| `TIMING_LAYER_BUY_SCORE_THRESHOLD` / `TIMING_LAYER_SELL_SCORE_THRESHOLD` | `engine/local_settings.py` | `0.58 / 0.62` | controls when a symbol is promoted from watch/observe into `buy_ready` or `sell_ready` |
+| `TIMING_LAYER_REQUIRE_OMS_CLEAN_STATE` / `TIMING_LAYER_REQUIRE_FLOW_CONFIRMATION` | `engine/local_settings.py` | `True / True` | blocks timing-ready states when OMS intent state is dirty or flow confirmation is missing |
+| `TIMING_LAYER_ENABLE_AFTERNOON_SECOND_LEG` | `engine/local_settings.py` | `True` | allows the T overlay second leg to complete in the afternoon windows |
+| `TIMING_LAYER_WINDOW_CONFIG` | `engine/local_settings.py` | `open_noise,morning_primary,mid_morning_low_speed,afternoon_primary,late_afternoon_reconcile,post_1450_close_only` | defines the formal intraday timing windows and which action families are open inside each window |
+| `ENABLE_T_OVERLAY` | `engine/local_settings.py` | `True` | enables formal positive-T / reverse-T shadow evaluation on top of lifecycle-approved holdings |
+| `T_OVERLAY_MAX_ROUNDS_PER_SYMBOL_PER_DAY` / `T_OVERLAY_MAX_RATIO_PER_SYMBOL` | `engine/local_settings.py` | `1 / 0.20` | caps how many T rounds can happen per symbol per day and how large the overlay can be relative to the base position |
+| `T_OVERLAY_DISABLE_ON_PANIC` / `T_OVERLAY_DISABLE_ON_MAJOR_EVENT` | `engine/local_settings.py` | `True / True` | freezes T overlay when market panic or message-veto conditions are present |
+| `ENABLE_AUDIT_SITE_PUBLISH` / `AUDIT_SITE_PUBLISH_RUN_AFTER_SUMMARY` | `engine/local_settings.py` | `True / True` | automatically publishes the latest audit pack and portal pages to the public site after `summary` |
+| `AUDIT_SITE_PUBLISH_REMOTE_HOST` / `AUDIT_SITE_PUBLISH_DOMAIN` | `engine/local_settings.py` | `43.129.28.141 / peng1145141919810.xyz` | defines the SSH publish target and public domain used by the post-summary portal publish step |
 | `manual_halt` / `manual_reduce_only` | `data\\trade_clock\\manual_overrides.json` | `False / False` | operator-facing runtime kill switches; `manual_halt` blocks all new orders, `manual_reduce_only` keeps the bridge sell-only |
-| `ENABLE_INDUSTRY_ROUTER` | `hub_v6/local_settings.py` | `True` | turns the stock/mechanism skeleton and split-backtest sidecar on inside V6 |
-| `INDUSTRY_ROUTER_CONTRACT_ROOT` / `INDUSTRY_ROUTER_OUTPUT_ROOT` | `hub_v6/local_settings.py` | `...\configs\industry_router / data\event_lake_v6\research\industry_router` | separates static contracts from runtime artifacts |
-| `INDUSTRY_ROUTER_HISTORY_LOOKBACK_DAYS` | `hub_v6/local_settings.py` | `14` | controls how much event-store history is pulled into the router |
-| `INDUSTRY_ROUTER_ENABLE_BACKTEST` | `hub_v6/local_settings.py` | `True` | enables the split mechanism backtest skeleton after signal generation |
-| `INDUSTRY_ROUTER_BACKTEST_HORIZONS` / `INDUSTRY_ROUTER_BACKTEST_TOP_K` | `hub_v6/local_settings.py` | `[1, 2] / 3` | controls the minimal forward-return horizons and per-day top-k used by the split backtest |
-| `INDUSTRY_ROUTER_ENABLE_CONTEXT_PACK` | `hub_v6/local_settings.py` | `True` | allows the router summary to be injected into `research_context_pack.json` |
-| `ENABLE_MARKET_STATE_ENGINE` | `hub_v6/local_settings.py` | `True` | turns the formal market-state regime layer on inside V6 planning and downstream portfolio/release/execution consumers |
-| `MARKET_STATE_USE_ROUTER_BIAS` | `hub_v6/local_settings.py` | `True` | allows mechanism leadership from the industry-router output to influence market-state mechanism bias |
-| `MARKET_STATE_ROOT` | `hub_v6/local_settings.py` | `F:\quant_data\Ashare\data\market_state_v6` | controls where market-state artifacts are written and read |
-| `MARKET_STATE_CONFIG_PATH` | `hub_v6/local_settings.py` | `...\configs\market_state\default.json` | policy thresholds and regime-band definitions for the market-state engine |
-| `ENABLE_TECHNICAL_CONFIRMATION` | `hub_v6/local_settings.py` | `True` | turns the formal candidate-level technical gate on during portfolio recommendation |
-| `PORTFOLIO_MARKET_STATE_AWARE_SIZING` | `hub_v6/local_settings.py` | `True` | allows market-state truth to tighten portfolio exposure, name count, and single-name caps |
-| `PORTFOLIO_TECHNICAL_CONFIRMATION_GATE` | `hub_v6/local_settings.py` | `True` | allows technical confirmation to reject or down-weight new candidates before target positions are written |
-| `TECHNICAL_CONFIRMATION_ROOT` | `hub_v6/local_settings.py` | `F:\quant_data\Ashare\data\event_lake_v6\research\technical_confirmation` | controls where technical-confirmation artifacts are written and read |
-| `TECHNICAL_CONFIRMATION_CONFIG_PATH` | `hub_v6/local_settings.py` | `...\configs\technical_confirmation\default.json` | scoring thresholds and gating rules for the technical-confirmation layer |
-| `ENABLE_DAILY_STRATEGY_FEEDBACK` | `hub_v6/local_settings.py` | `True` | determines whether prior-day performance changes route and portfolio posture |
-| `ENABLE_TUSHARE_NEWS` / `ENABLE_TUSHARE_MAJOR_NEWS` | `hub_v6/local_settings.py` | `True / True` | enables Tushare message-layer inputs |
-| `TUSHARE_NEWS_MAX_SOURCES_PER_RUN` | `hub_v6/local_settings.py` | `1` | affects short-news breadth vs quota safety |
-| `TUSHARE_MAJOR_NEWS_MAX_SOURCES_PER_RUN` | `hub_v6/local_settings.py` | `3` | affects major-news breadth vs quota safety |
-| `OLLAMA_EVENT_EXTRACT_MODEL` / `OLLAMA_RESEARCH_MODEL` | `hub_v6/local_settings.py` | `qwen2.5:7b / deepseek-r1:14b` | splits strict event extraction from local research fallback |
-| `OLLAMA_EVIDENCE_CARD_*` | `hub_v6/local_settings.py` | `enabled / deepseek-r1:14b / 180s / 2 items` | controls additive announcement evidence-card generation |
-| `OLLAMA_REVIEW_ROUTER_*` | `hub_v6/local_settings.py` | `enabled / qwen2.5:7b / 90s / 6 items` | controls additive manual-review queue routing |
-| `OLLAMA_RUNTIME_EXPLAINER_*` | `hub_v6/local_settings.py` | `enabled / qwen2.5:7b / 45s` | controls long-stage operator notes and watch-file hints |
-| `OLLAMA_V5_REVIEW_*` | `hub_v6/local_settings.py` | `enabled / deepseek-r1:14b / 180s` | controls additive V5 post-cycle local review |
-| `V5_PROJECT_ROOT` | `hub_v6/local_settings.py` | `F:\quant_data\Ashare\quant_research_hub_v5_1_gpu_integrated` | legacy-named metadata field passed into V5 config; not the actual script launch path |
-| `V5_HUB_OUTPUT_ROOT` | `hub_v6/local_settings.py` | `F:\quant_data\Ashare\data\research_hub_v5_1_gpu_integrated` | current V5 output root consumed by registry, cycle summaries, and portfolio recommendation |
+| `ENABLE_INDUSTRY_ROUTER` | `engine/local_settings.py` | `True` | turns the stock/mechanism skeleton and split-backtest sidecar on inside V6 |
+| `INDUSTRY_ROUTER_CONTRACT_ROOT` / `INDUSTRY_ROUTER_OUTPUT_ROOT` | `engine/local_settings.py` | `...\configs\industry_router / data\event_lake_v6\research\industry_router` | separates static contracts from runtime artifacts |
+| `INDUSTRY_ROUTER_HISTORY_LOOKBACK_DAYS` | `engine/local_settings.py` | `14` | controls how much event-store history is pulled into the router |
+| `INDUSTRY_ROUTER_ENABLE_BACKTEST` | `engine/local_settings.py` | `True` | enables the split mechanism backtest skeleton after signal generation |
+| `INDUSTRY_ROUTER_BACKTEST_HORIZONS` / `INDUSTRY_ROUTER_BACKTEST_TOP_K` | `engine/local_settings.py` | `[1, 2] / 3` | controls the minimal forward-return horizons and per-day top-k used by the split backtest |
+| `INDUSTRY_ROUTER_ENABLE_CONTEXT_PACK` | `engine/local_settings.py` | `True` | allows the router summary to be injected into `research_context_pack.json` |
+| `ENABLE_MARKET_STATE_ENGINE` | `engine/local_settings.py` | `True` | turns the formal market-state regime layer on inside V6 planning and downstream portfolio/release/execution consumers |
+| `MARKET_STATE_USE_ROUTER_BIAS` | `engine/local_settings.py` | `True` | allows mechanism leadership from the industry-router output to influence market-state mechanism bias |
+| `MARKET_STATE_ROOT` | `engine/local_settings.py` | `F:\quant_data\Ashare\data\market_state_v6` | controls where market-state artifacts are written and read |
+| `MARKET_STATE_CONFIG_PATH` | `engine/local_settings.py` | `...\configs\market_state\default.json` | policy thresholds and regime-band definitions for the market-state engine |
+| `ENABLE_TECHNICAL_CONFIRMATION` | `engine/local_settings.py` | `True` | turns the formal candidate-level technical gate on during portfolio recommendation |
+| `PORTFOLIO_MARKET_STATE_AWARE_SIZING` | `engine/local_settings.py` | `True` | allows market-state truth to tighten portfolio exposure, name count, and single-name caps |
+| `PORTFOLIO_TECHNICAL_CONFIRMATION_GATE` | `engine/local_settings.py` | `True` | allows technical confirmation to reject or down-weight new candidates before target positions are written |
+| `TECHNICAL_CONFIRMATION_ROOT` | `engine/local_settings.py` | `F:\quant_data\Ashare\data\event_lake_v6\research\technical_confirmation` | controls where technical-confirmation artifacts are written and read |
+| `TECHNICAL_CONFIRMATION_CONFIG_PATH` | `engine/local_settings.py` | `...\configs\technical_confirmation\default.json` | scoring thresholds and gating rules for the technical-confirmation layer |
+| `ENABLE_DAILY_STRATEGY_FEEDBACK` | `engine/local_settings.py` | `True` | determines whether prior-day performance changes route and portfolio posture |
+| `ENABLE_TUSHARE_NEWS` / `ENABLE_TUSHARE_MAJOR_NEWS` | `engine/local_settings.py` | `True / True` | enables Tushare message-layer inputs |
+| `TUSHARE_NEWS_MAX_SOURCES_PER_RUN` | `engine/local_settings.py` | `1` | affects short-news breadth vs quota safety |
+| `TUSHARE_MAJOR_NEWS_MAX_SOURCES_PER_RUN` | `engine/local_settings.py` | `3` | affects major-news breadth vs quota safety |
+| `OLLAMA_EVENT_EXTRACT_MODEL` / `OLLAMA_RESEARCH_MODEL` | `engine/local_settings.py` | `qwen2.5:7b / deepseek-r1:14b` | splits strict event extraction from local research fallback |
+| `OLLAMA_EVIDENCE_CARD_*` | `engine/local_settings.py` | `enabled / deepseek-r1:14b / 180s / 2 items` | controls additive announcement evidence-card generation |
+| `OLLAMA_REVIEW_ROUTER_*` | `engine/local_settings.py` | `enabled / qwen2.5:7b / 90s / 6 items` | controls additive manual-review queue routing |
+| `OLLAMA_RUNTIME_EXPLAINER_*` | `engine/local_settings.py` | `enabled / qwen2.5:7b / 45s` | controls long-stage operator notes and watch-file hints |
+| `OLLAMA_V5_REVIEW_*` | `engine/local_settings.py` | `enabled / deepseek-r1:14b / 180s` | controls additive V5 post-cycle local review |
+| `V5_PROJECT_ROOT` | `engine/local_settings.py` | `F:\quant_data\Ashare\quant_research_hub_v5_1_gpu_integrated` | legacy-named metadata field passed into V5 config; not the actual script launch path |
+| `V5_HUB_OUTPUT_ROOT` | `engine/local_settings.py` | `F:\quant_data\Ashare\data\research_hub_v5_1_gpu_integrated` | current V5 output root consumed by registry, cycle summaries, and portfolio recommendation |
 
 ## Known Issues
 - `AshareC#` now has a local `data/` mirror, but the control-plane contract is still incomplete locally; if required files such as `system_safety_state.json` or `oms_summary.json` are missing, the C# path registry can still fall back to `F:\quant_data\Ashare\data`.
@@ -1398,6 +1573,9 @@
 - Historical log entries below still mention original `F:\quant_data\Ashare` paths because they were inherited from the source repo snapshot.
 - OpenAI upstream network resets can still happen occasionally; the client now retries transient failures and auto-drops unsupported `reasoning.effort`.
 - Tushare news can still return zero rows when upstream quota is exhausted even after local quota guarding.
+- Tushare `realtime_quote` / `realtime_list` / `realtime_tick` are now used as the highest-priority intraday proxy layer, but they are still public-web/crawler style feeds and can legitimately return `0` rows outside market hours, under quota pressure, or when upstream crawler pages are degraded.
+- Qianzhan currently has no confirmed public API for the member database/chart/policy/stock sites in this workspace; the current implementation is bounded page capture with optional local cookie-header reuse and should be treated as a research-side web extraction layer, not a contractual API integration.
+- GGZY is currently integrated as a discovery/index layer; detail completeness still varies by province/platform, so `ggzy_notice_index` can be useful even when downstream company mapping stays sparse.
 - V5.1 runtime exposes sparse heartbeat artifacts while a cycle is running; operators often need to infer progress from candidate file timestamps.
 - The repo previously tolerated research-side proxy features being shaped too similarly to truth tables; future work must keep truth fields and proxy/research fields physically and semantically separated.
 - For several desired datasets, especially analyst consensus / EPS revision history and licensed historical exchange data, free official sources may be incomplete or unavailable; do not silently substitute scraped or heuristic proxies into canonical truth fields.
@@ -1465,13 +1643,13 @@
 - The initial market-safety thresholds are deliberately conservative and can classify a broad market selloff day as `PANIC`; treat them as operational guardrails, not a final market-timing model.
 - The precision-sim account currently has live pending buy orders from the validated namespace `probe_live_shsz` against release `release_20260323_123443_09ebad73`; until those orders fill, cancel, or are reconciled, fresh precision execution attempts can be blocked by unfinished-order safety checks.
 - The active precision/simulation account mapping currently lives in `configs\gmtrade_runtime_config.local.json`; if that file is changed manually, make sure the `account_profiles` block stays aligned with `EXECUTION_ACCOUNT_MODE`.
-- `hub_v6/local_settings.py` still contains legacy V5 naming such as `V5_PROJECT_ROOT`, which can mislead readers into thinking a root-level package is launched directly.
-- The actual V5 launcher path is package-local `...\v5_gpu_runtime\run_research_hub_v5_1_local.py`; treat `project_root` inside V5 JSON as required config metadata, not launch-path truth.
+- `engine/local_settings.py` still contains legacy V5 naming such as `V5_PROJECT_ROOT`, which can mislead readers into thinking a root-level package is launched directly.
+- The actual V5 launcher path is package-local `...\research_brain\run_research_hub_v5_1_local.py`; treat `project_root` inside V5 JSON as required config metadata, not launch-path truth.
 - `deepseek-r1:14b` is currently configured only as a local research fallback model, not as the default title-extraction worker; strict event JSON extraction still stays on `qwen2.5:7b` until dedicated validation proves otherwise.
 - Market-state and technical-confirmation defaults are now less defensive than the first rollout, but they are still posture controls, not a finished alpha model.
 - The new `pilot` entry path and post-filter reweight can restore opportunity set and exposure, but they also make the system more sensitive to upstream candidate-quality errors; do not mistake higher capital usage for validated edge.
 - Portfolio V2A now prefers OMS `latest_actual_portfolio_state.json` for continuity, but it still falls back to the previous target book plus previous lifecycle sidecar when OMS truth is absent or stale.
-- `hub_v6/oms/runtime.py` is execution-environment code and imports the gmtrade stack through the broker adapter; use the lightweight OMS state-reader interfaces or `oms_validate` from the research Python, and keep full OMS runtime execution in `gmtrade39`.
+- `engine/oms/runtime.py` is execution-environment code and imports the gmtrade stack through the broker adapter; use the lightweight OMS state-reader interfaces or `oms_validate` from the research Python, and keep full OMS runtime execution in `gmtrade39`.
 - Portfolio V2A currently uses lightweight admission/replacement logic and soft crowding, not a full exposure/risk model; it is intentionally more capable than V1 but still not a production-grade optimizer or OMS.
 - OMS now has deterministic cross-session intent continuity, formal manual intervention layering, first-pass broker-aware cancel/replace, and a bounded synthetic/replay validation harness; it is still not a full broker-agnostic intraday EMS.
 - There are now two override files with different powers: data\trade_clock\manual_overrides.json owns global kill-switch behavior, while data\live_execution_bridge\oms_v1\manual_overrides.json owns OMS-local continuity/cancel/repair behavior; do not mix them.
@@ -1502,7 +1680,7 @@
   - Alternatives considered: keep `run_v6_full_cycle_real.py` as primary.
   - Consequence: old V6 runtime readmes are now historical.
 - Decision: documentation must reflect the current code default profile as `quick_test`.
-  - Reason: `hub_v6/local_settings.py` currently sets `DEFAULT_RUN_PROFILE = "quick_test"`; handoff notes must track code truth, not stale intent.
+  - Reason: `engine/local_settings.py` currently sets `DEFAULT_RUN_PROFILE = "quick_test"`; handoff notes must track code truth, not stale intent.
   - Alternatives considered: keep the docs saying `overnight` because that was the earlier operator preference.
   - Consequence: operators must pass `--profile overnight` explicitly when they want the heavy nightly path.
 - Decision: keep dual Python environments.
@@ -1521,10 +1699,10 @@
   - Reason: free-source coverage is uneven, and sparse mapper outputs should not prevent the mainline from testing fact-backed convictions.
   - Alternatives considered: drop sparse-event dates entirely, or silently elevate heuristic mappings into truth-like tables.
   - Consequence: the mainline is more robust on partial free-data days while still keeping truth/proxy boundaries explicit.
-- Decision: the archived root-level `quant_research_hub_v5*` directories are now historical only; the live research brain is the embedded `v5_gpu_runtime`.
-  - Reason: `main_research_runner.py` and `hub_v6/supervisor.py` launch the package-local V5 runtime directly.
+- Decision: the archived root-level `quant_research_hub_v5*` directories are now historical only; the live research brain is the embedded `research_brain`.
+  - Reason: `main_research_runner.py` and `engine/supervisor.py` launch the package-local V5 runtime directly.
   - Alternatives considered: treat the archived root-level copy as still active.
-  - Consequence: future debugging must inspect `v5_gpu_runtime` inside the active package tree rather than the archived root packages.
+  - Consequence: future debugging must inspect `research_brain` inside the active package tree rather than the archived root packages.
 - Decision: message-layer logic now uses evidence quality and anti-overfit weighting instead of raw title importance alone.
   - Reason: title-driven signals were too easy to overfit.
   - Alternatives considered: keep simple rule score or hardcode more keywords.
@@ -1540,7 +1718,7 @@
 - Decision: OMS, not portfolio control or release, now owns `actual_state` and desired-vs-actual truth.
   - Reason: broker/account/order/fill truth must come from the execution-side reconciliation layer, not from research-side sidecars or release snapshots.
   - Alternatives considered: keep extending `portfolio_control.py` into a hidden pseudo-OMS, or continue letting V2A continuity infer actual state from prior target books.
-  - Consequence: `hub_v6/oms/*` is now the canonical truth owner for actual holdings, intent/order/fill lifecycle, and actual-state artifacts.
+  - Consequence: `engine/oms/*` is now the canonical truth owner for actual holdings, intent/order/fill lifecycle, and actual-state artifacts.
 - Decision: feedback is explicitly bucketed by authority level instead of flowing as one undifferentiated execution blob.
   - Reason: raw broker/account outcomes should not directly rewrite research logic, while portfolio pacing still needs operational feedback.
   - Alternatives considered: keep sending only `performance_feedback.json`, or let execution-side artifacts be consumed ad hoc by whichever module wants them.
@@ -1572,7 +1750,7 @@
 - Decision: Portfolio V2A is implemented as a deterministic sublayer inside portfolio recommendation, not as a parallel portfolio system and not as a heavy optimizer.
   - Reason: the system needed posture, lifecycle, staged sizing, and admission/replacement behavior without breaking the current research/release/execution law or introducing another source of truth.
   - Alternatives considered: keep only flat market-aware weights plus technical gate, or jump straight to a full optimizer / OMS rewrite.
-  - Consequence: `hub_v6\portfolio_v2a` now owns research-side posture/state/admission logic, while `target_positions.csv`, release manifests, and execution audit remain the canonical downstream carriers.
+  - Consequence: `hub_v6\portfolio` now owns research-side posture/state/admission logic, while `target_positions.csv`, release manifests, and execution audit remain the canonical downstream carriers.
 - Decision: publish the first C# migration surface as a standalone runtime-skeleton repo instead of repointing the main `AshareC#` workspace remote.
   - Reason: the main migration workspace still contains mirror governance, bridge scripts, and in-progress conversion scaffolding that should not be conflated with a clean distributable skeleton.
   - Alternatives considered: repoint the whole `AshareC#` workspace at a new GitHub remote immediately, or keep the skeleton unpublished.
@@ -1603,7 +1781,7 @@
   - `F:\quant_data\Ashare\data\event_lake_v6\bridge\performance_feedback.json`
 
 ## Token And API Notes
-- Tushare is wired into `hub_v6/local_settings.py` and passed through `hub_v6/config_builder.py`.
+- Tushare is wired into `engine/local_settings.py` and passed through `engine/config_builder.py`.
 - OpenAI and DeepSeek are expected through environment variables:
   - `OPENAI_API_KEY`
   - `DEEPSEEK_API_KEY`
@@ -1616,20 +1794,20 @@
 ## README Integration Summary
 ### V5 and V5.1 README themes
 - `quant_research_hub_v5` explains the original move away from the broken V4 cold-start loop.
-- `quant_research_hub_v5_1` and `v5_gpu_runtime/README.md` define V5.1 as the GPU-aware automatic research controller with resource guardrails and candidate workspaces.
+- `quant_research_hub_v5_1` and `research_brain/README.md` define V5.1 as the GPU-aware automatic research controller with resource guardrails and candidate workspaces.
 - `data\quant_research_hub_v5_1\quant_research_hub_v5_1_xgb_lock\README.md` documents the XGBoost-GPU-locked variant.
 
 ### V6 README themes
 - `docs\README.md` and `docs\README_RUNTIME_PATCH.md` describe the original V6 announcement-driven runtime package.
 - `docs\README_COST_PATCH.md` adds the lower-cost event-extract plus portfolio-recommendation framing.
-- `docs\README_PYCHARM.md` says V6 was intended to be launched from PyCharm and configured from `hub_v6/local_settings.py`.
+- `docs\README_PYCHARM.md` says V6 was intended to be launched from PyCharm and configured from `engine/local_settings.py`.
 - `docs\README_接入说明.md` and the Gmtrade bridge readmes describe the execution-layer integration.
 
 ### Current truth after integration
 - Older V6 readmes still point to `run_v6_full_cycle_real.py`. Treat that as historical documentation.
 - The real root entry in the current integrated system is `main_research_runner.py`.
 - V6 is now the orchestrator and supervisor layer.
-- V5.1 remains the heavy research engine, but the live copy is the embedded `v5_gpu_runtime`, not the archived root-level `quant_research_hub_v5_1`.
+- V5.1 remains the heavy research engine, but the live copy is the embedded `research_brain`, not the archived root-level `quant_research_hub_v5_1`.
 - The execution bridge is now part of the main supervised flow, not a separate side package.
 - Portfolio recommendation is a first-class output in the daily chain.
 
@@ -1669,6 +1847,115 @@
 ```
 
 ## Change Log
+### 2026-04-04 (default exploratory constraint mode)
+- Type:
+  - `config`
+- Scope:
+  - `research`
+- Files:
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Set `OPERATOR_CONSTRAINT_MODE` default to `exploratory` in `local_settings.example.py` (loaded by `engine/local_settings.py`).
+- Impact:
+  - New installs and this workspace inherit exploratory constraint bundling unless overridden by a legacy `local_settings` overlay.
+- Validation:
+  - `python -c` import `build_runtime_config` not required; config merge is unchanged from prior implementation.
+- Rollback:
+  - Set `OPERATOR_CONSTRAINT_MODE = "balanced"` in `local_settings.example.py` or override in machine-specific settings.
+
+### 2026-04-04 (operator constraint dial)
+- Type:
+  - `feature`
+  - `config`
+- Scope:
+  - `research`
+  - `portfolio`
+  - `execution`
+- Files:
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\runtime_profiles.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Added `OPERATOR_CONSTRAINT_MODE` (`exploratory` / `balanced` / `production`) applied after `build_runtime_config()` via deep-merge, bundling timing gates, portfolio recommendation gates, trade-clock scheduler fallbacks, and intraday strict pre-execution gate so operators can reduce “bureaucratic” friction with one switch instead of many unrelated booleans.
+- Impact:
+  - Default remains `balanced` (no change vs prior defaults). `exploratory` relaxes several research-side gates; `production` tightens them. Does not replace broker/gmtrade safety boundaries.
+- Validation:
+  - `python -m py_compile` on touched modules; imported `build_runtime_config()` smoke check.
+- Compatibility:
+  - Per-key `local_settings` values still apply first; the mode layer merges on top. Invalid mode falls back to `balanced`.
+- Rollback:
+  - Remove `apply_operator_constraint_mode` call and related functions; delete `OPERATOR_CONSTRAINT_MODE` from settings.
+
+### 2026-04-04 (session, SQL mirror)
+- Type:
+  - `feature`
+  - `runtime`
+- Scope:
+  - `execution`
+  - `infra`
+- Files:
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\sql_store.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_tactics\runtime.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\artifact_writer.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_tactical_audit_pack.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\t_audit.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_release.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_manager.py`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Exposed `data_store` + `paths.data_sqlite_path` in `build_runtime_config` so `sql_store_enabled` is true by default (`ENABLE_RUNTIME_DATA_SQL_STORE`).
+  - Added `mirror_runtime_json_artifact` / dataframe / jsonl helpers and `load_*_prefer_sql` readers on the main research DB.
+  - Mirrored intraday tactics outputs and intraday state machine `latest` artifacts into SQLite after file writes; audit/T readers prefer SQL then file.
+  - Routed existing release/execution mirror helpers through `mirror_runtime_json_artifact`.
+- Impact:
+  - Release/OMS mirrors that depended on `data_store.enabled` now actually run under default config; new intraday data is queryable from `research_data_v1.sqlite3` without relying on loose JSON only.
+- Validation:
+  - `python -m py_compile` on touched modules; `python -m unittest engine.oms.tests.test_tactical_merge`
+- Compatibility:
+  - Set `ENABLE_RUNTIME_DATA_SQL_STORE=False` or `data_store.enabled=false` in runtime JSON to restore file-only behavior.
+- Rollback:
+  - Revert the listed files; clear `runtime_json_artifacts` rows if needed.
+
+### 2026-04-04 (session)
+- Type:
+  - `feature`
+  - `runtime`
+  - `ops`
+- Scope:
+  - `execution`
+  - `infra`
+- Files:
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\oms\tests\test_tactical_merge.py`
+  - `F:\quant_data\AshareC#\scripts\run_validation_tiers.py`
+  - `F:\quant_data\AshareC#\scripts\tune_intraday_tactics_thresholds.py`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- Change:
+  - Unified intraday state refresh before listed trade-clock subprocess phases; merged former `pre_afternoon_*` / `pre_tactical_*` payload into `result_payload.pre_intraday_state_refresh`.
+  - Added `strict_pre_execution_gate` (default false) to skip a phase when intraday state refresh ran and returned `ok=False`.
+  - Added unittest coverage for `merge_tactical_orders_into_control_result` (aggregate deltas, ref_price fallback, bad-row skips).
+  - Added tiered validation script (`py_compile` → unittest → optional intraday tactics probe) and offline threshold grid script for `reason_thresholds`.
+- Impact:
+  - Operators can enforce a hard gate on stale/failed intraday state machine output before simulation/shadow/midday/tactical runs.
+  - Phase JSON payloads use one key for intraday pre-refresh; consumers should read `pre_intraday_state_refresh` only.
+  - No full integrated pipeline run was executed in this session.
+- Validation:
+  - `python -m py_compile` on `clock_supervisor.py`, `config_builder.py`, new scripts
+  - `python -m unittest engine.oms.tests.test_tactical_merge` (from hub package root with `PYTHONPATH=.`)
+  - `python scripts\run_validation_tiers.py --max-tier 1`
+  - `python scripts\tune_intraday_tactics_thresholds.py --profile quick_test --top 5` (smoke; local context may yield zero raw intents)
+- Compatibility:
+  - `strict_pre_execution_gate` defaults to false; behavior matches prior fail-open unless explicitly enabled.
+  - Payload field rename from `pre_afternoon_intraday_refresh` / `pre_tactical_intraday_refresh` to `pre_intraday_state_refresh` — update any external monitors if they relied on the old keys.
+- Rollback:
+  - Revert `clock_supervisor.py` subprocess pre-hook block; remove new scripts/tests; clear `strict_pre_execution_gate` from generated configs if needed.
+
 ### 2026-04-01 23:39
 - Type:
   - `docs`
@@ -1689,7 +1976,7 @@
   - inspected `launch_canonical.py`
   - inspected `trade_clock_service.py`
   - inspected `tools/register_run.py`
-  - inspected `hub_v6/local_settings.example.py`
+  - inspected `engine/local_settings.example.py`
   - verified that local roots `data\live_execution_bridge`, `data\trade_release_v1`, and `outputs\canonical_runs` currently contain no snapshot files in this workspace
 - Compatibility:
   - docs-only
@@ -1757,7 +2044,7 @@ All timestamps below are local file write times in the current workspace and sho
   - Formalized the intraday integration truth in code and docs: `shadow` now means sidecar-only, while bounded afternoon-plan takeover only happens when `shadow_mode = False`.
   - Added a new public portal page `intraday-state.html` that reads the latest formal phase state, symbol state, intent state, control summary, and event timeline.
   - Fixed the C# path wrapper so OMS ledger artifacts now point at the real `ledgers\*.csv` paths instead of the incorrect root-level file paths.
-  - Updated stable sections in this dev log to record the intraday module, the new docs, the public portal page, and the current Google Drive default root under `H:\我的云端硬盘\AshareCSharp_backups`.
+  - Updated stable sections in this dev log to record the intraday module, the new docs, the public portal page, and the current Google Drive default root under `G:\我的云端硬盘\AshareCSharp_backups`.
 - Impact:
   - The daily automatic process now has a documented and inspectable intraday control surface instead of only implicit phase behavior.
   - Operators can inspect one consistent state-machine truth from sidecar files, daily summary packs, C# path inspection, and the public portal.
@@ -2345,14 +2632,14 @@ All timestamps below are local file write times in the current workspace and sho
   - `F:\quant_data\Ashare\AGENTS.md`
 - Change:
   - Re-audited the real integrated call chain and corrected stale documentation that still implied `overnight` was the default profile.
-  - Added an explicit `Active Runtime vs Archived Roots` section clarifying that the live research brain is the embedded `v5_gpu_runtime`, while root-level `quant_research_hub_v5*` copies are now archived only.
+  - Added an explicit `Active Runtime vs Archived Roots` section clarifying that the live research brain is the embedded `research_brain`, while root-level `quant_research_hub_v5*` copies are now archived only.
   - Documented the remaining naming debt around `V5_PROJECT_ROOT` and `project_root` so future sessions do not mistake config metadata for the actual launcher path.
 - Impact:
   - Future Codex sessions and the operator now have a cleaner source of truth for where the live modules actually run.
   - No runtime behavior changed.
 - Validation:
-  - Manually re-read `main_research_runner.py`, `hub_v6/supervisor.py`, `hub_v6/local_settings.py`, and `v5_gpu_runtime/hub/config_utils.py`.
-  - Verified the active V5 launcher path still resolves inside `quant_research_hub_v6_repacked_clean\...\v5_gpu_runtime`.
+  - Manually re-read `main_research_runner.py`, `engine/supervisor.py`, `engine/local_settings.py`, and `research_brain/hub/config_utils.py`.
+  - Verified the active V5 launcher path still resolves inside `quant_research_hub_v6_repacked_clean\...\research_brain`.
   - No code execution and no full pipeline run.
 - Compatibility:
   - Backward compatible.
@@ -2394,10 +2681,10 @@ All timestamps below are local file write times in the current workspace and sho
   - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\research_brief_engine.py`
   - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
   - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\supervisor.py`
-  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime\hub\model_families.py`
-  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime\hub\training_engine.py`
-  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime\hub\codegen.py`
-  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime\hub\registry.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\research_brain\hub\model_families.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\research_brain\hub\training_engine.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\research_brain\hub\codegen.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\research_brain\hub\registry.py`
 - Change:
   - Fixed OpenAI research fallback so unsupported `reasoning.effort` is avoided for non-reasoning models and auto-retried away if the API still rejects it; added transient network retry for OpenAI Responses calls.
   - Reworked XGBoost GPU prediction to use explicit `Booster.predict(DMatrix)` on the V5 side, avoiding the sklearn wrapper's device-mismatch fallback warning.
@@ -2476,7 +2763,7 @@ All timestamps below are local file write times in the current workspace and sho
 
 ### 2026-03-21 09:50
 - File:
-  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime\hub\candidate_factory.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\research_brain\hub\candidate_factory.py`
 - Change:
   - Added support for dynamic performance feedback input from the execution side.
 - Intended effect:
@@ -2762,7 +3049,7 @@ All timestamps below are local file write times in the current workspace and sho
 - Change:
   - Added `launch_canonical.py` as the formal governance wrapper around `main_research_runner.py`.
   - Added `tools/preflight_check.py` for lightweight path, profile, import, and `py_compile` checks without running heavy business workloads.
-  - Made the wrapper dispatch to the canonical research Python from `hub_v6/local_settings.py` so the formal operator path does not depend on whichever shell Python launched the wrapper.
+  - Made the wrapper dispatch to the canonical research Python from `engine/local_settings.py` so the formal operator path does not depend on whichever shell Python launched the wrapper.
   - Updated AGENTS and the stable log sections so future sessions distinguish the formal operator entry from the wrapped business root.
 - Impact:
   - Formal operator runs now have one wrapper entrypoint without changing the business call chain.
@@ -3228,8 +3515,8 @@ All timestamps below are local file write times in the current workspace and sho
     - execution-account layer
     - precision-trade switch layer
   - Added a dedicated control-surface section showing exactly where each operator-facing default is changed:
-    - `hub_v6/local_settings.py`
-    - `hub_v6/local_settings.example.py`
+    - `engine/local_settings.py`
+    - `engine/local_settings.example.py`
     - `configs/gmtrade_runtime_config.local.json`
     - CLI override flags on `launch_canonical.py` / `main_research_runner.py`
   - Marked the generated runtime JSON files as non-hand-edit targets.
@@ -3241,7 +3528,7 @@ All timestamps below are local file write times in the current workspace and sho
     - which switches are safe for one-off runtime overrides
 - Validation:
   - Re-read current mode definitions from `main_research_runner.py`.
-  - Re-read current default values from `hub_v6/local_settings.py`.
+  - Re-read current default values from `engine/local_settings.py`.
   - Re-read current account mapping from `configs/gmtrade_runtime_config.local.json`.
 - Compatibility:
   - Documentation only; no runtime behavior changed.
@@ -3273,7 +3560,7 @@ All timestamps below are local file write times in the current workspace and sho
   - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\industry_router\source_contracts.json`
   - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
 - Change:
-  - Added a formal `hub_v6/industry_router/` module as the Phase 1 stock/mechanism skeleton.
+  - Added a formal `engine/industry_router/` module as the Phase 1 stock/mechanism skeleton.
   - Locked the three initial mechanism groups to:
     - `trend_capex`
     - `price_inventory`
@@ -3320,7 +3607,7 @@ All timestamps below are local file write times in the current workspace and sho
   - the router is additive to execution behavior in Phase 1 and currently changes research-side context and artifacts only
   - `integrated_supervisor`, `research_only`, `release_only`, and `execution_only` remain available
 - Rollback:
-  - remove `hub_v6/industry_router/` and `configs/industry_router/`
+  - remove `engine/industry_router/` and `configs/industry_router/`
   - remove `industry_router_only` from `main_research_runner.py` and `RUN_PROFILES.yaml`
   - remove the `industry_router` config block from `config_builder.py` and the related flags from `local_settings.py`
   - remove the router injection from `orchestrator_v6.py`, `context_pack.py`, and `research_brief_engine.py`
@@ -3362,10 +3649,10 @@ All timestamps below are local file write times in the current workspace and sho
   - `industry_router_only` and upstream planning modes now expose source-aware mechanism state to operators and to the research context pack.
   - Source influence is additive and bounded; it does not replace event scoring or the existing event-stock mapping contract.
 - Validation:
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\industry_router\\source_ingest.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\industry_router\\runtime.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\config_builder.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\context_pack.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\industry_router\\source_ingest.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\industry_router\\runtime.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\config_builder.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\context_pack.py`
   - `python tools\\preflight_check.py --profile quick_test --mode industry_router_only`
   - `python launch_canonical.py --preflight-only --profile quick_test --mode industry_router_only`
   - `python launch_canonical.py --profile quick_test --mode industry_router_only --skip-preflight`
@@ -3414,7 +3701,7 @@ All timestamps below are local file write times in the current workspace and sho
     - `full_cycle`
   - Fixed a real runtime race where concurrent launcher invocations could truncate `hub_config.v6.runtime.<profile>.json` mid-read.
     - root cause: direct `write_text(...)` on the shared runtime config path
-    - fix: switched to temp-file + `os.replace(...)` atomic writes in both `main_research_runner.py` and `hub_v6/config_builder.py`
+    - fix: switched to temp-file + `os.replace(...)` atomic writes in both `main_research_runner.py` and `engine/config_builder.py`
   - Fixed a truth-label bug where `research_only` internally reused `run_integrated_supervisor(...)` and therefore wrote:
     - `supervisor_state.json.run_mode = integrated_supervisor`
     - release `source_mode = integrated_supervisor`
@@ -3426,8 +3713,8 @@ All timestamps below are local file write times in the current workspace and sho
   - This change does not alter strategy logic, model logic, or execution rules.
 - Validation:
   - `python -m py_compile main_research_runner.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\config_builder.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\supervisor.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\config_builder.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\supervisor.py`
   - Actual segmented runs completed:
     - `python launch_canonical.py --profile quick_test --mode full_cycle --skip-preflight`
     - `python launch_canonical.py --profile quick_test --mode release_only --skip-preflight`
@@ -3442,7 +3729,7 @@ All timestamps below are local file write times in the current workspace and sho
   - The new atomic write behavior changes only how runtime configs hit disk, not their schema.
   - `research_only` now records truer mode labels; any downstream tooling that previously assumed `research_only` would masquerade as `integrated_supervisor` should be considered stale.
 - Rollback:
-  - Revert the atomic write helpers in `main_research_runner.py` and `hub_v6/config_builder.py` if direct writes are ever intentionally preferred again.
+  - Revert the atomic write helpers in `main_research_runner.py` and `engine/config_builder.py` if direct writes are ever intentionally preferred again.
   - Revert the `run_integrated_supervisor(...)` signature change and the `run_research_only(...)` call-site labels if you intentionally want the older `integrated_supervisor` labels back.
 
 ### 2026-03-22 14:36
@@ -3501,11 +3788,11 @@ All timestamps below are local file write times in the current workspace and sho
 - Validation:
   - `python -m py_compile trade_clock_service.py`
   - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\run_gmtrade_health_probe.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\safety_guard.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\execution_manager.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\clock_supervisor.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\execution_bridge_runner.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\config_builder.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\safety_guard.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\execution_manager.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\clock_supervisor.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\execution_bridge_runner.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\config_builder.py`
   - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\live_execution_bridge\\health_probe.py`
   - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\live_execution_bridge\\brokers\\gmtrade_sim_broker.py`
   - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\live_execution_bridge\\portfolio_control.py`
@@ -3524,7 +3811,7 @@ All timestamps below are local file write times in the current workspace and sho
   - `clock_state.json` is intentionally lighter than before and should no longer be treated as the full safety truth.
   - The initial market-regime and execution-failure thresholds are conservative and may halt trading until the operator acknowledges the condition.
 - Rollback:
-  - Set `ENABLE_SAFETY_LAYER = False` in `hub_v6/local_settings.py` to bypass the new safety guard while keeping the old gate/time logic.
+  - Set `ENABLE_SAFETY_LAYER = False` in `engine/local_settings.py` to bypass the new safety guard while keeping the old gate/time logic.
   - Remove `run_gmtrade_health_probe.py`, `live_execution_bridge\health_probe.py`, and `hub_v6\safety_guard.py` if the safety layer needs to be fully backed out.
   - Revert `portfolio_control.py` `reduce_only` handling if sell-only execution is no longer desired.
 
@@ -3654,13 +3941,13 @@ All timestamps below are local file write times in the current workspace and sho
   - Current local posture is conservative and can materially shrink the book on weak tape; this is expected.
 - Validation:
   - `python -m py_compile main_research_runner.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\config_builder.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\context_pack.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\orchestrator_v6.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\portfolio_recommendation.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\portfolio_release.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\execution_manager.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\supervisor.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\config_builder.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\context_pack.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\orchestrator_v6.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\portfolio_recommendation.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\portfolio_release.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\execution_manager.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\supervisor.py`
   - `python -m py_compile` over the new `hub_v6\market_state` and `hub_v6\technical_confirmation` trees
   - `python tools\preflight_check.py --profile quick_test --mode plan_only`
   - targeted market-state build probe using the canonical research Python
@@ -3685,7 +3972,7 @@ All timestamps below are local file write times in the current workspace and sho
     - `release_manifest.json` now carries market-state and technical-confirmation blocks
   - Existing modes still exist; the main change is that more downstream consumers now read the new shared truth layers.
 - Rollback:
-  - Set these to `False` in `hub_v6/local_settings.py` to neutralize most of this rollout without deleting code:
+  - Set these to `False` in `engine/local_settings.py` to neutralize most of this rollout without deleting code:
     - `ENABLE_MARKET_STATE_ENGINE`
     - `ENABLE_TECHNICAL_CONFIRMATION`
     - `PORTFOLIO_MARKET_STATE_AWARE_SIZING`
@@ -3761,9 +4048,9 @@ All timestamps below are local file write times in the current workspace and sho
   - Existing weak holdings are no longer all crushed to the same `0.45` multiplier; several now retain materially larger weights when their hold-health is weak but not catastrophic.
   - The system still blocks obviously poor fresh entries; this pass was meant to remove over-suppression, not to remove discipline entirely.
 - Validation:
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\config_builder.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\portfolio_recommendation.py`
-  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\hub_v6\\technical_confirmation\\core\\scorer.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\config_builder.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\portfolio_recommendation.py`
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\\quant_research_hub_v6_repacked_clean\\engine\\technical_confirmation\\core\\scorer.py`
   - Targeted module-level rebuild using the canonical research Python:
     - rebuilt market-state artifacts
     - rebuilt portfolio recommendation
@@ -3797,7 +4084,7 @@ All timestamps below are local file write times in the current workspace and sho
   - `release`
   - `execution_audit`
 - Files:
-  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_v2a\*`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio\*`
   - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
   - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_release.py`
   - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
@@ -3807,13 +4094,13 @@ All timestamps below are local file write times in the current workspace and sho
   - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\runtime.py`
   - `F:\quant_data\Ashare\CODEX_DEV_LOG.md`
 - Change:
-  - Added a formal `hub_v6\portfolio_v2a` submodule with deterministic:
+  - Added a formal `hub_v6\portfolio` submodule with deterministic:
     - portfolio posture engine
     - lifecycle state machine
     - admission/replacement engine
     - sidecar writer
   - Portfolio recommendation now runs V2A after market-state/technical-confirmation enrichment and before final target-book persistence.
-  - V2A now emits formal sidecars under `data\portfolio_recommendation_v6\portfolio_v2a`:
+  - V2A now emits formal sidecars under `data\portfolio_recommendation_v6\portfolio`:
     - `latest_portfolio_posture.json`
     - `latest_position_lifecycle.csv`
     - `position_lifecycle_daily.csv`
@@ -3854,7 +4141,7 @@ All timestamps below are local file write times in the current workspace and sho
   - The current candidate universe is still weak, so V2A legitimately produced `new_entry_count = 0` under this posture; that is current-truth behavior, not a silent failure.
 - Validation:
   - `python -m py_compile` over:
-    - full `hub_v6\portfolio_v2a` tree
+    - full `hub_v6\portfolio` tree
     - `hub_v6\portfolio_recommendation.py`
     - `hub_v6\portfolio_release.py`
     - `hub_v6\config_builder.py`
@@ -3879,7 +4166,7 @@ All timestamps below are local file write times in the current workspace and sho
 - Rollback:
   - Set `ENABLE_PORTFOLIO_V2A = False` to bypass the new research-side state/admission layer while keeping the softer market-state / technical-confirmation posture.
   - Set `PORTFOLIO_ENABLE_POST_FILTER_REWEIGHT = False` if exposure re-expansion needs to be disabled independently.
-  - Revert the `hub_v6\portfolio_v2a` subtree plus the touched portfolio/release/execution-audit files for a full rollback.
+  - Revert the `hub_v6\portfolio` subtree plus the touched portfolio/release/execution-audit files for a full rollback.
 
 ### 2026-03-22 23:32
 - Type:
@@ -3895,10 +4182,10 @@ All timestamps below are local file write times in the current workspace and sho
   - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_bridge_runner.py`
   - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\context_pack.py`
   - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\orchestrator_v6.py`
-  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_v2a\contracts.py`
-  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_v2a\exposure_engine.py`
-  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_v2a\lifecycle_engine.py`
-  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_v2a\runtime.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio\contracts.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio\exposure_engine.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio\lifecycle_engine.py`
+  - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio\runtime.py`
   - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\brokers\gmtrade_sim_broker.py`
   - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\portfolio_control.py`
   - `F:\quant_data\Ashare\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\runtime.py`
@@ -3954,7 +4241,7 @@ All timestamps below are local file write times in the current workspace and sho
 - Validation:
   - `python -m py_compile` over:
     - full `hub_v6\oms` tree
-    - touched `portfolio_v2a` files
+    - touched `portfolio` files
     - `execution_bridge_runner.py`
     - `context_pack.py`
     - `orchestrator_v6.py`
@@ -3963,7 +4250,7 @@ All timestamps below are local file write times in the current workspace and sho
     - `live_execution_bridge\runtime.py`
   - Research-Python import probe confirmed:
     - `hub_v6.oms` lightweight reader path no longer pulls in `gmtrade`
-    - `hub_v6.portfolio_v2a.runtime` can import with OMS reader active
+    - `hub_v6.portfolio.runtime` can import with OMS reader active
   - GMTrade39 stubbed OMS probe confirmed artifact emission without placing live orders:
     - `latest_actual_portfolio_state.json`
     - `desired_vs_actual_gap.csv`
@@ -4171,7 +4458,7 @@ All timestamps below are local file write times in the current workspace and sho
     - `execution_and_safety`: `6197`
     - `entry_and_governance`: `3723`
     - `portfolio_and_market_policy`: `2212`
-    - `v5_gpu_runtime`: `2537`
+    - `research_brain`: `2537`
   - Recorded the recommended migration boundary in the stable sections:
     - immediate high-fit C# surface: entry/governance + scheduler/safety + OMS/execution
     - medium-fit C# surface: release/portfolio policy/market-state contract layers
@@ -5114,11 +5401,11 @@ All timestamps below are local file write times in the current workspace and sho
     - OMS target-vs-actual gap proxy
     - overfit or paper-to-live mismatch heuristics
   - Rebuilt `strategy_audit.py` in clean UTF-8-safe text after discovering broken mojibake content and a malformed string in the first draft.
-  - Current operator truth: Google Drive default root has changed to `H:\我的云端硬盘\AshareCSharp_backups`; older `G:\...` references in historical sections are no longer the default.
+  - Current operator truth: Google Drive default root is `G:\我的云端硬盘\AshareCSharp_backups`; a prior session incorrectly recorded this as `H:` — H drive does not exist on this machine.
 - Impact:
   - The system now has a clearer audit surface for post-run review even before a full realized-PnL attribution ledger is available.
   - Operators can open `strategy_audit.html` directly after the summary phase and quickly see whether losses were more likely driven by strategy mix, filter friction, insufficient deployment, OMS drift, or possible overfit symptoms.
-  - Future dev-log mirror and snapshot scripts now default to the current `H:` Google Drive mount instead of silently targeting the stale `G:` path.
+  - All dev-log mirror and snapshot scripts now correctly default to `G:\我的云端硬盘\AshareCSharp_backups`; the erroneous `H:` path recorded in a prior session has been corrected.
 - Validation:
   - targeted file inspection
   - `python -m py_compile` on touched Python modules
@@ -6406,7 +6693,8 @@ esearch_brief_engine.py`
 - Scope:
   - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\orchestrator_v6.py`
   - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\context_pack.py`
-  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6esearch_brief_engine.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6
+esearch_brief_engine.py`
   - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
   - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_release.py`
   - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\strategy_audit.py`
@@ -7093,8 +7381,8 @@ esearch_brief_engine.py`
 - Scope:
   - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
   - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\safety_guard.py`
-  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime\hub\cli_v5.py`
-  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\v5_gpu_runtime\configs\hub_config.v5_1.local.json`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\research_brain\hub\cli_v5.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\research_brain\configs\hub_config.v5_1.local.json`
   - `data\trade_release_v1\latest_release.json`
   - `data\trade_clock\system_safety_state.json`
   - `CODEX_DEV_LOG.md`
@@ -7103,10 +7391,10 @@ esearch_brief_engine.py`
   - Corrected local simulation defaults so the trade-clock simulation phase now uses:
     - `execution_mode = simulation`
     - `precision_trade = false`
-  - Added V5 adaptive-loop resume support in `v5_gpu_runtime\hub\cli_v5.py`:
+  - Added V5 adaptive-loop resume support in `research_brain\hub\cli_v5.py`:
     - when `controller_state.json` exists with unfinished history and no `stop_reason`, the next run resumes from `current_cycle_index + 1`
     - prior cycle `history` is preserved instead of being discarded
-  - Hardened V5 config generation so supervisor now falls back to `v5_gpu_runtime\configs\hub_config.v5_1.example.json` when `hub_config.v5_1.local.json` is absent.
+  - Hardened V5 config generation so supervisor now falls back to `research_brain\configs\hub_config.v5_1.example.json` when `hub_config.v5_1.local.json` is absent.
   - Relaxed `safety_guard.py` for simulation account mode:
     - broker health probe is no longer a hard HALT prerequisite in `simulation`
     - simulation mode now records `account_health.status = skipped_simulation_mode`
@@ -7124,7 +7412,7 @@ esearch_brief_engine.py`
   - `python -m py_compile` on:
     - `hub_v6\local_settings.example.py`
     - `hub_v6\safety_guard.py`
-    - `v5_gpu_runtime\hub\cli_v5.py`
+    - `research_brain\hub\cli_v5.py`
     - success
   - Targeted V5 resume probe under the research Python:
     - confirmed `_load_resume_state(...) -> next_cycle = 3`
@@ -7152,6 +7440,2248 @@ esearch_brief_engine.py`
   - precision / live broker authority boundary remains unchanged
   - simulation-only relaxation does not weaken precision-mode safety checks
 - Rollback:
-  - remove V5 resume logic from `v5_gpu_runtime\hub\cli_v5.py`
+  - remove V5 resume logic from `research_brain\hub\cli_v5.py`
   - restore prior simulation defaults in `local_settings.example.py`
   - restore prior broker-probe halt behavior in `safety_guard.py` if simulation should again hard-require gmtrade health
+
+### [2026-04-02 20:36] Type: ops/clock-phase-recovery
+- Scope:
+  - `data\trade_clock\phase_state\20260402.json`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - After the host restart, the still-running trade clock observed same-day `research` / `release` as incomplete and launched a duplicate `research_only` child chain.
+  - Manually terminated the duplicate child processes while keeping the main `trade_clock_service.py` process alive.
+  - Backfilled `phase_state\20260402.json` so:
+    - `phases.research.status = success`
+    - `phases.release.status = success`
+    - both phases carry `result_status = manual_completed`
+    - both phases point at `release_20260402_190349_344a3bdc`
+- Impact:
+  - Prevents the scheduler from re-running a second heavy same-day research/release pass tonight.
+  - Leaves the clock armed for remaining end-of-day summary work and tomorrow's simulation schedule.
+- Validation:
+  - Re-checked the observed process chain and confirmed only the main trade-clock python process remained.
+  - `scripts\show_trade_clock_status.ps1` now reports:
+    - `research = success`
+    - `release = success`
+    - `next_due_phase = summary`
+- Compatibility:
+  - operational state correction only
+  - no business logic or execution authority boundary changed
+- Rollback:
+  - restore the previous `phase_state\20260402.json` if a forensic replay of the interrupted duplicate round is required
+
+### [2026-04-02 20:46] Type: ops/execution-bridge-recovery-and-validation
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `data\live_execution_bridge\simulation\...`
+  - `data\live_execution_bridge\oms_v1\simulation\...`
+  - `data\trade_clock\dispatches\simulation\...`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Fixed local-settings overlay behavior so the workspace can inherit the real gmtrade bridge settings from the protected legacy private config when the current workspace still carries placeholder/example values.
+  - Expanded placeholder detection to catch generic `C:\path\to\...` style template values.
+  - Allowed `ENABLE_EXECUTION_BRIDGE` to overlay from the legacy private config.
+  - Added a targeted rule so `GMTRADE_RUNTIME_CONFIG_TEMPLATE` switches from the example template to the legacy private local template when the current value is still the example path.
+- Impact:
+  - The local workspace now uses the real `gmtrade39` Python and the real private gmtrade runtime template instead of the example placeholder config.
+  - Manual simulation execution can now traverse the full release -> execution bridge -> portfolio control -> OMS path.
+- Validation:
+  - `python launch_canonical.py --mode execution_only --profile daily_production --execution-mode simulation --precision-trade off --execution-namespace simulation`
+    - success
+    - confirmed `status = executed`
+    - confirmed simulation execution report with:
+      - `n_orders = 3`
+      - `n_fills = 3`
+      - OMS outputs written under `data\live_execution_bridge\oms_v1\simulation`
+  - Precision account read-only probe:
+    - `run_gmtrade_health_probe.py --config <generated precision runtime config>`
+    - success
+    - confirmed precision account reachable with:
+      - `account_id = e18905e4-254f-11f1-b37d-00163e022aa6`
+      - `cash = 1005076.1528966761`
+      - `positions = []`
+- Compatibility:
+  - additive on local private-config inheritance
+  - does not weaken precision trade gating
+  - no real precision order was submitted during validation
+- Rollback:
+  - revert `hub_v6\local_settings.py` to the prior overlay logic if the workspace must stop inheriting legacy gmtrade private settings
+
+### [2026-04-02 20:51] Type: ops/clock-switch-to-precision-account
+- Scope:
+  - `data\trade_clock\runtime\clock_supervisor.pid`
+  - `data\trade_clock\runtime\scheduler_runtime.json`
+  - `data\trade_clock\system_safety_state.json`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Stopped the existing local trade clock that had been running in `--execution-mode simulation --precision-trade off`.
+  - Restarted the local trade clock in:
+    - `--execution-mode precision`
+    - `--precision-trade on`
+  - Left the canonical release unchanged:
+    - `release_20260402_203455_db5b296b`
+    - `trade_date = 2026-04-03`
+- Impact:
+  - Tomorrow morning's scheduler is now armed against the precision account profile instead of the simulation account profile.
+  - Tonight the safety gate remains closed because the current clock date is still `2026-04-02` while the active release trade date is `2026-04-03`; this is expected precision-mode behavior.
+- Validation:
+  - Verified the running clock process command line is now:
+    - `trade_clock_service.py --profile daily_production --skip-preflight --execution-mode precision --precision-trade on`
+  - Precision account read-only probe remained healthy:
+    - `account_id = e18905e4-254f-11f1-b37d-00163e022aa6`
+    - `nav = cash = 1005076.1528966761`
+    - `positions = []`
+  - `show_trade_clock_status.ps1` reports:
+    - `service_alive = True`
+    - `system_mode = NORMAL`
+    - `summary = success`
+- Compatibility:
+  - operational switch only
+  - no forced release rebuild
+  - no real precision order submitted during the switch step itself
+- Rollback:
+  - stop the clock and restart with:
+    - `scripts\start_trade_clock.ps1 -Profile daily_production -ExecutionMode simulation -PrecisionTrade off`
+
+### [2026-04-02 21:05] Type: fix/post-order-audit-namespace-routing
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\strategy_audit.py`
+  - `tmp\strategy_audit_post_order_validation\pack\strategy_audit.json`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Fixed post-order strategy audit namespace routing for non-`main` execution runs.
+  - `build_strategy_audit_pack(...)` now derives the effective OMS namespace from the release's latest execution records:
+    - first from `latest_execution.json`
+    - then, when needed, from the pointed `execution_report_path`
+  - The audit pack now switches its OMS root to `oms_v1\<namespace>` before loading fill/order/position ledgers.
+- Impact:
+  - Simulation execution results are no longer invisible to post-order audit.
+  - `execution_flow_analysis` and `realized_pnl_analysis` can now consume the same `simulation` fills that were just produced by the execution bridge.
+- Validation:
+  - `python -m py_compile hub_v6\strategy_audit.py`
+    - success
+  - Targeted post-order audit rebuild against `release_20260402_203455_db5b296b`
+    - confirmed OMS root used:
+      - `data\live_execution_bridge\oms_v1\simulation`
+    - confirmed:
+      - `execution_flow_analysis.available = true`
+      - `fill_count = 3`
+      - `gross_turnover = 103821.0`
+      - `realized_pnl_analysis.available = true`
+      - `inventory_shortfall_qty = 4800.0`
+- Compatibility:
+  - additive
+  - main-namespace audit behavior remains unchanged
+- Rollback:
+  - revert the namespace-derivation helper in `hub_v6\strategy_audit.py` if audit must again read only the default OMS root
+
+### [2026-04-02 21:24] Type: feature/site-publish-hygiene-and-research-backtest-page
+- Scope:
+  - `scripts\build_audit_site_index.py`
+  - `scripts\publish_audit_report_to_site.ps1`
+  - `outputs\site_publish_stage\reports\20260402`
+  - `outputs\site_publish_stage\research-backtest.html`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added a new static portal page `research-backtest.html` that summarizes the daily V5 research-brain backtest state from:
+    - `data\research_hub_v5_1_gpu_integrated\strategy_family\strategy_family_state.csv`
+    - the latest cycle `cycle_summary.json`
+  - Added navigation entry `研究回测` and surfaced:
+    - deployment gate state
+    - latest cycle diagnosis
+    - candidate-route distribution
+    - ranked strategy-family table
+    - latest-cycle candidate table
+  - Tightened static site generation so stale unused HTML files in `outputs\site_publish_stage` are removed when they are no longer part of the generated page set.
+  - Tightened the publish script so it now wipes both local staged `reports\` contents and remote public `reports/` contents before uploading the current canonical report bundle.
+  - Public publish now also removes previously generated portal HTML files before re-uploading the fresh current page set.
+- Impact:
+  - Tomorrow's normal publish will not carry forward older `audit_probe_*` style test-report debris into the public site.
+  - The public site now has a dedicated place to review daily research backtest results and cycle diagnostics instead of burying them in local files only.
+  - The staged and public portal now behave like a canonical snapshot, not an append-only bucket of historical test artifacts.
+- Validation:
+  - `python -m py_compile scripts\build_audit_site_index.py`
+    - success
+  - direct publish run:
+    - `powershell -ExecutionPolicy Bypass -File scripts\publish_audit_report_to_site.ps1 -PythonExe C:\Users\Administrator\PyCharmMiscProject\.venv\Scripts\python.exe`
+    - success
+  - local staged reports root after publish contains only:
+    - `outputs\site_publish_stage\reports\20260402`
+  - public HTTP checks:
+    - `https://peng1145141919810.xyz/research-backtest.html` -> `200`
+    - `https://peng1145141919810.xyz/reports/20260402/strategy_audit.html` -> `200`
+    - `https://peng1145141919810.xyz/reports/audit_probe_20260402/strategy_audit.html` -> `404`
+    - `https://peng1145141919810.xyz/reports/audit_probe_20260402_realized/strategy_audit.html` -> `404`
+- Compatibility:
+  - additive on portal/report presentation
+  - does not alter release, execution, OMS, or broker authority boundaries
+- Rollback:
+  - revert `scripts\build_audit_site_index.py` and `scripts\publish_audit_report_to_site.ps1` if the site must again retain historical staged/public report folders by default
+
+### [2026-04-02 21:47] Type: fix/site-holdings-namespace-authority
+- Scope:
+  - `scripts\build_audit_site_index.py`
+  - `data\live_execution_bridge\oms_v1\simulation\snapshots\latest_actual_portfolio_state.json`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Fixed portal holdings-source authority so the static site now follows the active clock account mode first:
+    - `precision` -> always read `oms_v1\precision`
+    - `simulation` -> always read `oms_v1\simulation`
+  - Removed the incorrect fallback where a `precision` site view could fall back to the release's last execution namespace and accidentally reuse older `simulation` data.
+  - Cleared the stale simulation holdings snapshot positions array so old validation positions cannot leak into future portal views through residual snapshot files.
+- Impact:
+  - When the main clock is armed for `precision`, the website now shows precision-account holdings only.
+  - If the precision namespace has no current snapshot yet, the site shows empty holdings instead of recycling simulation holdings.
+- Validation:
+  - `python -m py_compile scripts\build_audit_site_index.py`
+    - success
+  - public republish completed successfully
+  - public `trade-monitor.html` now shows:
+    - `持仓快照来源 = precision`
+    - `实际持仓 = 当前没有可展示的数据`
+    - `目标与实际偏离 = 当前没有可展示的数据`
+- Compatibility:
+  - site/control-plane only
+  - does not alter execution routing, broker behavior, or OMS writing rules
+- Rollback:
+  - revert the account-mode-first namespace rule in `scripts\build_audit_site_index.py` if the portal must again prefer the last execution namespace over the active clock account mode
+
+### [2026-04-03 09:52] Type: fix/trade-clock-morning-recovery-and-precision-dispatch
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\timing_windows.py`
+  - `data\trade_release_v1\latest_release.json`
+  - `data\trade_clock\phase_state\20260403.json`
+  - `data\trade_clock\clock_state.json`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Fixed the early-morning scheduler recovery path that let `research_refresh` run as a full `research_only` `daily_production` job and block the whole clock past `09:30`.
+  - Added phase reconciliation and forced-cutoff handling so stale/running morning phases can be timed out or degraded instead of blocking the rest of the day.
+  - Changed default `research_refresh` depth to `quick_test`, with tighter default cutoffs for `research_refresh` and `release_refresh`.
+  - Corrected current operator semantics for the morning execution phase so `simulation` now targets the precision matching account (`precision` mode + `precision` namespace), not the legacy simulation namespace.
+  - Fixed clock-launched `release` and `release_refresh` commands to pass the cycle trade date explicitly via `--release-trade-date`, preventing late recovery runs from publishing a future-trade-date release and overwriting `latest_release.json`.
+  - Fixed `intraday_state_machine` window parsing so dict-shaped `timing_layer.window_config` values are accepted; this removed the runtime error `dictionary update sequence element #0 has length 1; 2 is required`.
+  - Repointed `data\trade_release_v1\latest_release.json` back to the actual `2026-04-03` precision-executed release after an erroneous future-dated pre-open refresh release had temporarily taken over the pointer.
+- Impact:
+  - The trade clock no longer gets stuck in `research_refresh` and miss the morning execution window by default.
+  - Precision morning execution now writes into the correct precision paths:
+    - `data\trade_clock\latest_execution_dispatch.precision.json`
+    - `data\live_execution_bridge\precision\latest_account_state.json`
+    - `data\live_execution_bridge\oms_v1\precision\ledgers\*`
+  - `clock_state.json` gate evaluation is back on the correct current-day release (`trade_date = 2026-04-03`) instead of a future release.
+  - Intraday-state sidecar generation is healthy again and no longer fail-open due to malformed window-config parsing.
+- Validation:
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\timing_windows.py`
+    - success
+  - direct intraday-state probe:
+    - `refresh_intraday_state_machine(config=build_runtime_config(), trade_date='2026-04-03', source_phase='simulation')`
+    - result: `ok = True`, `namespace = precision`, `release_id = release_20260402_203455_db5b296b`
+  - current live clock state:
+    - `service_alive = true`
+    - `scheduler_profile = daily_production`
+    - `gate.account_mode = precision`
+    - `gate.release_trade_date = 2026-04-03`
+    - `gate.reason = eligible`
+  - current precision execution artifacts exist:
+    - `data\trade_clock\latest_execution_dispatch.precision.json`
+    - `data\live_execution_bridge\precision\latest_account_state.json`
+    - `data\live_execution_bridge\oms_v1\precision\ledgers\fill_ledger_latest.csv`
+  - current release execution pointer:
+    - `data\trade_release_v1\releases\release_20260402_203455_db5b296b\latest_execution.json`
+    - points to `data\live_execution_bridge\precision\execution_report_20260403_094551.json`
+- Compatibility:
+  - scheduler behavior changed intentionally
+  - late recovery runs now preserve cycle trade-date authority instead of deriving a fresh next-trading-day release from wall-clock time
+  - intraday-state fix is backward-compatible for both list-shaped and dict-shaped window configs
+- Rollback:
+  - revert the `--release-trade-date` additions in `clock_supervisor.py` and the dict-window support in `timing_windows.py` if the old late-release and window-config behavior must be restored
+
+### [2026-04-03 10:18] Type: fix/bootstrap-diversification-and-precision-site-authority
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\portfolio_control.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `scripts\operator_intent\context_builder.py`
+  - `scripts\build_audit_site_index.py`
+  - `outputs\site_publish_stage\*`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added bootstrap-diversification handling to `portfolio_control` for empty or very low-exposure accounts.
+  - The turnover controller no longer spends the full daily-turnover budget only on the highest-notional buy targets on bootstrap days.
+  - New runtime config surface:
+    - `bootstrap_diversification_enabled`
+    - `bootstrap_max_current_exposure_ratio`
+    - `bootstrap_min_names`
+    - `bootstrap_slot_budget_ratio`
+  - Default bootstrap behavior now targets a broader first-pass seed book before ordinary turnover truncation, instead of collapsing the book to a few concentrated names under the same turnover cap.
+  - Fixed operator/runtime-context export so it now follows the active execution namespace authority:
+    - `precision` -> `oms_v1\precision`
+    - `simulation` -> `oms_v1\simulation`
+    - only falls back to `main` if no active namespace can be derived
+  - Fixed staged site `generated_at` truth so it now prefers live clock heartbeat time instead of stale release-generation time.
+- Impact:
+  - The earlier `18`-target release collapsing to only `3` filled precision names was confirmed to be an execution-control concentration artifact, not a research-selection artifact.
+  - Under the same `max_daily_turnover_ratio = 0.11`, low-exposure bootstrap accounts now retain materially broader first-pass diversification.
+  - Portal/operator runtime views can now reflect current precision holdings and gap state instead of showing empty or stale data from the wrong namespace.
+  - Site timestamps now better reflect current refresh recency.
+- Validation:
+  - `python -m py_compile scripts\operator_intent\context_builder.py scripts\build_audit_site_index.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\portfolio_control.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+    - success
+  - Targeted bootstrap probe against current release targets with an empty precision-style account:
+    - previous behavior: `n_raw_orders = 16`, `n_final_orders = 3`
+    - new behavior: `n_raw_orders = 16`, `n_final_orders = 6`
+    - final turnover ratio remained within budget:
+      - `0.10918...`
+  - New retained bootstrap names in probe included:
+    - `300763.SZ`
+    - `603693.SH`
+    - `601016.SH`
+    - `002150.SZ`
+    - `603618.SH`
+    - `002015.SZ`
+- Compatibility:
+  - intentional execution-behavior change for bootstrap / low-exposure accounts
+  - existing turnover guardrails remain in force
+  - site/control-plane fix is backward-compatible and only tightens namespace truth selection
+- Rollback:
+  - revert the bootstrap-diversification branch in `live_execution_bridge\portfolio_control.py` and the new config defaults if the old concentration-prioritizing turnover behavior must be restored
+  - revert `scripts\operator_intent\context_builder.py` if operator runtime context must again read only the default `main` OMS namespace
+
+### [2026-04-03 13:05] Type: fix/site-accuracy-and-precision-runtime-alignment
+- Scope:
+  - `scripts\build_audit_site_index.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\hub_config.v6.runtime.daily_production.json`
+  - `data\market_state_v6\latest_market_state.json`
+  - `data\trade_clock\latest_account_health.json`
+  - `outputs\site_publish_stage\*`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Fixed the portal account-structure chart so it no longer treats:
+    - `available_cash`
+    - `cash`
+    - `total_asset`
+    as three additive structure buckets.
+  - The portal now presents account structure as:
+    - `持仓市值`
+    - `可用现金`
+    - `冻结现金`
+    and shows total asset separately.
+  - Fixed `system-status.html` so it now reads real live fields instead of stale/missing placeholders:
+    - clock stage from `market_stage`
+    - system safety from `system_mode`
+    - gate status / gate reason from safety state
+    - account health from `latest_account_health.json`
+  - Fixed trade-monitor live quote panel so it no longer shows the first rows of the whole-market snapshot CSV.
+  - Trade-monitor now filters quotes to the current portfolio-relevant symbols only:
+    - current actual positions
+    - current release target symbols
+  - Added explicit timing visibility to `intraday-state.html`:
+    - `择时买入评分`
+    - `择时卖出评分`
+    - top-ranked symbols, timing windows, and freeze reasons
+  - Tightened status-text mapping for common runtime values such as:
+    - `fresh`
+    - `caution`
+    - `precision_trade_disabled`
+  - Aligned precision runtime truth:
+    - config-builder defaults now treat `precision` execution as enabled by default in this workspace
+    - current `daily_production` runtime config now sets:
+      - `execution_policy.precision_trade_enabled = true`
+      - `execution_policy.allow_integrated_precision_execution = true`
+      - `execution_policy.namespace = precision`
+      - `runtime_selection.execution_namespace = precision`
+  - Raised current execution aggressiveness for rebuild days:
+    - `portfolio_control.max_daily_turnover_ratio = 0.45`
+    - `bootstrap_min_names = 8`
+    - `bootstrap_slot_budget_ratio = 0.95`
+  - Regenerated market-state artifacts and refreshed the broker health snapshot after config alignment.
+  - Republished the portal and runtime context.
+- Impact:
+  - The public site now reports system status, price snapshots, and timing views with materially better operational truth.
+  - Precision execution truth is no longer split between a running clock started with `--precision-trade on` and a runtime config still declaring precision execution disabled.
+  - Bootstrap execution is now intentionally more aggressive for low-exposure rebuild scenarios.
+  - The market-state page now makes its source date visible; if upstream daily-state inputs are still on the previous session, the portal will show that explicitly instead of silently presenting it as live-today state.
+- Validation:
+  - `python -m py_compile scripts\build_audit_site_index.py scripts\operator_intent\context_builder.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+    - success
+  - lightweight market-state rebuild:
+    - completed
+    - latest artifact regenerated at `2026-04-03 13:02:05`
+    - payload trade date remained `20260402`
+  - lightweight broker health refresh:
+    - completed
+    - `account_mode = precision`
+    - `precision_trade_enabled = true`
+  - public checks:
+    - `https://peng1145141919810.xyz/system-status.html` -> `200`
+    - `https://peng1145141919810.xyz/trade-monitor.html` -> `200`
+    - `https://peng1145141919810.xyz/intraday-state.html` -> `200`
+    - `https://peng1145141919810.xyz/operator_runtime_context.json` -> `200`
+- Compatibility:
+  - intentional display and runtime-behavior tightening
+  - execution side is more aggressive than earlier same-day settings
+  - no broker/order authority boundaries were removed
+- Rollback:
+  - revert the runtime-config precision toggles and turnover settings if the workspace must fall back to the previous conservative precision gate
+  - revert the quote-filtering and timing-display sections in `scripts\build_audit_site_index.py` if the site must return to the earlier generic snapshot views
+
+### [2026-04-03 13:18] Type: ops/precision-account-switch-and-site-truth-reset
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\gmtrade_runtime_config.local.json`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\hub_config.v6.runtime.daily_production.json`
+  - `data\live_execution_bridge\precision\*`
+  - `data\live_execution_bridge\oms_v1\precision\*`
+  - `data\trade_clock\latest_account_health.json`
+  - `data\trade_clock\intraday_state\latest\*`
+  - `outputs\site_publish_stage\*`
+  - `scripts\build_audit_site_index.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Switched the active precision execution account to:
+    - `b551a677-2f1a-11f1-b8c2-00163e022aa6`
+  - Added a repo-local gmtrade runtime template at:
+    - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\gmtrade_runtime_config.local.json`
+  - Updated `hub_v6\local_settings.py` so the workspace prefers the repo-local gmtrade template over inherited legacy template paths when the local file exists.
+  - Regenerated the `daily_production` runtime config with:
+    - `execution_mode = precision`
+    - `precision_trade = on`
+    - `execution_namespace = precision`
+  - Archived stale precision-side artifacts from the previous precision account under:
+    - `data\account_switch_archive\precision_to_b551a677_20260403_131149`
+  - Rebuilt fresh precision truth files for the new small-capital account, including:
+    - `latest_account_health.json`
+    - `live_execution_bridge\precision\latest_account_state.json`
+    - `oms_v1\precision\snapshots\latest_actual_portfolio_state.json`
+    - `desired_vs_actual_gap.csv`
+    - fresh empty intraday-state sidecars
+  - Restarted the trade clock so the active runtime, health probe, OMS namespace, and operator/site exports all point at the new precision account.
+  - Fixed staged site health display so it now treats broker health snapshots with top-level `ok = true/false` as valid health truth instead of rendering `unknown` when `status` is absent.
+- Impact:
+  - The active precision execution account is now a clean `10,000` NAV / `10,000` cash / `0`-position account, much closer to the intended small-account operating regime.
+  - Old precision holdings and ledger residue no longer contaminate the live precision namespace, operator runtime context, or public site.
+  - Public site/runtime exports now reflect the new account truth:
+    - new account id
+    - empty positions
+    - eligible precision gate
+  - Site status and system status now show account health correctly instead of `unknown` for broker probes that only return `ok`.
+- Validation:
+  - lightweight precision health probe against the new account:
+    - `ok = true`
+    - `account_id = b551a677-2f1a-11f1-b8c2-00163e022aa6`
+    - `cash = 10000`
+    - `nav = 10000`
+    - `positions_count = 0`
+  - `python -m py_compile scripts\build_audit_site_index.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.py`
+    - success
+  - post-restart local truth checks:
+    - `clock_state.json`
+      - `gate.account_mode = precision`
+      - `gate.reason = eligible`
+      - `system_mode = NORMAL`
+    - `live_execution_bridge\precision\latest_account_state.json`
+      - new account id
+      - `positions = []`
+    - `oms_v1\precision\snapshots\latest_actual_portfolio_state.json`
+      - new account id
+      - `positions_len = 0`
+  - public checks after republish:
+    - `https://peng1145141919810.xyz/operator_runtime_context.json` -> `200`
+    - `https://peng1145141919810.xyz/site_state.json` -> `200`
+    - `https://peng1145141919810.xyz/system-status.html` -> `200`
+    - `https://peng1145141919810.xyz/trade-monitor.html` -> `200`
+- Compatibility:
+  - intentional precision-account authority change
+  - stale precision artifacts from the old account were preserved under archive instead of deleted irreversibly
+  - display-layer health fallback is backward-compatible for both `status`-based and `ok`-based health payloads
+- Rollback:
+  - restore the previous precision account id in the repo-local gmtrade template and regenerate runtime config if the system must return to the former precision account
+  - move archived precision artifacts back from `data\account_switch_archive\precision_to_b551a677_20260403_131149` only if the old account must resume as the active precision namespace
+
+### [2026-04-03 13:30] Type: feature/account-size-aware-release-sizing
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `data\portfolio_recommendation_v6\*`
+  - `data\trade_release_v1\latest_release.json`
+  - `outputs\site_publish_stage\*`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added account-size-aware release sizing to `portfolio_recommendation.py`.
+  - Release generation now reads live broker/account truth from `data\trade_clock\latest_account_health.json` and derives small-account sizing constraints from:
+    - `nav`
+    - `cash`
+    - `lot_size`
+    - `min_trade_value`
+    - `cash_reserve_ratio`
+    - candidate prices
+  - New account-aware sizing outputs now enter the portfolio summary:
+    - `account_sizing`
+    - `account_candidate_selection`
+    - `executable_weight_floor`
+    - `previous_target_reset_reason`
+    - `account_size_v2a_fallback`
+  - Small empty-account bootstrap now resets stale `target_positions_prev.csv` continuity instead of inheriting the previous large-account target book.
+  - For empty small accounts, recommendation generation now prefers the pre-`portfolio` candidate pool when `portfolio` would otherwise collapse the book too aggressively for executable small-account bootstrap.
+  - Added new config surface under `portfolio_recommendation`:
+    - `account_size_aware_sizing`
+    - `account_size_slot_budget_ratio`
+    - `account_size_min_weight_buffer`
+    - `account_size_max_single_name_cap`
+  - Rewrote runtime config and published a new release produced under the new small-account sizing logic:
+    - `release_20260403_132843_3254512e`
+    - `trade_date = 2026-04-07`
+    - `target_count = 3`
+- Impact:
+  - Release sizing is no longer implicitly tuned for a large account and then left for the execution layer to chop down.
+  - The system now produces target books that are materially closer to what a `10,000`-NAV account can actually trade.
+  - Cross-account contamination from old target continuity is now cut off when a new empty account becomes the active precision account.
+  - The latest release pointer is now aligned to the small-account sizing regime and public `site_state.json` reflects the new latest release id.
+- Validation:
+  - `python -m py_compile quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+    - success
+  - lightweight recommendation rebuild under the new `10,000` precision account:
+    - `n_names = 3`
+    - `account_sizing.affordable_names = 3`
+    - `account_candidate_selection.selected_names = 3`
+    - `executable_weight_floor.final_total_weight = 0.63`
+  - release publish:
+    - `latest_release.json -> release_20260403_132843_3254512e`
+    - `trade_date = 2026-04-07`
+    - `target_count = 3`
+  - public checks:
+    - `https://peng1145141919810.xyz/site_state.json` -> `200`
+    - `latest_release_id = release_20260403_132843_3254512e`
+- Compatibility:
+  - intentional release-behavior change for small-account precision bootstrap
+  - large-account behavior remains driven by the same research, market-state, and thesis overlays, but now passes through the same account-aware sizing layer
+- Rollback:
+  - disable `PORTFOLIO_ACCOUNT_SIZE_AWARE_SIZING` and rebuild recommendation/release if the system must return to account-agnostic release sizing
+  - restore prior `latest_release.json` only if the former large-account-oriented release must resume authority
+### [2026-04-03 14:00] Type: fix/site-publish-and-execution-review
+- Scope:
+  - `scripts\publish_audit_report_to_site.ps1`
+  - `scripts\build_audit_site_index.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_manager.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_llm_review.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\configs\hub_config.v6.runtime.daily_production.json`
+  - `data\trade_clock\llm_execution_review\*`
+  - `data\trade_release_v1\latest_release.json`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Reworked site publish to stop deleting remote HTML first. The publish path now stages a full site bundle locally, uploads a single compressed archive to the server, extracts into a remote incoming directory, and then atomically swaps the remote site root.
+  - This fixes the concrete failure mode where `audit-center.html`, `login.html`, and `register.html` were deleted remotely and then left `404` when multi-file `scp` uploads died mid-stream.
+  - Added `execution_llm_review.py` and integrated it into `execution_manager.py` before `run_execution_bridge(...)`.
+  - The execution layer now feeds the current release, market state, account snapshot, safety state, and top target rows into an LLM review step and records the structured result under `data\trade_clock\llm_execution_review`.
+  - LLM review can now influence execution through bounded fields only:
+    - `turnover_multiplier`
+    - `blocked_symbols`
+    - `favored_symbols`
+    - `reduce_only`
+    - `candidate_pool_assessment`
+  - Added runtime config surface for `execution_llm_review` and execution-side control fields for:
+    - small-account buy slicing
+    - LLM blocked symbols
+    - LLM favored symbols
+    - LLM favored score boost
+  - Extended `live_execution_bridge\portfolio_control.py` so execution control now applies:
+    - small-account per-order buy caps
+    - LLM symbol blocks on buys
+    - LLM-favored symbol priority boost during turnover-budget ranking
+  - Hardened the empty-account behavior of execution LLM review:
+    - if the review says `reduce_only=true` while the active account is empty, the system demotes that into a tighter turnover multiplier instead of freezing all bootstrap buys.
+  - Tightened account-size executable-floor math in `portfolio_recommendation.py`.
+    - release sizing now uses the true minimum executable notional after round-lot quantization, not just `max(min_trade_value, lot_size * price)`.
+    - this reduces the mismatch where release sizing could still overestimate what a `10,000` account could actually place.
+  - Rebuilt and republished the latest release after these fixes:
+    - `release_20260403_135525_efb213b6`
+    - `trade_date = 2026-04-07`
+  - Updated the strategy status page to explicitly expose:
+    - current `candidate_source`
+    - integrated thesis accepted count
+    - fact-backed candidate count
+    - fallback signals affecting the current small-account release.
+- Impact:
+  - Public site pages no longer depend on a fragile delete-then-upload sequence.
+  - The website now serves the portal pages again after the earlier `404` regression.
+  - Execution is no longer purely rigid rule-chopping for small accounts; it now has one more bounded review layer and one more account-size-aware slicing layer.
+  - The system can now explicitly surface when the candidate pool is weak and coming from `latest_scores_executable_fallback` instead of a fact-backed integrated-thesis pass.
+  - Current strategy truth remains weak at the thesis layer:
+    - `integrated_thesis_state.summary.n_accepted = 0`
+    - `candidate_source = latest_scores_executable_fallback`
+  - This means the main remaining weakness is not just execution mechanics; candidate quality and thesis authority are still below the bar for aggressive automatic deployment.
+- Validation:
+  - `python -m py_compile scripts\build_audit_site_index.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_manager.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\execution_llm_review.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\live_execution_bridge\portfolio_control.py`
+    - success
+  - runtime config rewrite:
+    - `trade_clock_service._write_runtime_config('daily_production', execution_mode='precision', precision_trade='on', execution_namespace='precision', shadow_run=False)`
+    - success
+  - LLM review lightweight probe under the canonical runtime Python:
+    - provider = `execution_llm_review_deepseek`
+    - model = `deepseek-chat`
+    - returned structured review with `turnover_multiplier = 0.6`
+    - candidate pool assessment = `weak`
+  - lightweight recommendation rebuild after executable-floor fix:
+    - `candidate_source = latest_scores_executable_fallback`
+    - target book rewritten and a new release published: `release_20260403_135525_efb213b6`
+  - public checks after republish:
+    - `https://peng1145141919810.xyz/` -> `200`
+    - `https://peng1145141919810.xyz/audit-center.html` -> `200`
+    - `https://peng1145141919810.xyz/login.html` -> `200`
+    - `https://peng1145141919810.xyz/register.html` -> `200`
+    - `https://peng1145141919810.xyz/system-status.html` -> `200`
+    - `https://peng1145141919810.xyz/strategy-status.html` -> `200`
+- Compatibility:
+  - intentional behavioral change in the publish path and pre-execution decision path
+  - execution LLM review is bounded and additive; if the provider is unavailable, the system degrades to a structured non-applied review artifact instead of crashing the execution chain
+  - small-account sizing and slicing changes are backward-compatible for larger accounts because the stricter per-order slicing only activates below the configured NAV threshold
+- Rollback:
+  - revert `scripts\publish_audit_report_to_site.ps1` if the server must return to the previous multi-file upload behavior
+  - disable `ENABLE_EXECUTION_LLM_REVIEW` to remove the LLM review layer
+  - disable `PORTFOLIO_CONTROL_SMALL_ACCOUNT_SLICING_ENABLED` to return to the old turnover-only execution control
+  - restore the prior `latest_release.json` pointer if the previous release must resume authority
+
+### [2026-04-03 14:05] Type: fix/runtime-context-alignment-and-final-release
+- Scope:
+  - `scripts\operator_intent\context_builder.py`
+  - `scripts\build_audit_site_index.py`
+  - `outputs\site_publish_stage\*`
+  - `data\trade_release_v1\latest_release.json`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Removed the stale-context fallback in `context_builder.py` that previously kept old `gap_rows` when the current `latest_release_id` had no matching rows in `desired_vs_actual_gap.csv`.
+  - Runtime context export now prefers correctness over “show something”: if `gap_rows` belong to an older release, the exported payload leaves them empty instead of surfacing mismatched target rows.
+  - Runtime context account payload is forced to align with `latest_release.json` for `release_id` and `trade_date`.
+  - Rebuilt the site and republished it atomically so that `operator_runtime_context.json`, `site_state.json`, and the portal HTML all reflect the same latest release.
+  - Final active release pointer for the small-account precision workflow is now:
+    - `release_20260403_140049_b4e784cc`
+    - `trade_date = 2026-04-07`
+- Impact:
+  - The public website no longer shows the earlier mismatch where `site_state.json` pointed at the new release while `operator_runtime_context.json` still exposed old precision gap rows from `release_20260402_203455_db5b296b`.
+  - Public portal state is now consistent for:
+    - latest release id
+    - active account id
+    - empty precision positions for the new `10,000` account
+    - current gap rows
+- Validation:
+  - `python -m py_compile scripts\operator_intent\context_builder.py`
+    - success
+  - site rebuild:
+    - `scripts\build_audit_site_index.py --output-dir outputs\site_publish_stage`
+    - success
+  - atomic site republish:
+    - `scripts\publish_audit_report_to_site.ps1`
+    - success
+  - public checks:
+    - `https://peng1145141919810.xyz/operator_runtime_context.json` -> `200`
+    - `gap_rows = []`
+    - `account.release_id = release_20260403_140049_b4e784cc`
+    - `https://peng1145141919810.xyz/site_state.json` -> `200`
+    - `latest_release_id = release_20260403_140049_b4e784cc`
+    - `https://peng1145141919810.xyz/audit-center.html` -> `200`
+    - `https://peng1145141919810.xyz/login.html` -> `200`
+    - `https://peng1145141919810.xyz/register.html` -> `200`
+    - `https://peng1145141919810.xyz/strategy-status.html` -> `200`
+- Compatibility:
+  - intentional behavioral change in runtime-context export
+  - downstream consumers that rely on stale `gap_rows` continuing to appear across release switches will now see an empty list instead
+- Rollback:
+  - revert `scripts\operator_intent\context_builder.py` if downstream tooling explicitly depends on old cross-release `gap_rows`
+  - restore the previous site publish stage and republish if the portal must be reverted to the prior public snapshot
+
+### [2026-04-03 14:20] Type: feature/candidate-pool-broadening-with-llm
+- Scope:
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\candidate_pool_llm_review.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `scripts\build_audit_site_index.py`
+  - `data\portfolio_recommendation_v6\*`
+  - `data\trade_release_v1\latest_release.json`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added `candidate_pool_llm_review.py` as a new bounded LLM advisory layer ahead of release generation.
+  - The portfolio recommendation path no longer relies only on `latest_portfolio_v1` or a narrow `latest_scores` fallback when the thesis layer is weak.
+  - Recommendation now builds a broader candidate pool from:
+    - `latest_portfolio_v1`
+    - `latest_scores`
+    - `latest_integrated_thesis.csv`
+    - `industry_router` stock signals
+  - The broader pool is merged, price-enriched, thesis-enriched, tiered, and written out as:
+    - `data\portfolio_recommendation_v6\candidate_pool.csv`
+  - Added `candidate_tier` classification with a pragmatic split:
+    - `A`: fact-backed + thesis build/pilot
+    - `B`: fact-backed or thesis/router still meaningfully supportive
+    - `C`: weak but still structurally connected
+    - `F`: fallback-only weak names
+  - Added bounded LLM candidate-pool review fields:
+    - `pool_quality`
+    - `favored_symbols`
+    - `blocked_symbols`
+    - `favored_mechanisms`
+    - `favored_event_types`
+    - `target_candidate_count`
+    - `breadth_bias`
+  - Recommendation now lets this LLM review influence candidate ranking and broadening, but not by inventing symbols.
+  - Added config surface for:
+    - broad candidate pool width
+    - weak-pool threshold
+    - candidate-pool LLM provider / timeout / boosts / penalties
+  - Rebuilt the recommendation using the active precision runtime config and republished the latest release:
+    - `release_20260403_141752_64efc73d`
+    - `trade_date = 2026-04-07`
+    - release execution policy now correctly reflects `precision` namespace
+  - Updated `strategy-status.html` to expose:
+    - broad pool count
+    - candidate tier counts
+    - LLM pool quality
+    - LLM suggested candidate breadth
+- Impact:
+  - LLM is now participating earlier and more broadly:
+    - candidate-pool expansion / prioritization
+    - pre-execution review
+  - Small-account release generation is now less rigid because it can select from a wider executable pool instead of collapsing immediately into a narrow fallback shortlist.
+  - Current alpha truth is still weak:
+    - `integrated_thesis.summary.n_accepted = 0`
+    - `fact_backed_candidates = 0`
+    - the broad pool currently contains many fallback names and only a small number of `B`-tier names
+  - This means the new logic improves breadth and transparency, but does not yet solve the deeper thesis-quality bottleneck.
+- Validation:
+  - `python -m py_compile` on:
+    - `scripts\build_audit_site_index.py`
+    - `hub_v6\candidate_pool_llm_review.py`
+    - `hub_v6\portfolio_recommendation.py`
+    - `hub_v6\config_builder.py`
+    - `hub_v6\local_settings.example.py`
+    - success
+  - Lightweight recommendation rebuild under canonical runtime Python:
+    - success
+    - `candidate_source = broad_candidate_pool_llm`
+    - `n_names = 2`
+    - `broad_pool_count = 131`
+    - `tier_counts = {'F': 127, 'B': 4}`
+  - Candidate-pool LLM review:
+    - provider = `candidate_pool_deepseek`
+    - model = `deepseek-chat`
+    - `pool_quality = weak`
+    - `target_candidate_count = 12`
+  - Release publish under active runtime config:
+    - `release_20260403_141752_64efc73d`
+    - `execution_policy.namespace = precision`
+  - Public checks:
+    - `https://peng1145141919810.xyz/strategy-status.html` -> `200`
+    - `https://peng1145141919810.xyz/site_state.json` -> `200`
+    - `latest_release_id = release_20260403_141752_64efc73d`
+- Compatibility:
+  - intentional behavioral change in recommendation source selection
+  - when the candidate-pool LLM layer is unavailable, the system falls back to deterministic broad-pool ranking instead of failing recommendation generation
+- Rollback:
+  - disable `ENABLE_PORTFOLIO_CANDIDATE_LLM_REVIEW` to remove the new advisory layer
+  - reduce `PORTFOLIO_BROAD_CANDIDATE_POOL_LIMIT` or revert `portfolio_recommendation.py` if the broader pool must be withdrawn
+  - restore a previous `latest_release.json` pointer if the prior release must resume authority
+
+### 2026-04-03 19:36
+- Type:
+  - `feature`
+- Scope:
+  - `data`
+  - `event`
+  - `research`
+  - `execution`
+  - `infra`
+- Files:
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\research_fact_store.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\tushare_client.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_proxy_store.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\AshareC#\tools\preflight_check.py`
+  - `F:\quant_data\AshareC#\scripts\update_external_research_feeds.py`
+  - `F:\quant_data\AshareC#\scripts\operator_intent\context_builder.py`
+  - `F:\quant_data\AshareC#\scripts\build_audit_site_index.py`
+  - `F:\quant_data\AshareC#\configs\external_sources\qianzhan_seed_urls.json`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- What changed:
+  - Added an external research refresh path before `research` / `research_refresh`:
+    - bounded Qianzhan page capture into `qianzhan_indicator_daily` and `qianzhan_knowledge_cards`
+    - bounded GGZY notice capture into `ggzy_notice_index`
+    - mapped GGZY listed-company hits into `event_fact_contract_orders` when a stock-basic name match exists
+  - Added optional bounded LLM enrichment to the external research refresh so Qianzhan/GGZY captures can carry structured research tags without giving the model authority over truth.
+  - Added `TushareClient.realtime_list(...)` and `TushareClient.realtime_tick(...)`.
+  - Added `intraday_proxy_store.py` and wired it into the live-snapshot refresh path so each selected phase now produces:
+    - intraday quote proxy snapshot
+    - intraday market-list proxy snapshot
+    - bounded per-symbol tick summaries
+    - normalized account-truth snapshot derived from broker health + OMS snapshot + pending-order counts
+  - Extended runtime config and example settings with:
+    - external research refresh controls
+    - Qianzhan budget / cookie-header path
+    - GGZY notice cap
+    - realtime list/tick toggles and limits
+    - explicit intraday-proxy and external-research roots
+  - Extended preflight to verify the new external refresh script and seed file.
+  - Extended operator runtime context and site build output so the website/export layer now sees:
+    - external research refresh manifest
+    - intraday proxy/account truth manifest
+    - real available/frozen cash and pending-order counts in trade-monitor
+    - site-state counters for external research and pending orders
+- Impact:
+  - The system now has a concrete daily path for:
+    - Qianzhan industry/macro/member-page capture
+    - GGZY procurement/result-notice discovery
+    - intraday realtime proxy data
+    - richer account-truth normalization
+  - LLM is now participating earlier in the data side as a bounded extractor/tagger, not only in candidate-pool and execution review.
+  - Website/runtime exports can now surface fresher execution/account context even when no positions are open.
+  - The current GGZY capture is still sparse because the national index layer does not guarantee dense detail pages every run; this is expected and currently treated as a discovery feeder, not a complete contract-truth source.
+- Validation:
+  - `python -m py_compile` on all touched Python files
+    - success
+  - `python scripts\update_external_research_feeds.py`
+    - success
+    - latest manifest observed:
+      - `qianzhan_pages = 2`
+      - `qianzhan_indicator_rows = 12`
+      - `ggzy_notice_rows = 0`
+      - `ggzy_contract_event_rows = 0`
+  - lightweight intraday proxy build
+    - success
+    - latest manifest observed:
+      - `namespace = precision`
+      - `quote_rows = 0`
+      - `list_rows = 0`
+      - `tick_rows = 0`
+      - `account_truth.account_id = b551a677-2f1a-11f1-b8c2-00163e022aa6`
+      - `account_truth.nav = 10000.0`
+  - `python scripts\build_audit_site_index.py --output-dir tmp\site_external_refresh_smoke`
+    - success
+  - manual Qianzhan connectivity probe with local cookie-map:
+    - `https://d.qianzhan.com/` -> `200`
+    - `https://x.qianzhan.com/` -> `200`
+    - `https://www.qianzhan.com/` -> `200`
+- Compatibility:
+  - additive feature set
+  - Qianzhan cookie handling now supports a local domain->cookie JSON map, so `d.qianzhan.com`, `x.qianzhan.com`, and `www.qianzhan.com` can carry distinct login-state headers
+  - if Qianzhan login state is absent, the refresh still runs in bounded anonymous mode and simply captures what is publicly reachable
+  - if Tushare realtime endpoints return no rows, the intraday proxy still writes account-truth artifacts and the scheduler path remains fail-open by config
+- Rollback:
+  - disable `ENABLE_EXTERNAL_RESEARCH_REFRESH` to remove Qianzhan/GGZY daily refresh from the scheduler
+  - disable `ENABLE_TUSHARE_REALTIME_LIST` / `ENABLE_TUSHARE_REALTIME_TICK` to shrink intraday proxy scope
+  - revert `clock_supervisor.py` and `intraday_proxy_store.py` if the new live-snapshot helper must be returned to daily-price-only behavior
+
+### 2026-04-03 23:55
+- Type:
+  - `feature`
+  - `bugfix`
+- Scope:
+  - `data`
+  - `intraday`
+  - `website`
+- Files:
+  - `F:\quant_data\AshareC#\scripts\update_external_research_feeds.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\flow_features.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\timing_scores.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\timing_rules.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\t_overlay.py`
+  - `F:\quant_data\AshareC#\scripts\build_audit_site_index.py`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- What changed:
+  - Qianzhan refresh was deepened from seed-only capture to bounded in-domain crawl:
+    - seed pages now discover and prioritize additional `d/x/stock/zc/www.qianzhan.com` links
+    - daily crawl still respects the configured page budget
+  - Fixed a real Qianzhan auth bug:
+    - the local cookie-map reader now strips UTF-8 BOM before building request headers
+    - without this, member-page refresh silently degraded to `0` rows because `urllib` rejected the header encoding
+  - Intraday proxy data is now consumed by the timing pipeline instead of only being exported:
+    - `flow_features.py` merges intraday quote/list/tick proxy snapshots
+    - added proxy features such as:
+      - `proxy_spread_pct`
+      - `proxy_tick_imbalance`
+      - `proxy_top_list_hit`
+      - `proxy_market_heat_score`
+    - `timing_scores.py` now adjusts buy/sell technical and flow components with those proxy features
+    - `timing_rules.py` now freezes or boosts readiness when proxy spread / proxy imbalance / top-list state justify it
+    - `t_overlay.py` now blocks `T` arming when proxy snapshots are stale or the spread is too wide
+  - Fixed a real intraday-state robustness bug:
+    - `flow_features.py` no longer assumes `actual_positions_frame` always has a `symbol` column
+    - veto-reason masks are now index-safe under sparse or synthetic frames instead of raising `Unalignable boolean Series`
+  - Updated `intraday-state.html` generation so the portal now shows:
+    - proxy spread
+    - proxy tick imbalance
+    - top-list hit
+    alongside timing states and freeze reasons
+- Impact:
+  - Qianzhan daily refresh can now pull actual member-accessible seed descendants instead of stopping at the homepage layer.
+  - Intraday timing is no longer driven only by legacy snapshot and static flow features; it now sees bounded realtime proxy liquidity / heat / imbalance signals.
+  - The intraday state-machine portal is more explainable because the operator can now see which proxy features participated in timing decisions.
+- Validation:
+  - `python -m py_compile` passed for all touched files
+  - Manual Qianzhan probe after BOM fix:
+    - `https://d.qianzhan.com/` -> `200`, `links = 250`, numeric snippets extracted
+    - `https://x.qianzhan.com/` -> `200`, `links = 66`, numeric snippets extracted
+    - `https://www.qianzhan.com/` -> `200`, `links = 124`, numeric snippets extracted
+  - `python scripts\update_external_research_feeds.py`
+    - success
+    - latest manifest observed:
+      - `qianzhan_pages = 24`
+      - `qianzhan_indicator_rows = 144`
+      - `ggzy_notice_rows = 0`
+  - `build_intraday_proxy_snapshot(...)`
+    - success
+    - latest observed:
+      - `namespace = precision`
+      - `quote_rows = 0`
+      - `list_rows = 0`
+      - `tick_rows = 0`
+      - `account_truth.account_id = b551a677-2f1a-11f1-b8c2-00163e022aa6`
+  - Synthetic intraday timing-chain probe:
+    - success
+    - confirmed propagation of:
+      - `proxy_spread_pct`
+      - `proxy_tick_imbalance`
+      - `proxy_top_list_hit`
+      into timing-rule outputs
+  - `python scripts\build_audit_site_index.py --output-dir outputs\site_publish_stage`
+    - success
+- Compatibility:
+  - additive behavior
+  - if proxy snapshots are empty outside market hours, timing still runs and simply falls back to the older data path with explicit degraded reasons
+  - if Qianzhan member cookies expire, the crawler remains budget-bounded and fail-open by scheduler config
+- Rollback:
+  - reduce `EXTERNAL_RESEARCH_QIANZHAN_DAILY_PAGE_BUDGET` to revert to shallower Qianzhan crawl pressure
+  - disable `ENABLE_TUSHARE_REALTIME_LIST` / `ENABLE_TUSHARE_REALTIME_TICK` if proxy features should stop affecting timing
+  - revert the touched intraday-state-machine modules if timing must return to pre-proxy scoring
+
+### 2026-04-04 (session: qianzhan industry + pre-release proxy objective)
+- Type:
+  - `feature`
+- Scope:
+  - `external_research`
+  - `portfolio`
+  - `intraday`
+- Files:
+  - `F:\quant_data\AshareC#\scripts\update_external_research_feeds.py`
+  - `F:\quant_data\AshareC#\configs\external_sources\qianzhan_seed_urls.json`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_pre_release_objective.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\portfolio_recommendation.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- What changed:
+  - Qianzhan: URL heuristics for industry/macro/data/chain pages (higher crawl priority, more numeric snippets), `indicator_category=industry_indicator_page`, `sub_industry_name` from keyword rules; seeds add `www.qianzhan.com` industry/data/analyst entry URLs (may 404; fetch skips).
+  - `portfolio_pre_release_objective.py`: merges latest intraday proxy quote/list/tick CSVs with per-symbol tradability multipliers, scales by NAV/cash headroom, enforces L1 turnover vs `portfolio_control.max_daily_turnover_ratio`, optional HHI flattening; runs after executable-weight floor; summary in `portfolio_recommendation.json` under `pre_release_proxy_objective` (research-proxy layer, documented in module docstring).
+- Impact:
+  - More structured `qianzhan_indicator_daily` rows when crawlers hit stable industry-style URLs.
+  - `target_positions.csv` can reflect proxy liquidity and account/turnover/diversification before release.
+- Validation:
+  - `python -m py_compile` on touched Python modules
+- Compatibility:
+  - `PORTFOLIO_PRE_RELEASE_INTRADAY_PROXY_OBJECTIVE_ENABLED` defaults True in `config_builder`; set False to restore prior weights; `PORTFOLIO_PRE_RELEASE_PROXY_FAIL_OPEN` keeps recommendation running if the objective layer errors.
+- Rollback:
+  - disable `PORTFOLIO_PRE_RELEASE_INTRADAY_PROXY_OBJECTIVE_ENABLED` or remove the hook block in `portfolio_recommendation.py`
+  - trim `configs/external_sources/qianzhan_seed_urls.json` if new seeds add noise
+
+### 2026-04-04 (session: clock account snapshot + T overlay concentration guard)
+- Type:
+  - `feature`
+  - `safety`
+- Scope:
+  - `trade_clock`
+  - `intraday_state_machine`
+  - `csharp_runtime_skeleton`
+- Files:
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_account_snapshot.py` (new)
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\clock_supervisor.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\runtime.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\intraday_state_machine\t_overlay.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\config_builder.py`
+  - `F:\quant_data\AshareC#\quant_research_hub_v6_repacked_clean\quant_research_hub_v6_repacked_clean\hub_v6\local_settings.example.py`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Pathing\PathRegistry.cs`
+  - `F:\quant_data\AshareC#\csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Program.cs`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- What changed:
+  - Each scheduler heartbeat builds `account_snapshot` from `latest_account_health.json` plus OMS `latest_actual_portfolio_state.json` when present: NAV, cash, exposure, top-8 positions, `concentration_top1_weight`, HHI, `concentration_risk` (`ok` / `elevated` / `high`), `heavy_position_warning`.
+  - Same payload is written atomically to `data/trade_clock/clock_account_snapshot.json` and embedded in `clock_state.json` under `account_snapshot`.
+  - Thresholds are configurable via `trade_clock.account_snapshot` in generated runtime config (`CLOCK_*` locals in `local_settings`).
+  - Intraday `intraday_control_summary.json` includes `clock_account_snapshot`; when concentration is `high`, `overlay_recommendation.block_new_t` is forced on.
+  - T overlay reads the snapshot file: under elevated/high concentration, tightens max proxy spread and scales down `max_ratio_per_symbol` via `intraday_state_machine.t_overlay.concentration_guard` (defaults wired in `config_builder`; overrides via `T_OVERLAY_*` locals).
+  - C# `PathRegistry.ClockAccountSnapshotPath` and `site-status` print snapshot presence, NAV/cash, concentration fields.
+- Impact:
+  - Reduces accidental oversized T activity when the book is already concentrated; keeps clock loop the single writer for account-scale truth used by intraday.
+- Validation:
+  - `python -m py_compile` on touched Python modules
+  - `dotnet build` on `csharp_runtime_skeleton\Ashare.RuntimeSkeleton.sln`
+- Compatibility:
+  - If health/OMS files are missing, snapshot fields degrade to zeros/`ok` risk; T overlay keeps baseline spreads.
+  - Set `CLOCK_ACCOUNT_SNAPSHOT_ENABLED = False` to disable snapshot builder (returns `enabled: false`).
+- Rollback:
+  - revert the listed hub_v6 files and C# path/CLI edits; remove `clock_account_snapshot.py` if fully backing out.
+- Remote / server note:
+  - Public site publish (`scripts/publish_audit_report_to_site.ps1`) only needs the staged static tree and SSH; no Python research stack is required on the VPS. Verify `tar`/OpenSSH on the Windows runner and that remote `tar` extracts `site_publish_stage` as a single top-level folder before relying on atomic `mv` swap.
+
+### 2026-04-04 (session: intraday afternoon overlay actually applied)
+- Type:
+  - `bugfix`
+  - `behavior`
+- Scope:
+  - `trade_clock` / `afternoon_execution`
+- Files:
+  - `quant_research_hub_v6_repacked_clean/quant_research_hub_v6_repacked_clean/engine/clock_supervisor.py`
+  - `quant_research_hub_v6_repacked_clean/quant_research_hub_v6_repacked_clean/engine/config_builder.py`
+  - `quant_research_hub_v6_repacked_clean/quant_research_hub_v6_repacked_clean/engine/local_settings.example.py`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- What changed:
+  - `_apply_intraday_afternoon_overlay` **no longer** skips merging `intraday_control_summary` into the afternoon `execution_only` plan when `intraday_state_machine.shadow_mode` is True (previously default `True`, so overlay was **never** applied and 盘中建议进不了下午执行).
+  - New opt-in `intraday_state_machine.afternoon_overlay_respect_shadow_mode` / `INTRADAY_AFTERNOON_OVERLAY_RESPECT_SHADOW_MODE` restores the old “shadow 下不合并 overlay” behavior.
+  - Before `afternoon_execution` / `afternoon_shadow` subprocess, runs an extra `refresh_intraday_state_machine` with `source_phase` set to that phase so timing/T 层按 **afternoon_session** 刷新后再算 `_phase_execution_plan`.
+- Impact:
+  - 下午盘 `launch_canonical --mode execution_only` 使用的 flags（如 `should_run`、`allow_unfinished_orders_reconcile`、block new entries 等）会反映最新日内 overlay；实盘仍由 execution bridge + 门禁决定。
+- Validation:
+  - `python -m py_compile` on touched Python modules
+- Rollback:
+  - set `INTRADAY_AFTERNOON_OVERLAY_RESPECT_SHADOW_MODE = True` to match pre-fix afternoon overlay gating (not recommended unless debugging).
+
+### 2026-04-04 (session: intraday tactical layer + OMS merge + clock phases)
+- Type:
+  - `feature`
+  - `execution`
+- Scope:
+  - `intraday_tactics` (new package)
+  - `oms` / `execution_bridge` / `execution_manager`
+  - `trade_clock` scheduler
+  - `main_research_runner` / `launch_canonical` / `RUN_PROFILES.yaml`
+- Files (high level):
+  - New: `engine/intraday_tactics/` (`intent_schema`, `context_loader`, `policy`, `trigger_engine`, `priority_arbiter`, `runtime`, `audit`)
+  - New: `engine/oms/tactical_merge.py`
+  - Updated: `engine/oms/runtime.py`, `engine/execution_bridge_runner.py`, `engine/execution_manager.py`, `engine/clock_supervisor.py`, `engine/intraday_state_machine/runtime.py`, `engine/config_builder.py`, `engine/local_settings.example.py`, `main_research_runner.py`, `launch_canonical.py`, `RUN_PROFILES.yaml`, `scripts/probe_intraday_tactics.py`, `docs/INTRADAY_TACTICAL_LAYER_CN.md`, `CODEX_DEV_LOG.md`
+- What changed:
+  - **战术意图层**：从 `symbol_execution_state`、控制摘要、`clock_account_snapshot` 等读取上下文，触发止盈/止损/时间止损/集中度/流动性/事件否决/信号衰减/T overlay/战术加仓等规则，输出 `IntradayActionIntent`；`priority_arbiter` 按任务书优先级合并到每 symbol 单一主意图。
+  - **产物**：`data/trade_clock/intraday_tactics/latest/intraday_action_intents.{json,csv}`、`intraday_tactical_orders.json`、`intraday_tactical_summary.json`、`intraday_tactical_conflicts.json`；审计摘要 `data/audit_v1/latest/latest_intraday_tactical_audit.json`。
+  - **OMS**：`plan_portfolio_control` 之后若 runtime 配置含 `intraday_tactical_orders_path`，则 `tactical_merge` 将战术 `OrderIntent` 合并进 `final_orders`（不替代 release 目标组合真相），`oms_summary` 增加 `tactical_merge` 字段。
+  - **执行**：`run_execution_only(..., intent_source="intraday_tactical", intraday_tactical_orders_path=...)`；`build_execution_runtime_config` 将路径写入桥接 payload。
+  - **入口**：`--mode intraday_tactics_only` 调 `run_intraday_tactics_pipeline`（可选 `--tactical-no-execute`）；时钟增加 6 个 `intraday_tactical_*` 相位（默认 `ENABLE_INTRADAY_TACTICS` 时在 `_candidate_phases` 中调度），子进程调用 `launch_canonical` 同上模式；日内刷新相位列表扩展。
+- Impact:
+  - 盘中可在固定节拍生成真实买卖候选并走同一 OMS/门禁；战略 release 仍为 desired 主真相。
+- Validation:
+  - `python -m py_compile` on touched modules
+  - `python scripts/probe_intraday_tactics.py --no-execute`
+- Known gaps / follow-ups:
+  - 触发器阈值为可运行默认，需按实盘调 `intraday_tactics.reason_thresholds` 与 `scheduler_phases`。
+  - 门户与 `strategy_audit` 战术摘要接入已在后续提交完成（见本节下方 2026-04-04 follow-up 条目）。
+- Rollback:
+  - `ENABLE_INTRADAY_TACTICS = False` 或从 `RUN_PROFILES` 移除 `intraday_tactics_only`；清空 `intraday_tactical_orders_path` 即恢复纯 release 驱动 OMS。
+
+### 2026-04-04 (follow-up: intraday tactical audit + portal)
+- Type:
+  - `feature`
+  - `observability`
+- Scope:
+  - `strategy_audit` HTML/JSON pack
+  - static portal generator `scripts/build_audit_site_index.py`
+- Files:
+  - `quant_research_hub_v6_repacked_clean/quant_research_hub_v6_repacked_clean/engine/intraday_tactical_audit_pack.py` (new)
+  - `quant_research_hub_v6_repacked_clean/quant_research_hub_v6_repacked_clean/engine/strategy_audit.py`
+  - `scripts/build_audit_site_index.py`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- What changed:
+  - `build_intraday_tactical_audit_pack` reads `data/trade_clock/intraday_tactics/latest/*.json` and `data/audit_v1/latest/latest_intraday_tactical_audit.json`, emits `intraday_tactical_analysis` on `strategy_audit.json` with summary lines, add/reduce counts, top `reason_code`s, conflict rows, and suppression hints; HTML adds sections between T overlay and execution-flow blocks; plain-language narrative includes tactical lines when available.
+  - Portal: `load_state` ingests tactical artifacts; `tactical_portal` bundle drives `index.html` (tactical card), `intraday-state.html` (tactical cards + reason chart + orders + conflicts + reason table), `audit-center.html` (snapshot + chart), extended `audit_report_table` columns when per-report JSON includes `intraday_tactical_analysis`; `site_state.json` adds `intraday_tactical_*` counts and top reason code.
+- Impact:
+  - Operators can see tactical intent/order/conflict/reason_code summaries in the static site and in each new `strategy_audit` pack without opening raw JSON.
+- Validation:
+  - `python -m py_compile` on touched modules
+  - `python scripts/build_audit_site_index.py` (local `outputs/site_publish_stage`)
+- Rollback:
+  - remove `intraday_tactical_analysis` from `strategy_audit` payload/renderer and revert portal generator tactical blocks; delete `intraday_tactical_audit_pack.py` if unused.
+
+### 2026-04-04 (session: static bug sweep — Python + C# operator)
+- Type:
+  - `bugfix`
+  - `observability`
+- Scope:
+  - `hub_v6` brief parser
+  - `intraday_tactical_audit_pack`
+  - C# `PathRegistry` / `OperatorCli`
+- Files:
+  - `quant_research_hub_v6_repacked_clean/quant_research_hub_v6_repacked_clean/engine/rebuild_bridge_from_brief.py`
+  - `quant_research_hub_v6_repacked_clean/quant_research_hub_v6_repacked_clean/engine/intraday_tactical_audit_pack.py`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.Pathing/PathRegistry.cs`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.OperatorCli/Program.cs`
+  - `F:\quant_data\AshareC#\CODEX_DEV_LOG.md`
+- What changed:
+  - Replaced bare `except:` / `except: pass` in `rebuild_bridge_from_brief.py` with `except (ValueError, TypeError)` so unexpected errors are not swallowed silently.
+  - `build_intraday_tactical_audit_pack`: `n_raw` no longer falls through to audit `n_intents` when `n_raw` is legitimately `0`; added `_safe_int` for parsing.
+  - `PathRegistry` now exposes `LatestIntradayTacticalAuditJsonPath` and `IntradayTacticalOrdersJsonPath`; `paths` / `audit-status` / `site-status` print tactical artifact presence and `intraday_tactical_analysis` section availability; `site-status` echoes new `site_state.json` tactical fields when present.
+- Notes:
+  - Workspace-wide `python -m compileall` on the entire repo is **not** a clean signal: it traverses `.venv` (may fail on older interpreters) and `data/research_hub_v5_1_gpu_integrated/cycles/**/labs/**` which often contains **truncated generated** `feature_pack.py` from failed research runs — treat those as data artifacts, not maintained source.
+- Validation:
+  - `python -m compileall -q` on `quant_research_hub_v6_repacked_clean/quant_research_hub_v6_repacked_clean` (hub tree)
+  - `python -m py_compile` on edited Python files
+  - `dotnet build` Release on `csharp_runtime_skeleton/Ashare.RuntimeSkeleton.sln`
+- Rollback:
+  - revert the listed files; remove the two new properties from `PathRegistry` if CLI surface must stay minimal.
+
+---
+
+## Change Log Entry — 2026-04-07 04:55 (local)
+- Type: `bugfix` / `config-correction`
+- Scope: Google Drive backup path — scripts and dev log stable sections
+- Files:
+  - `scripts/sync_codex_dev_log_to_gdrive.py`
+  - `scripts/create_gdrive_script_snapshot.py`
+  - `scripts/export_csharp_runtime_skeleton_to_gdrive.ps1`
+  - `scripts/start_codex_dev_log_sync.ps1`
+  - `CODEX_DEV_LOG.md` (stable sections + two historical entries)
+- What changed:
+  - All hardcoded `H:\我的云端硬盘\AshareCSharp_backups` references corrected to `G:\我的云端硬盘\AshareCSharp_backups`.
+  - A prior session (recorded at line ~5274) had recorded that Google Drive default root changed to H drive; confirmed H drive does not exist on this machine — G:\我的云端硬盘\AshareCSharp_backups is the live mount with all historical backup data.
+  - Dev log stable section "Google Drive dev-log mirror" updated to reflect correct G drive path.
+  - Two historical change log entries that referenced H drive corrected in-place.
+- Impact:
+  - `sync_codex_dev_log_to_gdrive.py --once` and `create_gdrive_script_snapshot.py` now work without overriding `--backup-root`.
+  - Pre-refactor backup snapshot created: `SCRIPT-20260407-R002` (1558 files, label `pre_refactor_constraint_overhaul`).
+- Validation:
+  - `python scripts/sync_codex_dev_log_to_gdrive.py --once --verbose` — succeeded, mirrored to `G:\我的云端硬盘\AshareCSharp_backups\codex_dev_log_mirror`.
+  - `python scripts/create_gdrive_script_snapshot.py --label pre_refactor_constraint_overhaul` — succeeded, 1558 files copied.
+- Compatibility:
+  - No runtime behavior change; backup scripts only.
+- Rollback:
+  - Replace `G:` with `H:` in the four script files if the drive letter changes again.
+
+---
+
+## Change Log Entry — 2026-04-07 05:30 (local)
+- Type: `refactor` / `architectural-overhaul`
+- Scope: 执行约束体系 — 删除 OPERATOR_CONSTRAINT_MODE，引入 ConstraintBrain
+- Files:
+  - `quant_research_hub_v6_repacked_clean/.../engine/constraint_brain.py` (新建)
+  - `quant_research_hub_v6_repacked_clean/.../engine/runtime_profiles.py` (删除 OPERATOR_CONSTRAINT_MODES / operator_constraint_overrides / apply_operator_constraint_mode)
+  - `quant_research_hub_v6_repacked_clean/.../engine/config_builder.py` (删除 apply_operator_constraint_mode import 和调用)
+  - `quant_research_hub_v6_repacked_clean/.../engine/execution_manager.py` (删除 4 层串行 override 链，接入 ConstraintBrain)
+  - `quant_research_hub_v6_repacked_clean/.../engine/local_settings.example.py` (删除 OPERATOR_CONSTRAINT_MODE 配置项)
+  - `CODEX_DEV_LOG.md` (stable section 更新)
+- What changed:
+  - **删除**：`OPERATOR_CONSTRAINT_MODE`（exploratory/balanced/production 三档拨盘），这是一个把大量 gate 捆绑成单一 bool 覆写的屎山机制，无上下文感知，要么全拦要么全松。
+  - **删除**：`execution_manager.py` 里串行叠加的 4 层 override 链：`apply_execution_safety_overrides` → `_apply_market_state_execution_overrides` → LLM review → `_apply_llm_execution_review_overrides`，每层独立 deepcopy+merge，互不感知。
+  - **新建** `constraint_brain.py`：
+    - 评估 9 个独立信号维度：system_halt / market_panic / broker_health / oms_state / account_health / concentration / market_state_policy / llm_review / intraday_state
+    - 每个维度产出 score (0.0–1.0) + verdict (ok/caution/warning/block)
+    - 加权聚合，minimum-anchor 保护：任一 hard_blocker=0 → 总分 0
+    - 输出单一 verdict（proceed / proceed_degraded / reduce_only / defer / block）
+    - Hard-block 仅保留 3 种真正紧急情况：系统 HALT / 市场熔断 / broker 完全失联且持仓非零
+    - 空仓特殊处理：reduce_only 信号对零持仓账户自动升级为 proceed_degraded
+    - simulation 模式自动豁免所有 can_bypass_in_sim=True 的维度
+    - 输出一份合并好的 `config_overrides`，`execution_manager` 一次 `brain_apply()` 替换原来的 4 次 deepcopy+merge
+    - 所有决策过程写入 `release_context["constraint_brain"]` 供 audit/dispatch 记录
+- Impact:
+  - 再也不会因为一个轻微信号（比如 OMS 有 1 笔未结）触发全局 reduce_only；多个低风险信号叠加才会逐步降级
+  - `OPERATOR_CONSTRAINT_MODE` 环境变量可以从 local_settings.py 中删除，不再生效
+  - 调用外部实体（如 clock_supervisor、execution phase）的行为不变；只有约束决策内部逻辑重组
+  - dispatch 文件新增 `constraint_brain` 字段，记录每次决策的评分和维度细节
+- Validation:
+  - `python -m py_compile` 对所有修改文件：通过
+  - `apply_execution_safety_overrides` 已从 execution_manager imports 中移除（仅 safety_guard.py 内部定义）；无其他调用残留
+- Compatibility:
+  - 如果 local_settings.py 里还有 `OPERATOR_CONSTRAINT_MODE = "..."` 不会报错（getattr with fallback），但该值不再被消费
+  - execution_bridge / gmtrade 边界不受影响
+  - safety_guard.py 的 `assess_system_safety` 不变，brain 消费其输出
+- Rollback:
+  - 从 `SCRIPT-20260407-R002` snapshot 恢复 runtime_profiles.py / config_builder.py / execution_manager.py，删除 constraint_brain.py
+---
+
+## Change Log Entry - 2026-04-09 18:40 (local)
+- Type: `refactor` / `site-runtime-unification`
+- Scope:
+  - runtime entry naming cleanup
+  - unified control-plane snapshot
+  - portal source/build/publish chain
+  - C# control-plane observability
+- Files:
+  - `main_research_runner.py`
+  - `launch_canonical.py`
+  - `ashare_control/__init__.py`
+  - `ashare_control/control_plane.py`
+  - `SYSTEM_MANIFEST.yaml`
+  - `RUN_PROFILES.yaml`
+  - `site_portal/index.html`
+  - `site_portal/operator-console.html`
+  - `scripts/build_control_plane_site.py`
+  - `scripts/export_operator_runtime_context.py`
+  - `scripts/publish_audit_report_to_site.ps1`
+  - `scripts/publish_operator_runtime_context_to_site.ps1`
+  - `scripts/deploy_portal_backend_to_server.ps1`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.Contracts/RuntimeContracts.cs`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.Pathing/PathRegistry.cs`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.OperatorCli/Program.cs`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added `ashare_control` as a neutral control-plane package so new structural work no longer has to expose fresh `V5/V6` naming in the entry layer.
+  - `main_research_runner.py` now writes a control-plane snapshot, dual-writes neutral runtime-config aliases, and keeps the old runtime callable as a compatibility backend instead of the primary naming surface.
+  - `SYSTEM_MANIFEST.yaml` and `RUN_PROFILES.yaml` now expose neutral aliases such as `workspace_runtime_root`, `workspace_runtime_entry`, `research_cycles`, and `signal_plan_reuse_hours` while preserving old keys for compatibility.
+  - Replaced the portal home page and operator console with control-plane-oriented pages backed by `control_plane_snapshot.json`.
+  - Added `scripts/build_control_plane_site.py` so staged site bundles are built from `site_portal` plus fresh `operator_runtime_context.json` / `control_plane_snapshot.json`, instead of ad hoc static-page assumptions.
+  - Updated public publish and runtime-context publish scripts so the server receives the same staged control-plane artifacts that local development sees.
+  - C# `OperatorCli` now exposes `control-plane-status`, and the path registry now treats `site_portal/control_plane_snapshot.json` as a first-class workspace artifact.
+- Impact:
+  - The workspace now has a single control-plane vocabulary spanning Python entrypoints, C# observability, staged public site files, and SSH publish scripts.
+  - Future alpha expansion can target the control-plane registry / allocator layer without first fighting legacy naming clutter in the outer runtime shell.
+  - Public site publishing now carries explicit control-plane state rather than only audit pages plus a separately maintained runtime-context file.
+- Validation:
+  - `python -m py_compile main_research_runner.py launch_canonical.py ashare_control/__init__.py ashare_control/control_plane.py scripts/build_control_plane_site.py scripts/export_operator_runtime_context.py`
+  - `python scripts/build_control_plane_site.py --repo-root F:\quant_data\AshareC# --output-dir F:\quant_data\AshareC#\outputs\site_publish_stage`
+  - `python scripts/export_operator_runtime_context.py --repo-root F:\quant_data\AshareC# --output-path F:\quant_data\AshareC#\outputs\operator_runtime_publish_stage\operator_runtime_context.json --write-control-plane`
+  - `dotnet build csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.OperatorCli/Ashare.RuntimeSkeleton.OperatorCli.csproj -nologo`
+- Compatibility:
+  - Old `live_runtime_root`, `active_v6_root`, `active_v5_runtime_root`, `v5_cycles`, and `v6_plan_reuse_hours` keys are still present; downstream callers do not need to migrate immediately.
+  - Runtime execution semantics are unchanged; this turn only refactors the outer shell, artifact surfaces, and portal/build/deploy chain.
+- Rollback:
+  - Remove `ashare_control`, restore the previous `site_portal` HTML files, and revert the listed scripts / manifest aliases if the control-plane unification needs to be backed out.
+
+---
+
+## Change Log Entry - 2026-04-09 19:05 (local)
+- Type: `architectural-overhaul` / `alpha-unblock`
+- Scope:
+  - softening inner thesis gates
+  - promoting outer intelligent allocation
+  - collapsing distributed execution vetoes into outer arbitration
+- Files:
+  - `src/ashare/engine/outer_intelligence.py`
+  - `src/ashare/engine/integrated_thesis/runtime.py`
+  - `src/ashare/engine/portfolio_recommendation.py`
+  - `src/ashare/engine/constraint_brain.py`
+  - `src/ashare/engine/config_builder.py`
+  - `src/ashare/engine/local_settings.example.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added `outer_intelligence.py` as a dedicated outer module for candidate-pool allocation and execution arbitration.
+  - `integrated_thesis/runtime.py` no longer treats missing earnings confirmation or temporary portfolio gate pressure as automatic rejection when event/mechanism transmission remains strong; these states are now admitted as soft-gate candidates.
+  - `portfolio_recommendation.py` now routes broad candidate pools through `outer_intelligence_priority`, prefers the outer pool by default, and no longer lets technical confirmation hard-filter the candidate set when the outer allocator is configured to replace internal gates.
+  - `constraint_brain.py` now consumes the outer execution arbitration summary so most non-emergency execution restrictions degrade or resize instead of hard blocking.
+  - Runtime config defaults now bias toward the aggressive path:
+    - `PORTFOLIO_TECHNICAL_CONFIRMATION_GATE = False`
+    - `PORTFOLIO_LLM_CANDIDATE_WEAK_ACCEPT_THRESHOLD = 6`
+    - `PORTFOLIO_ENABLE_INTELLIGENT_OUTER_ALLOCATOR = True`
+    - `PORTFOLIO_INTELLIGENT_OUTER_ALLOCATOR_REPLACES_INTERNAL_GATES = True`
+    - `INTEGRATED_THESIS_SOFT_GATE_ADMISSION = True`
+- Impact:
+  - Candidate pools should stop collapsing just because `earnings_gate_pass_count` is temporarily zero.
+  - Router / thesis / event-fact / technical / market-state information is now being repurposed as outer scoring features rather than scattered inner vetoes.
+  - The system is materially less self-binding and is structurally closer to a multi-alpha allocator than a single-strategy gated funnel.
+- Validation:
+  - `python -m py_compile src/ashare/engine/outer_intelligence.py src/ashare/engine/integrated_thesis/runtime.py src/ashare/engine/portfolio_recommendation.py src/ashare/engine/constraint_brain.py src/ashare/engine/config_builder.py src/ashare/engine/local_settings.example.py`
+  - targeted Python probes for `score_candidate_pool()` and `arbitrate_execution()` passed locally
+- Compatibility:
+  - Existing downstream code still sees `integrated_thesis_score`, `integrated_thesis_state`, `constraint_brain`, and portfolio summary artifacts.
+  - Behavioral truth has changed intentionally: more candidates are expected to survive into outer allocation.
+- Rollback:
+  - Revert the listed files and restore previous portfolio/constraint defaults if you want the old hard-gated funnel back.
+
+---
+
+## Change Log Entry - 2026-04-09 20:05 (local)
+- Type: `architectural-overhaul` / `strategy-activation`
+- Scope:
+  - activating existing SQL fact layers inside the main candidate pool
+  - moving LLM from side-review into ranking overlay for the portfolio candidate set
+  - reducing `portfolio_recommendation.py` responsibility by extracting a dedicated activation module
+- Files:
+  - `src/ashare/engine/strategy_activation.py`
+  - `src/ashare/engine/portfolio_recommendation.py`
+  - `src/ashare/engine/config_builder.py`
+  - `src/ashare/engine/local_settings.example.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added `strategy_activation.py` as a new candidate-pool activation module. It reads directly from:
+    - `research_data_v1.sqlite3` tables such as `valuation_daily`, `crowding_daily`, `expectation_revision_daily`, `company_contract_fact`, and `company_order_backlog_fact`
+    - `research_fact_layers_v1.sqlite3` tables such as `event_fact_contract_orders`, `event_fact_supply_chain_signals`, `qianzhan_indicator_daily`, and industry factor tables
+  - The portfolio candidate pool is now enriched with:
+    - `valuation_signal_score`
+    - `revision_signal_score`
+    - `order_flow_signal_score`
+    - `event_drive_signal_score`
+    - `industry_signal_score`
+    - `liquidity_signal_score`
+    - `data_activation_score`
+    - `activation_alpha_family`
+    - `alpha_activation_priority`
+  - `portfolio_recommendation.py` now runs `activate_candidate_pool(...)` before candidate-pool LLM review and before the outer allocator sorts the final broad pool.
+  - Candidate-pool sorting and exported `candidate_pool.csv` ordering now prefer `alpha_activation_priority` ahead of the older inner-only score stack.
+  - Added a dedicated config surface `strategy_activation` so SQL activation and activation-LLM behavior are controlled in one place instead of being buried inside unrelated portfolio gates.
+- Impact:
+  - The main strategy is no longer running mostly on thesis/router leftovers while large SQL fact tables sit unused.
+  - Existing data layers now directly compete for capital through the portfolio candidate ranking path.
+  - LLM participation is heavier and more useful: it now sees the activated signal stack and can tilt symbols / alpha families upstream of final allocation rather than merely commenting on a narrow pool.
+- Validation:
+  - `python -m py_compile src/ashare/engine/strategy_activation.py src/ashare/engine/portfolio_recommendation.py src/ashare/engine/config_builder.py src/ashare/engine/local_settings.example.py`
+  - targeted Python probe for `activate_candidate_pool(...)` passed locally and returned populated activation fields on a sample candidate frame
+- Compatibility:
+  - This is an intentional behavioral change. Candidate ordering can now move materially even when router / thesis scores are unchanged, because SQL activation facts are now part of the primary ranking path.
+  - No execution-side broker boundary or full-pipeline entrypoint was changed in this turn.
+- Rollback:
+  - Revert the listed files and remove the `strategy_activation` config section if you want to restore the previous candidate-pool behavior.
+
+---
+
+## Change Log Entry - 2026-04-09 20:35 (local)
+- Type: `refactor` / `candidate-pipeline-slimming`
+- Scope:
+  - shrinking `portfolio_recommendation.py`
+  - extracting candidate-pool orchestration and repeated sort rules
+  - deleting dead in-file LLM candidate overlay logic
+- Files:
+  - `src/ashare/engine/candidate_pipeline.py`
+  - `src/ashare/engine/portfolio_recommendation.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added `candidate_pipeline.py` as a dedicated orchestration module for:
+    - candidate-pool activation + ranking flow
+    - candidate-pool sorting priority rules
+    - broad-pool source switching
+    - candidate-pool summary generation
+  - `portfolio_recommendation.py` now delegates candidate-pool orchestration to:
+    - `activate_and_rank_candidate_pool(...)`
+    - `apply_candidate_llm_overlay(...)`
+    - `choose_candidate_pool(...)`
+    - `sort_candidate_pool(...)`
+    - `summarize_candidate_pool(...)`
+  - Deleted the old in-file `_apply_llm_candidate_review(...)` helper after moving the active behavior into the new pipeline module.
+  - Replaced repeated local sort-column construction with one shared sorting function, so ranking order is no longer duplicated in multiple blocks of the file.
+- Impact:
+  - `portfolio_recommendation.py` is materially less bloated and less likely to keep accumulating copy-pasted ranking logic.
+  - Candidate-pool behavior is easier to evolve aggressively because activation, LLM overlay, outer ranking, and pool-choice rules now live in one explicit module instead of being scattered through the final portfolio builder.
+- Validation:
+  - `python -m py_compile src/ashare/engine/candidate_pipeline.py src/ashare/engine/portfolio_recommendation.py src/ashare/engine/strategy_activation.py src/ashare/engine/config_builder.py src/ashare/engine/local_settings.example.py`
+  - targeted Python probe for `sort_candidate_pool(...)` and `summarize_candidate_pool(...)` passed locally
+- Compatibility:
+  - No operator entrypoint, broker boundary, or release artifact contract changed in this step.
+  - Candidate ordering semantics should stay aligned with the previous turn because the same priorities were centralized, not weakened.
+- Rollback:
+  - Revert `candidate_pipeline.py` and restore the previous in-file candidate orchestration in `portfolio_recommendation.py` if you want the old monolithic layout back.
+
+---
+
+## Change Log Entry - 2026-04-09 21:00 (local)
+- Type: `refactor` / `portfolio-construction-slimming`
+- Scope:
+  - pulling construction logic out of `portfolio_recommendation.py`
+  - reducing mixed responsibilities between candidate research and portfolio construction
+  - documenting next system-wide obesity targets
+- Files:
+  - `src/ashare/engine/portfolio_construction_pipeline.py`
+  - `src/ashare/engine/portfolio_recommendation.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added `portfolio_construction_pipeline.py` and moved these responsibilities into it:
+    - account-size-aware limit adjustment
+    - minimum executable trade-value calculation
+    - executable floor enforcement
+    - account-aware candidate selection
+    - target-position column cleanup
+    - post-filter rebalance-to-fill logic
+  - `portfolio_recommendation.py` now acts more like an assembler and no longer owns both candidate-pool orchestration and construction math.
+  - After extracting candidate and construction logic into dedicated modules, `portfolio_recommendation.py` shrank materially again and is now under the 1000-line mark.
+  - Current high-priority remaining obesity targets identified from a fresh source scan:
+    - `src/ashare/engine/clock_supervisor.py`
+    - `src/ashare/engine/strategy_audit.py`
+    - `src/ashare/live_execution_bridge/portfolio_control.py`
+    - `src/ashare/engine/research_brief_engine.py`
+    - `src/ashare/engine/research_fact_store.py`
+- Impact:
+  - The main portfolio file is becoming an integration surface instead of a giant procedural dump.
+  - Future aggressive changes to sizing/executable constraints can now happen in one focused construction module without tangling candidate research logic.
+- Validation:
+  - `python -m py_compile src/ashare/engine/portfolio_construction_pipeline.py src/ashare/engine/candidate_pipeline.py src/ashare/engine/portfolio_recommendation.py src/ashare/engine/strategy_activation.py`
+  - targeted Python probes for `account_size_adjusted_limits(...)` and `select_account_aware_candidates(...)` passed locally
+- Compatibility:
+  - No entrypoint or broker boundary changed in this step.
+  - Behavioral semantics are intended to stay aligned while the code surface is decomposed.
+- Rollback:
+  - Revert `portfolio_construction_pipeline.py` and restore the removed in-file construction helpers if you want the old monolithic portfolio builder back.
+
+---
+
+## Change Log Entry - 2026-04-09 21:25 (local)
+- Type: `refactor` / `clock-flexibility-and-remote-delegation`
+- Scope:
+  - reducing hard-coded intraday tactical scheduling in `clock_supervisor.py`
+  - opening a formal path for the VPS to carry non-broker clock work
+  - identifying current SSH access reality in this Codex session
+- Files:
+  - `src/ashare/engine/clock_phase_registry.py`
+  - `src/ashare/engine/remote_clock_delegate.py`
+  - `src/ashare/engine/clock_supervisor.py`
+  - `src/ashare/engine/config_builder.py`
+  - `src/ashare/engine/local_settings.example.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added `clock_phase_registry.py` so tactical phases and overall clock phase order are derived from config instead of being frozen into `clock_supervisor.py` constants.
+  - `clock_supervisor.py` now uses dynamic phase-sequence helpers when:
+    - initializing cycle state
+    - building tactical phase specs
+    - selecting due phases
+    - ordering due phases
+  - Added `remote_clock_delegate.py` and wired `clock_supervisor.py` to optionally delegate safe non-broker phases over SSH:
+    - `research`
+    - `release`
+    - `research_refresh`
+    - `release_refresh`
+    - `midday_review`
+    - `summary`
+  - Added a new runtime config surface under `trade_clock.remote_delegate` with:
+    - enable flag
+    - remote user/host
+    - remote repo root
+    - remote python path
+    - delegated phase list
+    - fallback-to-local behavior
+    - SSH options
+- Initial failure in this session was caused by using the wrong SSH user during the first probe. The correct remote identity remains `ubuntu@43.129.28.141`.
+- Impact:
+  - The intraday scheduler is less mechanical: tactical phase names and timing are now config-driven instead of file-header constants.
+  - The system can now be evolved toward a split deployment where the local operator machine keeps broker-sensitive work and the VPS carries lighter always-on phases.
+  - The clean first candidates for VPS delegation are `research_refresh`, `release_refresh`, and `summary`; broker-touching execution phases should remain local unless a much stricter remote runtime is built.
+- Validation:
+  - `python -m py_compile src/ashare/engine/clock_phase_registry.py src/ashare/engine/remote_clock_delegate.py src/ashare/engine/clock_supervisor.py src/ashare/engine/config_builder.py src/ashare/engine/local_settings.example.py`
+  - targeted Python probes for `phase_sequence(...)`, `tactical_phase_names(...)`, and `should_delegate_phase(...)` passed locally
+- Compatibility:
+  - Default behavior remains local-only because `ENABLE_TRADE_CLOCK_REMOTE_DELEGATE = False` by default.
+  - Existing tactical phase names still work; this change removes hard-coding, not support.
+- Rollback:
+  - Revert the listed files and restore the old hard-coded clock phase constants if you want the previous fixed local-only scheduler back.
+
+---
+
+## Change Log Entry - 2026-04-09 21:45 (local)
+- Type: `ops` / `server-connectivity-and-intraday-aggression`
+- Scope:
+  - verifying real SSH access
+  - inspecting current VPS code layout
+  - deploying a first remote runtime root for future clock delegation
+  - making intraday defaults less mechanical and less conservative
+- Files:
+  - `src/ashare/engine/config_builder.py`
+  - `src/ashare/engine/local_settings.example.py`
+  - `src/ashare/engine/intraday_state_machine/runtime.py`
+  - `scripts/deploy_remote_clock_worker_to_server.ps1`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - SSH access was re-tested with the correct identity and succeeded:
+    - `ubuntu@43.129.28.141`
+    - key: local `C:\Users\Administrator\.ssh\id_ed25519`
+  - Confirmed current VPS truth:
+    - `ashare-portal-backend.service` active
+    - `ashare-operator-chat-backend.service` active
+    - nginx active
+    - active app root is `/opt/ashare_portal`
+    - there was no separate `/opt/ashare_runtime` before this turn
+  - Deployed a first remote runtime code bundle to `/opt/ashare_runtime` using the new script `scripts/deploy_remote_clock_worker_to_server.ps1`.
+  - Intraday defaults were made more aggressive:
+    - `INTRADAY_TACTICAL_ALLOW_ADD_ON_SNAPSHOT_DEGRADED` defaulted to `True`
+    - `TIMING_LAYER_REQUIRE_OMS_CLEAN_STATE` defaulted to `False`
+    - `TIMING_LAYER_REQUIRE_FLOW_CONFIRMATION` defaulted to `False`
+    - `T_OVERLAY_DISABLE_ON_PANIC` defaulted to `False`
+    - tactical cooldown defaults were reduced to `buy=18m`, `sell=5m`
+  - `intraday_state_machine/runtime.py` no longer folds `PANIC` into the same hard `block_new_entries` bucket as `HALT`; `PANIC` is now surfaced as `panic_degrade_only` while hard blocking remains tied to `HALT` and explicit midday abort/risk-reduce decisions.
+- Impact:
+  - The system is no longer pretending the VPS path is theoretical; a remote runtime root now exists and can be used by `trade_clock.remote_delegate`.
+  - Intraday behavior is less rigid and less likely to self-paralyze on degraded but still tradable conditions.
+  - Hard panic-mode behavior is now softer by default, which matches the user’s stated preference for flexible, aggressive intraday operation.
+- Validation:
+  - `ssh -i C:\Users\Administrator\.ssh\id_ed25519 ubuntu@43.129.28.141 "echo connected && hostname && whoami"`
+  - remote inspection of `/opt/ashare_portal`, systemd units, and `/var/www/peng1145141919810.xyz`
+  - `powershell -ExecutionPolicy Bypass -File scripts\deploy_remote_clock_worker_to_server.ps1`
+  - `python -m py_compile src/ashare/engine/clock_phase_registry.py src/ashare/engine/remote_clock_delegate.py src/ashare/engine/clock_supervisor.py src/ashare/engine/config_builder.py src/ashare/engine/local_settings.example.py src/ashare/engine/intraday_state_machine/runtime.py`
+- Compatibility:
+  - Remote delegation is still off by default; the new remote runtime root is staged and ready but not yet the default execution path.
+  - Broker-sensitive phases remain local unless explicitly delegated later.
+- Rollback:
+  - Revert the listed local files and remove `/opt/ashare_runtime` on the VPS if you want to undo the first remote worker staging step.
+
+---
+
+## Change Log Entry - 2026-04-09 22:20 (local)
+- Type: `refactor` / `intraday-constraint-externalization`
+- Scope:
+  - reducing mechanical local vetoes in the intraday timing/T layers
+  - centralizing more intraday decision pressure into `outer_intelligence`
+  - aligning same-symbol tactical conflict resolution with account/diversification context
+  - re-checking VPS Python dependency truth after remote worker staging
+- Files:
+  - `src/ashare/engine/intraday_state_machine/timing_rules.py`
+  - `src/ashare/engine/intraday_state_machine/timing_layer.py`
+  - `src/ashare/engine/intraday_state_machine/t_overlay.py`
+  - `src/ashare/engine/intraday_tactics/priority_arbiter.py`
+  - `src/ashare/engine/intraday_tactics/runtime.py`
+  - `src/ashare/engine/outer_intelligence.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - `timing_rules.py` no longer hard-freezes every symbol on conditions like:
+    - `PANIC` for new-risk lifecycles
+    - missing flow confirmation
+    - dirty OMS intent state
+    - low liquidity / proxy stale / wide proxy spread
+  - Those conditions now land in:
+    - `timing_advisory_reason`
+    - `timing_constraint_score`
+    while only true hard blockers remain in `timing_freeze_reason`.
+  - `timing_layer.py` now surfaces:
+    - `block_new_t = true` only for `HALT`
+    - `panic_degrade_only = true` for `PANIC`
+    instead of treating panic as a direct T hard-stop.
+  - `t_overlay.py` no longer zeros the allowed T ratio during `PANIC`; it now degrades the ratio sharply but keeps it nonzero unless the safety mode is `HALT`.
+  - `outer_intelligence.arbitrate_intraday_intents(...)` now uses more of the current symbol/account context:
+    - account-size bucket (`micro` / `small` / `mid` / `large` / `institutional`)
+    - target diversification slots
+    - cash ratio
+    - concentration state and top1 weight
+    - timing-state severity
+    - timing advisory reasons and constraint score
+  - Same-symbol tactical conflicts are now resolved by `priority_arbiter.py` using context-aware ranking rather than a purely static `class -> side -> size` tie-break.
+  - A probe caught and this turn fixed one detail bug: suppressed intraday intents were briefly surviving as `0-share` rows after outer-intelligence arbitration; they are now dropped cleanly instead of leaking into later arbitration.
+  - VPS dependency truth was re-checked after the earlier remote-runtime deployment:
+    - `/usr/bin/python3` is active
+    - `python3-pandas` is installed
+    - `python3 -c "import pandas,requests,yaml"` succeeds
+- Impact:
+  - Intraday/T behavior is less self-strangling and less local-rule-driven.
+  - More of the real decision is now made at one outer layer that can reason about account size, diversification, panic degradation, and symbol quality together.
+  - Small and medium accounts are now more explicitly recognized when deciding how aggressive to be and how much single-name expansion to allow.
+  - The VPS remote worker path is confirmed to have the minimum Python dependency floor needed for delegated non-broker phases.
+- Validation:
+  - `python -m py_compile src/ashare/engine/intraday_state_machine/timing_rules.py src/ashare/engine/intraday_state_machine/timing_layer.py src/ashare/engine/intraday_state_machine/t_overlay.py src/ashare/engine/intraday_tactics/priority_arbiter.py src/ashare/engine/intraday_tactics/runtime.py src/ashare/engine/outer_intelligence.py`
+  - targeted local Python probe covering:
+    - `arbitrate_intraday_intents(...)`
+    - `priority_arbiter.arbitrate(..., ctx=...)`
+    - account bucket + panic degrade + severe timing freeze handling
+  - remote VPS verification:
+    - `ssh -i C:\Users\Administrator\.ssh\id_ed25519 ubuntu@43.129.28.141 "python3 -V && which python3 && dpkg -l | grep python3-pandas && python3 -c 'import pandas,requests,yaml; print(pandas.__version__)'"`
+- Compatibility:
+  - Hard stop semantics still intentionally remain for `HALT`, explicit reconcile-only states, and severe symbol-level freeze conditions.
+  - Intraday actions may now survive more degraded states than before; this is an intentional behavior shift toward outer-layer scaling instead of inner-layer veto.
+- Rollback:
+  - Revert the listed intraday files if you want to restore the older local freeze-heavy timing/T behavior.
+
+---
+
+## Change Log Entry - 2026-04-09 22:35 (local)
+- Type: `documentation` / `stable-architecture-principle`
+- Scope:
+  - making the new anti-spaghetti scheduling rule explicit in the stable handoff area
+- Files:
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added a stable architecture principle stating that future work should not keep adding:
+    - local hard rules
+    - scattered vetoes
+    - duplicate mini-schedulers
+  - Documented that local modules should primarily export:
+    - state
+    - evidence
+    - advisory scores
+    - explicit hard-stop reasons
+    while non-emergency constraints are expected to flow into the outer intelligence / unified scheduler / constraint brain.
+- Impact:
+  - Future sessions now have an explicit stable rule backing the current refactor direction instead of treating it as an informal preference.
+  - This should reduce the chance of the codebase regressing back into distributed local rule piles.
+- Validation:
+  - log-only update
+- Compatibility:
+  - documentation-only; no runtime behavior changed in this step
+- Rollback:
+  - remove the new stable-principle bullets if project direction changes later
+
+---
+
+## Change Log Entry - 2026-04-09 23:05 (local)
+- Type: `refactor` / `alpha-governance-and-llm-trace`
+- Scope:
+  - starting all five structural profit-side upgrades at once:
+    - alpha registry
+    - alpha attribution
+    - LLM black-box traceability
+    - account-layer allocator posture
+    - diversification-first portfolio construction
+- Files:
+  - `src/ashare/engine/llm_trace.py`
+  - `src/ashare/engine/alpha_registry.py`
+  - `src/ashare/engine/alpha_attribution.py`
+  - `src/ashare/engine/strategy_activation.py`
+  - `src/ashare/engine/candidate_pipeline.py`
+  - `src/ashare/engine/candidate_pool_llm_review.py`
+  - `src/ashare/engine/execution_llm_review.py`
+  - `src/ashare/engine/portfolio_construction_pipeline.py`
+  - `src/ashare/engine/portfolio_recommendation.py`
+  - `src/ashare/engine/strategy_audit.py`
+  - `src/ashare/engine/config_builder.py`
+  - `src/ashare/engine/local_settings.example.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added `llm_trace.py` so major LLM decision points can write structured traces containing:
+    - prompt hashes
+    - prompt previews
+    - normalized decision payloads
+    - raw model status / provider / model / error state
+    - stage metadata
+  - Added explicit self-explanation fields to major LLM review prompts:
+    - `decision_basis`
+    - `uncertainty_flags`
+    - `overfit_guard`
+  - Wired the new LLM trace path into:
+    - `strategy_activation.py`
+    - `candidate_pool_llm_review.py`
+    - `execution_llm_review.py`
+  - Added `alpha_registry.py` and started enriching live candidate pools with alpha-family metadata:
+    - family
+    - horizon
+    - capacity
+    - style
+  - Candidate-pool summaries and strategy-activation summaries now surface alpha registry snapshots instead of leaving family logic fully implicit.
+  - Added `alpha_attribution.py` and wired `strategy_audit.py` to emit `alpha_attribution` based on target weights and current pnl proxies by alpha family.
+  - Added account-layer allocator posture to `portfolio_construction_pipeline.py`:
+    - account bucket
+    - target slot count
+    - desired single-name cap
+    - diversification-first posture
+  - `portfolio_recommendation.py` now records:
+    - `account_allocator_profile`
+    - `diversification_objective`
+    and flattens weights toward account-sized concentration targets instead of only clipping and reweighting.
+  - Added new config surface `llm_trace` in `config_builder.py` and `local_settings.example.py`.
+- Impact:
+  - The system is less likely to remain a silent black box when LLM usage grows.
+  - Alpha family metadata is starting to become an operating concept rather than a hidden side effect of score columns.
+  - The portfolio layer now more explicitly treats “do not accidentally concentrate” as a first-class objective.
+  - Audit output now starts answering not just “where did pnl come from by mechanism” but also “which alpha family is carrying exposure and proxy pnl”.
+- Validation:
+  - `python -m py_compile src/ashare/engine/llm_trace.py src/ashare/engine/alpha_registry.py src/ashare/engine/alpha_attribution.py src/ashare/engine/strategy_activation.py src/ashare/engine/candidate_pipeline.py src/ashare/engine/candidate_pool_llm_review.py src/ashare/engine/execution_llm_review.py src/ashare/engine/portfolio_construction_pipeline.py src/ashare/engine/portfolio_recommendation.py src/ashare/engine/strategy_audit.py src/ashare/engine/config_builder.py src/ashare/engine/local_settings.example.py`
+  - targeted local Python probes passed for:
+    - `enrich_alpha_registry(...)`
+    - `summarize_alpha_registry(...)`
+    - `build_alpha_attribution(...)`
+    - `account_allocator_profile(...)`
+    - `diversify_portfolio_weights(...)`
+    - `write_llm_trace(...)`
+- Compatibility:
+  - This step does not yet replace all existing audit or allocation logic; it establishes the new spine and starts attaching live modules to it.
+  - Existing LLM decision artifacts still exist; the new trace layer complements them rather than deleting them.
+- Rollback:
+  - Revert the listed files if you want to remove the first pass of alpha registry / attribution / LLM trace / diversification posture work.
+
+---
+
+## Change Log Entry - 2026-04-09 23:30 (local)
+- Type: `refactor` / `portal-refresh-and-tactical-portfolio-service`
+- Scope:
+  - making intraday T intentions explicitly serve the whole portfolio
+  - replacing half-finished portal pages with cleaner control-plane pages
+  - creating a compact retrieval index for the large development log
+- Files:
+  - `src/ashare/engine/intraday_tactics/trigger_engine.py`
+  - `src/ashare/engine/outer_intelligence.py`
+  - `site_portal/index.html`
+  - `site_portal/operator-console.html`
+  - `CODEX_DEV_LOG_INDEX.md`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Intraday tactical intents now carry explicit portfolio-service semantics in their debug payload:
+    - `reduce_risk`
+    - `rebuild_core`
+    - `expand_diversified_winner`
+  - `outer_intelligence.py` now reads those semantics and adjusts intraday scaling so T behavior is more portfolio-aware instead of being only local-trigger-aware.
+  - `site_portal/index.html` was rewritten into a cleaner total-view control-plane page focused on:
+    - market state
+    - account state
+    - safety
+    - alpha stack
+    - LLM trace posture
+    - data-source visibility
+  - `site_portal/operator-console.html` was rewritten into a cleaner operator page centered on:
+    - current control context
+    - account / gate visibility
+    - generated operating frame
+    - alpha stack exposure
+  - Added `CODEX_DEV_LOG_INDEX.md` as a very short retrieval-oriented companion to the main development log, covering:
+    - system overview
+    - important config surfaces
+    - refactor themes
+    - high-priority fat files
+    - a one-line change index
+- Impact:
+  - Intraday T is moving closer to the intended operating model where it helps the whole account rather than just satisfying local signal vanity.
+  - The portal is now less embarrassing as an operator surface and more aligned with the current control-plane architecture.
+  - Future Codex sessions should be able to navigate the main dev log faster using the new compact index.
+- Validation:
+  - `python -m py_compile src/ashare/engine/intraday_tactics/trigger_engine.py src/ashare/engine/outer_intelligence.py`
+  - targeted local Python probe for `arbitrate_intraday_intents(...)` confirmed:
+    - `reduce_risk` sell intents were boosted
+    - `expand_diversified_winner` buy intents were degraded or favored based on portfolio context
+  - file-presence/content spot checks for:
+    - `site_portal/index.html`
+    - `site_portal/operator-console.html`
+    - `CODEX_DEV_LOG_INDEX.md`
+- Compatibility:
+  - The portal rewrites preserve the same file paths so existing site-build scripts can keep copying them.
+  - Tactical order schema did not change; the new portfolio-service role lives in debug payload and outer-intelligence trace only.
+- Rollback:
+  - Revert the listed files to restore the previous portal pages and simpler tactical debug semantics.
+
+---
+
+## Change Log Entry - 2026-04-09 23:50 (local)
+- Type: `ops` / `live-portal-publish`
+- Scope:
+  - checking the real public portal state
+  - publishing the rewritten portal to the VPS
+- Files:
+  - `site_portal/index.html`
+  - `site_portal/operator-console.html`
+  - `outputs/site_publish_stage/*`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Live inspection confirmed the public site at `https://peng1145141919810.xyz/` was still serving the older April 2026 portal pages before this publish step.
+  - Ran the existing atomic publish chain and pushed the rebuilt site bundle to:
+    - remote host `43.129.28.141`
+    - remote root `/var/www/peng1145141919810.xyz/site`
+  - Remote file inspection after publish confirmed the live root now contains the rewritten:
+    - `index.html`
+    - `operator-console.html`
+    instead of only the older placeholder-like versions.
+- Impact:
+  - The public portal is now aligned with the current local control-plane portal design.
+  - Future portal work can proceed from the rewritten live baseline instead of from the older half-finished public site.
+- Validation:
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\publish_audit_report_to_site.ps1`
+  - remote file inspection via SSH:
+    - `/var/www/peng1145141919810.xyz/site/index.html`
+    - `/var/www/peng1145141919810.xyz/site/operator-console.html`
+- Compatibility:
+  - Publish path and domain did not change.
+  - Site build continues to use the same existing atomic bundle publish script.
+- Rollback:
+  - Re-publish a previous site bundle if you need to restore the older public portal.
+
+---
+
+## Change Log Entry - 2026-04-10 00:20 (local)
+- Type: `refactor` / `portal-shell-unification`
+- Scope:
+  - removing the mixed new/old portal state
+  - fixing broken hyperlink relationships across the public portal
+  - rewriting the staged site pages around one shared shell and one snapshot contract
+- Files:
+  - `site_portal/portal-shell.js`
+  - `site_portal/portal.css`
+  - `site_portal/index.html`
+  - `site_portal/system-status.html`
+  - `site_portal/strategy-status.html`
+  - `site_portal/trade-monitor.html`
+  - `site_portal/intraday-state.html`
+  - `site_portal/audit-center.html`
+  - `site_portal/operator-console.html`
+  - `site_portal/research-backtest.html`
+  - `site_portal/about.html`
+  - `site_portal/comments.html`
+  - `site_portal/admin.html`
+  - `site_portal/login.html`
+  - `site_portal/register.html`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Replaced the portal shell with a single shared nav graph for:
+    - overview
+    - system
+    - strategy
+    - trades
+    - intraday
+    - audit
+    - console
+    - backtest
+  - Rewrote the main public pages so they all:
+    - render the same nav shell
+    - read the same staged snapshots
+    - avoid the previous garbled mixed-template content
+  - Added the previously missing `research-backtest.html` so the main nav no longer points at a non-existent target.
+  - Rewrote utility pages into the same shell so the site no longer contains detached legacy leaf pages.
+- Impact:
+  - The portal now has one coherent hyperlink structure instead of a new-homepage-plus-old-subpages mess.
+  - Operators can move across the public site without hitting stale templates or dead local links.
+  - Future portal work can extend one shell instead of spawning another parallel mini-site.
+- Validation:
+  - local link-target check across `site_portal/*.html` confirmed no missing `./*.html` targets remain
+  - text scan confirmed the new shell files are free of the previously garbled legacy strings
+  - publish step:
+    - `powershell -ExecutionPolicy Bypass -File .\scripts\publish_audit_report_to_site.ps1`
+  - remote/live verification:
+    - `https://peng1145141919810.xyz/system-status.html`
+    - `/var/www/peng1145141919810.xyz/site/system-status.html`
+    - `/var/www/peng1145141919810.xyz/site/strategy-status.html`
+    - `/var/www/peng1145141919810.xyz/site/portal-shell.js`
+- Compatibility:
+  - The public site keeps the same domain and file-path contract.
+  - Existing site build and publish scripts remain the deployment path.
+- Rollback:
+  - Revert the listed site files and re-publish the previous bundle if you want to restore the old portal layout.
+
+---
+
+## Change Log Entry - 2026-04-10 00:40 (local)
+- Type: `rollback` / `portal-legacy-restore`
+- Scope:
+  - abandoning the newer portal shell experiment
+  - restoring the older static portal pages the user asked to keep
+- Files:
+  - `site_portal/index.html`
+  - `site_portal/system-status.html`
+  - `site_portal/strategy-status.html`
+  - `site_portal/trade-monitor.html`
+  - `site_portal/intraday-state.html`
+  - `site_portal/audit-center.html`
+  - `site_portal/operator-console.html`
+  - `site_portal/about.html`
+  - `site_portal/comments.html`
+  - `site_portal/admin.html`
+  - `site_portal/login.html`
+  - `site_portal/register.html`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Restored the older portal page bundle from:
+    - `tmp\portal_site_provider_switch\*.html`
+  - This rollback intentionally replaces the newer shell-based public pages with the older inline-style portal pages.
+- Impact:
+  - The public portal returns to the earlier baseline instead of the newer shell rewrite.
+  - Any newer hyperlink cleanup and shell unification work is no longer the intended live portal direction.
+- Validation:
+  - copied the legacy page bundle back into `site_portal`
+  - re-published via:
+    - `powershell -ExecutionPolicy Bypass -File .\scripts\publish_audit_report_to_site.ps1`
+  - live verification:
+    - `https://peng1145141919810.xyz/system-status.html`
+- Compatibility:
+  - same domain and publish path
+  - same public file names
+- Rollback:
+  - re-copy the newer portal files and publish again if the old bundle later needs to be replaced.
+
+---
+
+## Change Log Entry - 2026-04-10 00:48 (local)
+- Type: `bugfix` / `portal-rollback-cleanup`
+- Scope:
+  - removing leftover new-portal files after the legacy rollback
+- Files:
+  - `site_portal/portal.css`
+  - `site_portal/portal-shell.js`
+  - `site_portal/research-backtest.html`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Deleted the leftover experimental portal shell files and extra backtest page that were still sitting beside the restored legacy portal pages.
+  - This makes the staged site bundle consistent with the intended old static portal baseline instead of a mixed directory.
+- Impact:
+  - The portal directory is no longer a legacy/new hybrid after rollback.
+  - The public site should only expose the restored old page set plus runtime JSON/report artifacts.
+- Validation:
+  - inspected local `site_portal` contents against `tmp\portal_site_provider_switch`
+  - re-published the site bundle after deletion
+  - removed leftover remote/staged files that the publish script did not delete automatically:
+    - `portal.css`
+    - `portal-shell.js`
+    - `research-backtest.html`
+- Compatibility:
+  - keeps the old portal file names unchanged
+- Rollback:
+  - restore the deleted files only if the newer shell-based portal work is intentionally revived.
+
+---
+
+## Change Log Entry - 2026-04-10 01:20 (local)
+- Type: `feature` / `strategy-closure-loop`
+- Scope:
+  - turning alpha families into lifecycle-managed operating units
+  - strengthening allocator diversification beyond single-name caps
+  - pushing intraday T further toward portfolio-service semantics
+  - adding an LLM operating brain with structured traces
+- Files:
+  - `src/ashare/engine/alpha_lifecycle.py`
+  - `src/ashare/engine/llm_operating_brain.py`
+  - `src/ashare/engine/alpha_registry.py`
+  - `src/ashare/engine/llm_trace.py`
+  - `src/ashare/engine/portfolio_construction_pipeline.py`
+  - `src/ashare/engine/portfolio_recommendation.py`
+  - `src/ashare/engine/strategy_audit.py`
+  - `src/ashare/engine/intraday_tactics/trigger_engine.py`
+  - `src/ashare/engine/outer_intelligence.py`
+  - `src/ashare/engine/config_builder.py`
+  - `ashare_control/control_plane.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added `alpha_lifecycle.py` to classify each alpha family into `promote` / `live` / `shadow` / `demote` / `inactive` using candidate strength, exposure, concentration, and pnl proxy.
+  - `portfolio_recommendation.py` now writes `alpha_attribution`, `alpha_lifecycle`, and `llm_operating_brain` into the live portfolio summary.
+  - Added `llm_operating_brain.py` to give the system a structured research / dispatch / operations LLM layer with traceable artifacts instead of only local scoring overlays.
+  - `llm_trace.py` now exposes a dedicated `decision_log` section for `decision_basis`, `uncertainty_flags`, and `overfit_guard`.
+  - `portfolio_construction_pipeline.py` now diversifies not only by single name, but also by alpha family and industry concentration targets.
+  - `trigger_engine.py` now auto-tags more intraday intents with explicit portfolio-service roles; `outer_intelligence.py` recognizes the added `harvest_and_rotate` role.
+  - `control_plane.py` now surfaces alpha lifecycle and LLM operating-brain posture into the control-plane snapshot.
+- Impact:
+  - The strategy is less like one giant blended score and more like a multi-alpha system with explicit lifecycle states.
+  - Allocation is pushed further toward diversification-first PM behavior.
+  - LLM usage is closer to a traceable operating layer instead of a silent black box.
+  - Intraday T is pushed further toward serving the whole book instead of isolated triggers.
+- Validation:
+  - `python -m py_compile` on all touched Python modules
+  - targeted Python probe for:
+    - `build_alpha_lifecycle(...)`
+    - `account_allocator_profile(...)`
+    - `diversify_portfolio_weights(...)`
+    - `llm_operating_brain._default_operating_brain(...)`
+- Compatibility:
+  - This step extends the live summary/audit/control-plane payloads; it does not remove existing keys.
+  - The new LLM operating brain is fail-open and falls back to quant/runtime layers when unavailable.
+- Rollback:
+  - Revert the listed files if you want to remove alpha lifecycle, operating-brain, and expanded diversification behavior.
+
+---
+
+## Change Log Entry - 2026-04-10 01:42 (local)
+- Type: `feature` / `allocator-and-clock-guidance-drop`
+- Scope:
+  - making alpha lifecycle affect real weight allocation
+  - letting the clock consume LLM operating-brain guidance for runtime awareness
+- Files:
+  - `src/ashare/engine/alpha_lifecycle.py`
+  - `src/ashare/engine/portfolio_recommendation.py`
+  - `src/ashare/engine/clock_supervisor.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added `apply_alpha_lifecycle_weight_bias(...)` so alpha lifecycle state now affects live `portfolio_weight` instead of staying report-only.
+  - `portfolio_recommendation.py` now computes a preliminary lifecycle before final reweighting and records `alpha_lifecycle_allocator` in the summary.
+  - `clock_supervisor.py` now reads the latest portfolio summary and extracts:
+    - promoted / demoted alpha families
+    - dispatch posture
+    - tactical bias
+    - watch items
+    - incident actions
+  - That operator guidance is now attached to:
+    - trade-clock heartbeat
+    - summary daily pack
+    - phase-exception payloads
+- Impact:
+  - The system moves one step closer to a real adaptive allocator instead of a static multi-score sorter.
+  - Runtime operations can now see the current LLM operating-brain posture without digging through portfolio artifacts manually.
+- Validation:
+  - `python -m py_compile src/ashare/engine/alpha_lifecycle.py src/ashare/engine/portfolio_recommendation.py src/ashare/engine/clock_supervisor.py`
+  - targeted local Python probes passed for:
+    - `apply_alpha_lifecycle_weight_bias(...)`
+    - `_latest_portfolio_operator_guidance(...)`
+- Compatibility:
+  - New payload fields were added; existing clock/portfolio keys remain intact.
+  - The clock guidance path is fail-open when no portfolio summary is available.
+- Rollback:
+  - Revert the listed files if you want alpha lifecycle to go back to report-only behavior and remove clock-side operator guidance.
+
+---
+
+## Change Log Entry - 2026-04-10 01:58 (local)
+- Type: `feature` / `six-family-registration-and-budgeting`
+- Scope:
+  - making the six currently data-backed alpha families behave more like independent registered strategy families
+  - centralizing family budgeting instead of adding more local gates
+- Files:
+  - `src/ashare/engine/alpha_registry.py`
+  - `src/ashare/engine/strategy_activation.py`
+  - `src/ashare/engine/portfolio_recommendation.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Expanded `alpha_registry.py` so the six active families now carry:
+    - data source map
+    - score column map
+    - allocator priority
+  - Added `apply_registered_family_budget(...)` so family-level capital preference is expressed centrally before lifecycle biasing.
+  - `strategy_activation.py` now emits family score means and family-to-data mappings in the activation summary.
+  - `portfolio_recommendation.py` now applies:
+    - registered family budgeting
+    - then alpha lifecycle budgeting
+    instead of keeping family identity mostly decorative.
+- Impact:
+  - The six strategies are closer to real family-level allocator inputs instead of just six score labels.
+  - Centralized budgeting reduces pressure to keep adding local strategy-specific gates.
+- Validation:
+  - `python -m py_compile src/ashare/engine/alpha_registry.py src/ashare/engine/strategy_activation.py src/ashare/engine/portfolio_recommendation.py src/ashare/engine/alpha_lifecycle.py src/ashare/engine/clock_supervisor.py`
+  - targeted local Python probes passed for:
+    - `apply_registered_family_budget(...)`
+    - chained `apply_registered_family_budget(...)` + `apply_alpha_lifecycle_weight_bias(...)`
+- Compatibility:
+  - Existing summary keys remain; new family budgeting summaries are additive.
+  - No full integrated run was executed.
+- Rollback:
+  - Revert the listed files if you want family budgeting to return to the earlier flatter behavior.
+
+---
+
+## Change Log Entry - 2026-04-10 10:35 (local)
+- Type: `bugfix` / `automation-runtime-hardening`
+- Scope:
+  - fixing startup/runtime-root drift in the formal operator chain
+  - hardening the always-on trade clock against preflight, parsing, fallback, and status-reporting bugs
+  - making operator-runtime site publish less prone to partial/stale updates
+- Files:
+  - `trade_clock_service.py`
+  - `main_research_runner.py`
+  - `SYSTEM_MANIFEST.yaml`
+  - `src/ashare/engine/clock_supervisor.py`
+  - `scripts/publish_operator_runtime_context_to_site.ps1`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Repointed canonical runtime-root truth to `F:\quant_data\AshareC#\src\ashare` and made the service/entry wrappers resolve the first manifest/fallback root that actually contains `engine\`.
+  - `trade_clock_service.py` no longer exits the always-on loop on preflight failure; it now persists `preflight_status.json` and retries unless `--once` is used.
+  - `main_research_runner.py` now lazy-imports heavy runtime modules so top-level startup does not fail just because optional legacy deps are absent before the selected mode needs them.
+  - `clock_supervisor.py` auxiliary subprocess parsing now uses the explicit result markers, release fallback now requires same-trade-date evidence, and runtime-state exception status is no longer immediately erased.
+  - Heartbeat now exposes `degraded_operator_runtime_publish` / `remote_runtime_state_fresh=false` when runtime publish fails but the clock remains fail-open.
+  - `publish_operator_runtime_context_to_site.ps1` now stages files in a remote temporary directory before replacing the live copies.
+- Impact:
+  - The formal entry chain now matches the real workspace runtime again.
+  - The trade-clock service is more likely to stay online through transient preflight/publish problems while still surfacing degraded state honestly.
+  - Release fallback is less likely to repackage stale portfolio artifacts as a current-day release.
+- Validation:
+  - `python -m py_compile trade_clock_service.py main_research_runner.py src/ashare/engine/clock_supervisor.py`
+  - local import checks passed for:
+    - `trade_clock_service`
+    - `main_research_runner`
+  - targeted local probe passed for:
+    - `engine.clock_supervisor._infer_summary_trade_date(...)`
+    - `engine.clock_supervisor._find_fallback_source(...)`
+- Compatibility:
+  - Preflight still exits non-zero in `--once` mode.
+  - Runtime publish remains fail-open by config, but degraded state is now explicit in heartbeat.
+  - Fallback acceptance is stricter than before and may reject old artifacts that used to pass.
+- Rollback:
+  - Revert the listed files if you need to restore the older repacked-path assumptions and looser automation behavior.
+
+---
+
+## Change Log Entry - 2026-04-10 11:05 (local)
+- Type: `bugfix` / `automation-integrity-hardening-round-2`
+- Scope:
+  - removing false-success behavior from the execution bridge
+  - eliminating more startup fragility in the canonical/supervisor chain
+  - cleaning stale release `latest` artifacts and separating shadow execution from formal execution history
+- Files:
+  - `launch_canonical.py`
+  - `src/ashare/engine/supervisor.py`
+  - `src/ashare/engine/execution_bridge_runner.py`
+  - `src/ashare/engine/execution_manager.py`
+  - `src/ashare/engine/portfolio_release.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - `execution_bridge_runner.py` now treats non-JSON / non-object stdout from the bridge as `ok=false` instead of silently defaulting to success.
+  - `execution_manager.py` now converts bridge reports with `ok=false` into `execution_error`, and `shadow_run` no longer writes formal release execution history; it returns `shadow_executed` instead.
+  - `portfolio_release.py` now clears optional files under `trade_release\latest\` before copying the current release bundle, reducing stale-artifact contamination.
+  - `supervisor.py` now lazy-imports `run_v6_cycle` and `build_portfolio_recommendation` inside the branches that actually need them, so module import no longer explodes on optional downstream deps at startup.
+  - `launch_canonical.py` now:
+    - rejects `--preflight-only` together with `--skip-preflight`
+    - finalizes registered runs on broad launcher exceptions, not only `CalledProcessError`
+- Impact:
+  - Execution success/failure state is now stricter and less likely to report false positives.
+  - Formal release/latest views should stop carrying stale optional files across release generations.
+  - Startup robustness improves because canonical/supervisor import cost is lower and less coupled to optional research dependencies.
+- Validation:
+  - `python -m py_compile launch_canonical.py src/ashare/engine/supervisor.py src/ashare/engine/execution_bridge_runner.py src/ashare/engine/execution_manager.py src/ashare/engine/portfolio_release.py`
+  - local import checks passed for:
+    - `launch_canonical`
+    - `engine.supervisor`
+  - targeted local probes passed for:
+    - `engine.execution_bridge_runner._parse_bridge_stdout(...)`
+- Compatibility:
+  - Shadow execution now surfaces as `shadow_executed` instead of plain `executed`.
+  - Existing tooling that assumed malformed bridge stdout still meant success will now see explicit failures.
+- Rollback:
+  - Revert the listed files if you need the earlier looser execution/reporting semantics.
+
+---
+
+## Change Log Entry - 2026-04-10 11:35 (local)
+- Type: `bugfix` / `intraday-and-csharp-parity-hardening`
+- Scope:
+  - fixing intraday state/release cross-day contamination
+  - aligning the C# skeleton with the current Python runtime truth and removing fake summary success
+- Files:
+  - `src/ashare/engine/intraday_state_machine/runtime.py`
+  - `src/ashare/engine/intraday_tactics/runtime.py`
+  - `scripts/run_clock_summary_once.py`
+  - `csharp_runtime_skeleton/Ashare.RuntimeSkeleton.sln`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.Pathing/PathRegistry.cs`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.PythonBridge/PythonCommandFactory.cs`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.Execution/PhaseRegistry.cs`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.Execution/PhaseOrchestrator.cs`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.OperatorCli/Program.cs`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Intraday state refresh now returns empty when the requested trade date has no matching phase-state file instead of silently loading another date's latest JSON.
+  - Intraday release resolution now requires `trade_date` parity before accepting an explicit release or `latest_release`.
+  - Intraday tactical execution no longer forces `ignore_window=True`.
+  - Added `scripts/run_clock_summary_once.py` so summary can be executed through the real Python summary/audit/publish chain.
+  - C# path registry now points `WorkspaceCodeRoot` to `src\ashare`, exposes `ClockSummaryScriptPath`, and reads the published `outputs\site_publish_stage\control_plane_snapshot.json`.
+  - C# `BuildExecutionOnly(...)` now always launches `launch_canonical.py` with the research Python instead of incorrectly switching to `GmtradePython`.
+  - C# summary phase now delegates to the Python summary script instead of returning a fake local success.
+- Impact:
+  - Intraday automation is less likely to run off stale prior-day state.
+  - C# parity tools are closer to the current Python runtime truth and less likely to mislead operators.
+  - Summary orchestration is now real instead of synthetic.
+- Validation:
+  - `python -m py_compile src/ashare/engine/intraday_state_machine/runtime.py src/ashare/engine/intraday_tactics/runtime.py scripts/run_clock_summary_once.py`
+  - targeted Python probe passed for:
+    - `_load_cycle_state(...)` returning `{}` for a missing future trade date
+  - `dotnet build` passed for:
+    - `Ashare.RuntimeSkeleton.sln`
+    - `Ashare.RuntimeSkeleton.Pathing.csproj`
+    - `Ashare.RuntimeSkeleton.Execution.csproj`
+    - `Ashare.RuntimeSkeleton.OperatorCli.csproj`
+- Compatibility:
+  - Summary execution from C# now depends on a valid Python trade-clock runtime config being discoverable.
+- Rollback:
+  - Revert the listed files if you need the earlier looser intraday fallback behavior and older C# skeleton assumptions.
+
+---
+
+## Change Log Entry - 2026-04-09 21:42 (local)
+- Type: `bugfix` / `control-plane-and-runtime-parity-hardening`
+- Scope:
+  - fixing stale control-plane/runtime site truth
+  - wiring missing execution-side context back into the unified constraint brain
+  - tightening C# execution and runtime-state parity with the Python chain
+- Files:
+  - `ashare_control/control_plane.py`
+  - `scripts/build_control_plane_site.py`
+  - `scripts/export_operator_runtime_context.py`
+  - `scripts/publish_operator_runtime_context_to_site.ps1`
+  - `src/ashare/engine/intraday_proxy_store.py`
+  - `src/ashare/engine/execution_manager.py`
+  - `main_research_runner.py`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.Execution/ExecutionBackendService.cs`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.Execution/OmsLifecycleService.cs`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.Execution/RuntimeStateAggregator.cs`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.Execution/RuntimeGateEvaluator.cs`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Control-plane snapshot generation now accepts explicit runtime-context/site-state inputs, prefers staged publish artifacts over `site_portal\` leftovers, and can write directly into the publish stage instead of mutating the source portal copy.
+  - `build_control_plane_site.py` now preserves staged truth artifacts, removes stale files from the publish root, and writes `built_at` from the generated control-plane payload rather than a raw filesystem timestamp.
+  - `export_operator_runtime_context.py` / `publish_operator_runtime_context_to_site.ps1` now generate and upload the staged `control_plane_snapshot.json` alongside the staged runtime context.
+  - `intraday_proxy_store.py` now timestamps proxy snapshots with the configured trade-clock timezone, which is safer when parts of the automation are delegated to a UTC server.
+  - `execution_manager.py` now feeds the latest `intraday_phase_state.json` and `clock_account_snapshot.json` into `ConstraintBrain`, so intraday freshness/concentration inputs actually affect centralized execution arbitration.
+  - `main_research_runner.py` now exits non-zero for `execution_only` hard execution errors instead of always returning process success after printing a failed result payload.
+  - C# `ExecutionBackendService` now parses the Python result envelope and classifies blocked / failed / succeeded using the structured payload instead of exit code alone.
+  - C# `OmsLifecycleService` now reads OMS ledgers from the real `ledgers\` subdirectory.
+  - C# runtime aggregation/gating now blocks release-vs-clock trade-date and release-id mismatches.
+- Impact:
+  - Site/control-plane views are less likely to show stale or mixed truth.
+  - Centralized execution arbitration now sees the intraday/account context it was designed to consume.
+  - C# orchestration is less likely to report false success or miss obvious release/clock drift.
+- Validation:
+  - `python -m py_compile ashare_control/control_plane.py scripts/build_control_plane_site.py scripts/export_operator_runtime_context.py src/ashare/engine/intraday_proxy_store.py src/ashare/engine/execution_manager.py main_research_runner.py`
+  - targeted Python probes passed for:
+    - staged `write_control_plane_snapshot(...)`
+    - `build_site(...)` stale-file cleanup
+    - staged `build_control_plane_snapshot(...)`
+    - `intraday_tactics.context_loader._trade_date_match(...)`
+  - `dotnet build` passed for:
+    - `Ashare.RuntimeSkeleton.Execution.csproj`
+- Compatibility:
+  - `execution_only` now returns a non-zero process exit code on hard execution errors.
+  - C# phase orchestration may now report `blocked` where it previously reported `succeeded` when Python returned a structured non-executed result.
+- Rollback:
+  - Revert the listed files if you need the earlier looser/staler control-plane publish path and exit-code-only C# execution interpretation.
+
+---
+
+## Change Log Entry - 2026-04-09 22:05 (local)
+- Type: `bugfix` / `timezone-and-clock-trade-date-hardening`
+- Scope:
+  - removing more host-clock leakage from runtime artifacts
+  - making the scheduler heartbeat publish explicit trade-date truth
+  - cleaning stale C# parity-report wording after earlier OMS/runtime fixes
+- Files:
+  - `src/ashare/engine/market_state/runtime.py`
+  - `src/ashare/engine/clock_supervisor.py`
+  - `csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.Execution/ParityCheckService.cs`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - `market_state/runtime.py` now timestamps artifacts with `clock_now(...)` instead of the host-local `datetime.now()`.
+  - `clock_supervisor.py` heartbeat now writes `current_trade_date`, `trade_date`, and `next_trade_date` explicitly.
+  - `load_latest_market_state(...)` fallback payloads and `intraday_tactics/runtime.py` tactical timestamps now also use the configured trade-clock timezone.
+  - `ParityCheckService.cs` no longer reports missing OMS ledger coverage as an active parity gap after the ledger-path/pathing corrections; remaining blockers are described as the still-authoritative Python runtime chain.
+- Impact:
+  - Server-assisted or remote-delegated runtime flows are less likely to drift because of host-local time assumptions.
+  - Downstream runtime publish and readers now get explicit trade-date truth from the heartbeat.
+  - C# parity-report output is less misleading.
+- Validation:
+  - `python -m py_compile src/ashare/engine/market_state/runtime.py src/ashare/engine/clock_supervisor.py src/ashare/engine/intraday_tactics/runtime.py`
+  - `dotnet build csharp_runtime_skeleton/src/Ashare.RuntimeSkeleton.Execution/Ashare.RuntimeSkeleton.Execution.csproj`
+- Compatibility:
+  - Heartbeat JSON now contains three additional date fields.
+- Rollback:
+  - Revert the listed files if you need the earlier host-clock / implicit-trade-date behavior.
+
+---
+
+## Change Log Entry - 2026-04-10 12:20 (local)
+- Type: `feature` / `alpha-governance-discipline-and-rapid-intraday-refresh`
+- Scope:
+  - making attribution/lifecycle more like a real alpha淘汰器 instead of a summary ornament
+  - centralizing live trading discipline into one portfolio-level layer
+  - adding a bounded seconds-level intraday refresh loop that respects Tushare's crawler/minute-bar realities
+- Files:
+  - `src/ashare/engine/tushare_client.py`
+  - `src/ashare/engine/trade_discipline.py`
+  - `src/ashare/engine/alpha_attribution.py`
+  - `src/ashare/engine/alpha_lifecycle.py`
+  - `src/ashare/engine/portfolio_recommendation.py`
+  - `src/ashare/engine/intraday_tactics/context_loader.py`
+  - `src/ashare/engine/outer_intelligence.py`
+  - `src/ashare/engine/intraday_proxy_store.py`
+  - `src/ashare/engine/clock_supervisor.py`
+  - `src/ashare/engine/strategy_audit.py`
+  - `src/ashare/engine/config_builder.py`
+  - `src/ashare/engine/local_settings.example.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Added `TushareClient.rt_min(...)` so the system can consume the official realtime minute-bar endpoint in addition to the older crawler-style `realtime_quote` / `realtime_tick` / `realtime_list` helpers.
+  - Added `trade_discipline.py`, a central discipline layer that computes one posture snapshot (`aggressive` / `balanced` / `defensive` / `reduce_only`) plus cash posture, add budget, sell pressure, family bias, and sell-priority symbols.
+  - `portfolio_recommendation.py` now builds `trade_discipline`, applies it after family and lifecycle budgeting, and writes both the discipline snapshot and discipline allocator result into the live portfolio summary.
+  - `alpha_attribution.py` now emits family-level `pnl_yield`, active symbol counts, and average target weights.
+  - `alpha_lifecycle.py` now treats deeply negative family `pnl_yield` as a true demotion/inactivation signal, and `inactive` families now budget to zero instead of lingering with a soft residual weight.
+  - `intraday_tactics/context_loader.py` now loads the current `portfolio_summary`, and `outer_intelligence.arbitrate_intraday_intents(...)` uses `trade_discipline` posture / sell pressure / promoted-vs-demoted families when scaling tactical intents.
+  - `intraday_proxy_store.py` now supports `refresh_mode="rapid"`, can skip expensive crawler layers in rapid mode, and can write `rt_min` snapshots to `intraday_rt_min_snapshot.csv`.
+  - `clock_supervisor.py` now supports an experimental rapid live-snapshot loop during configured market stages; it repeatedly calls the rapid proxy refresh path at a configurable seconds interval instead of waiting only for fixed phases.
+  - `strategy_audit.py` now surfaces short trade-discipline lines alongside alpha lifecycle lines.
+  - `config_builder.py` / `local_settings.example.py` now expose:
+    - `ENABLE_TUSHARE_RT_MIN`
+    - `TUSHARE_RT_MIN_FREQ`
+    - `TUSHARE_RT_MIN_SYMBOL_LIMIT`
+    - `TRADE_CLOCK_LIVE_SNAPSHOT_LOOP_ENABLED`
+    - `TRADE_CLOCK_LIVE_SNAPSHOT_LOOP_INTERVAL_SECONDS`
+    - `TRADE_CLOCK_LIVE_SNAPSHOT_LOOP_MARKET_STAGES`
+- Impact:
+  - Family-level alpha governance is now stricter and more willing to truly sideline weak families.
+  - Portfolio construction and intraday T now share one central discipline language instead of relying only on scattered local caution logic.
+  - The always-on process can now refresh intraday proxy truth every few seconds during the session, but this remains a low-cost public-web/minute-bar proxy layer rather than a broker-grade tick stream.
+- Validation:
+  - `python -m py_compile src/ashare/engine/tushare_client.py src/ashare/engine/trade_discipline.py src/ashare/engine/alpha_attribution.py src/ashare/engine/alpha_lifecycle.py src/ashare/engine/portfolio_recommendation.py src/ashare/engine/intraday_tactics/context_loader.py src/ashare/engine/outer_intelligence.py src/ashare/engine/intraday_proxy_store.py src/ashare/engine/clock_supervisor.py src/ashare/engine/strategy_audit.py src/ashare/engine/config_builder.py`
+  - targeted Python probe passed for:
+    - `build_alpha_attribution(...)`
+    - `build_alpha_lifecycle(...)`
+    - `build_trade_discipline(...)`
+    - `apply_trade_discipline_weights(...)`
+- Compatibility:
+  - Rapid intraday refresh is intentionally experimental and may hit public-feed quality/empty-result conditions when the Tushare crawler or upstream source is degraded.
+  - `trade_discipline` is now a first-class field in `portfolio_recommendation.json` and `strategy_audit.json`.
+- Rollback:
+  - Revert the listed files if you need the earlier slower phase-only intraday proxy refresh and the looser pre-discipline allocation path.
