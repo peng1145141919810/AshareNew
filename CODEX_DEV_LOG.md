@@ -9713,3 +9713,42 @@ esearch_brief_engine.py`
   - Execution audit payloads now carry a `trade_discipline` section in `release` context.
 - Rollback:
   - Revert the listed files if you need the earlier execution arbiter that ignored portfolio discipline posture.
+
+---
+
+## Change Log Entry - 2026-04-10 13:00 (local)
+- Type: `feature` / `discipline-truth-through-release-control-plane-and-tactical-audit`
+- Scope:
+  - keeping trade-discipline truth visible outside the portfolio builder
+  - exposing the same discipline posture in release artifacts, control-plane snapshots, operator context, and intraday tactical audit
+- Files:
+  - `scripts/operator_intent/context_builder.py`
+  - `ashare_control/control_plane.py`
+  - `src/ashare/engine/portfolio_release.py`
+  - `src/ashare/engine/intraday_tactical_audit_pack.py`
+  - `CODEX_DEV_LOG.md`
+- What changed:
+  - Operator runtime context now loads the current `portfolio_summary` and exposes `trade_discipline`, `alpha_lifecycle`, and `llm_operating_brain`.
+  - Control-plane snapshots now surface discipline posture and cash posture in the portfolio section, and the full `trade_discipline` payload in intelligence.
+  - Portfolio releases now persist `trade_discipline`, `alpha_lifecycle`, and `llm_operating_brain` directly in the formal release manifest.
+  - `intraday_tactical_audit_pack.py` was rewritten to remove old mojibake text and now reports:
+    - input-intent count
+    - keep ratio
+    - reduce-order ratio
+    - portfolio-service-role counts
+    - alpha-family counts
+    - outer-intelligence summary
+- Impact:
+  - Website/control-plane/operator views can now see the same discipline truth that the allocator and execution brain are using.
+  - Intraday audit is now better at answering whether the outer discipline layer actually suppressed or reshaped tactical flow.
+- Validation:
+  - `python -m py_compile scripts/operator_intent/context_builder.py ashare_control/control_plane.py src/ashare/engine/portfolio_release.py src/ashare/engine/intraday_tactical_audit_pack.py`
+  - targeted Python probe passed for:
+    - `build_control_plane_snapshot(...)` with synthetic `trade_discipline` runtime context
+- Compatibility:
+  - Release manifests now contain additional top-level fields:
+    - `trade_discipline`
+    - `alpha_lifecycle`
+    - `llm_operating_brain`
+- Rollback:
+  - Revert the listed files if you need the earlier slimmer release/control-plane payload and old tactical audit pack.
