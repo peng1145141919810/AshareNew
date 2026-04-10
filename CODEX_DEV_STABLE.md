@@ -7,7 +7,7 @@
 - When current truth changes, update this file first, then append an indexed entry to `CODEX_DEV_UPDATES.md`, then refresh the index file.
 
 ## Latest Stable Snapshot
-- Snapshot time: `2026-04-10 19:35:00`
+- Snapshot time: `2026-04-10 20:05:00`
 - Workspace root: `F:\quant_data\AshareC#`
 - Formal operator entry: `launch_canonical.py`
 - Wrapped business root: `main_research_runner.py`
@@ -155,7 +155,9 @@
 - `src\ashare\engine\portfolio_release.py` now keeps `trade_date=today` as long as the current trading day still has at least one remaining execution window; it no longer flips to the next trading day immediately after the first morning window starts.
 - `src\ashare\engine\intraday_proxy_store.py` now treats Eastmoney minute K-line history as the default `rt_min` provider (`market_pipeline.rt_min_provider = eastmoney`) with Tushare as fallback; quote/list/tick proxy pulls remain on the existing Tushare crawler path.
 - `src\ashare\engine\portfolio_recommendation.py` now emits `global_objective_snapshot.json` and `harvest_risk_assessment.json` beside `portfolio_recommendation.json` so downstream schedulers can consume normalized objective / adversarial signals without re-deriving them from the whole recommendation payload.
+- `src\ashare\engine\portfolio_recommendation.py` also emits `econometric_guardrails.json`; `global_objective.py` now owns the unified builder that produces `econometric_guardrails + harvest_risk + global_objective` together instead of letting those layers drift separately.
 - `src\ashare\engine\execution_manager.py` now emits an EMS-layer decision artifact under `data\trade_clock\ems\<namespace>\<timestamp>\execution_management_decision.json` and carries `global_objective`, `harvest_risk`, and EMS posture into the execution dispatch chain.
+- `src\ashare\engine\intelligent_scheduler.py` now treats the unified objective bundle as a real arbitration input: guardrail / evidence / harvest hard flags can downgrade the final execution verdict to `proceed_degraded` or `reduce_only`, not just annotate the audit trail.
 
 ### SQL Stores
 - Runtime research SQLite: `data\sql_store\research_data_v1.sqlite3`
@@ -251,6 +253,7 @@
 - Releases published after all configured execution windows for the day still roll forward to the next trading day; the fix only changes the earlier misclassification of midday manual releases when an afternoon execution window still remained.
 - Eastmoney intraday-minute integration currently covers the `rt_min` / minute-bar path only; it does not yet replace the Tushare-backed realtime quote/list/tick proxy endpoints.
 - The new global-objective / EMS integration is an execution-and-audit scaffold first: it centralizes objective signals and execution posture, but it does not yet dynamically rewrite research cycle counts or route budgets inside the upstream research runner.
+- The system is now centrally unified at the signal/arbitration layer, not yet at the full research-budget orchestrator layer. `build_unified_objective_bundle(...)` is the single producer for objective/risk/guardrail signals, but research-cycle budgeting still remains to be moved from the runner/supervisor side into the same authority.
 - EMS is now a distinct execution-policy layer in Python (`execution_ems.py`), but it is still advisory-to-bridge rather than a fully separate long-lived intraday controller service or a QMT / QM execution adapter.
 - The bounded end-to-end smoke recorded earlier hit the `simulation` account only because the command explicitly passed `--execution-mode simulation`; the workspace default `quick_test` runtime config and execution-policy default are already `precision`, and `execution_bridge_runner` correctly maps that to the `account_profiles.precision` account id / alias.
 - `scripts\run_validation_tiers.py` currently resolves `_hub_root()` as `src/ashare/src/ashare`, which does not match the actual runtime root and should not be treated as canonical validation until corrected.

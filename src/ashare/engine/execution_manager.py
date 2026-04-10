@@ -11,8 +11,7 @@ from .constraint_brain import evaluate as brain_evaluate
 from .execution_llm_review import review_execution_plan
 from .execution_bridge_runner import execution_policy, run_execution_bridge
 from .execution_ems import build_execution_management_decision
-from .global_objective import build_global_objective_snapshot
-from .harvest_risk import assess_harvest_risk
+from .global_objective import build_unified_objective_bundle
 from .intelligent_scheduler import build_execution_scheduler_verdict
 from .market_state import load_latest_market_state
 from .portfolio_release import load_latest_release, load_release_by_id, record_release_execution
@@ -286,20 +285,17 @@ def run_execution_only(
         clock_snapshot=_load_json(_trade_clock_root(config) / "clock_account_snapshot.json"),
         trade_discipline=dict(portfolio_summary.get("trade_discipline", {}) or {}),
     )
-    harvest_risk = assess_harvest_risk(
-        source_summary=portfolio_summary,
-        market_state=market_state,
-        execution_review=llm_review,
-    )
-    global_objective = build_global_objective_snapshot(
+    objective_bundle = build_unified_objective_bundle(
         config=config,
         stage="execution_dispatch",
         source_summary=portfolio_summary,
         market_state=market_state,
-        harvest_risk=harvest_risk,
         execution_review=llm_review,
         account_snapshot=account_snapshot,
     )
+    harvest_risk = dict(objective_bundle.get("harvest_risk", {}) or {})
+    econometric_guardrails = dict(objective_bundle.get("econometric_guardrails", {}) or {})
+    global_objective = dict(objective_bundle.get("global_objective", {}) or {})
     scheduler_verdict = build_execution_scheduler_verdict(
         gate=gate,
         safety=safety,
@@ -312,6 +308,7 @@ def run_execution_only(
         operating_brain=dict(release_doc.get("llm_operating_brain", {}) or {}),
         global_objective=global_objective,
         harvest_risk=harvest_risk,
+        econometric_guardrails=econometric_guardrails,
         trigger_label=trigger_label,
         trigger_source=trigger_source,
         intent_source=intent_source,
@@ -360,6 +357,7 @@ def run_execution_only(
         "scheduler_verdict": scheduler_verdict,
         "global_objective": global_objective,
         "harvest_risk": harvest_risk,
+        "econometric_guardrails": econometric_guardrails,
         "execution_management": {
             "posture": str(ems_decision.get("posture", "") or ""),
             "pacing": str(ems_decision.get("pacing", "") or ""),
@@ -399,6 +397,7 @@ def run_execution_only(
         "scheduler_verdict": scheduler_verdict,
         "global_objective": global_objective,
         "harvest_risk": harvest_risk,
+        "econometric_guardrails": econometric_guardrails,
         "execution_management": ems_decision,
     }
     if gate_only:
@@ -491,6 +490,7 @@ def run_execution_only(
         "scheduler_verdict": scheduler_verdict,
         "global_objective": global_objective,
         "harvest_risk": harvest_risk,
+        "econometric_guardrails": econometric_guardrails,
         "execution_management": ems_decision,
         "llm_execution_review": llm_review,
         "execution_report": report,
@@ -516,6 +516,7 @@ def run_execution_only(
                 "scheduler_verdict": scheduler_verdict,
                 "global_objective": global_objective,
                 "harvest_risk": harvest_risk,
+                "econometric_guardrails": econometric_guardrails,
                 "execution_management": ems_decision,
                 "execution_report_path": str(report.get("execution_report_path", "") or ""),
                 "dispatch_path": str(dispatch_path),

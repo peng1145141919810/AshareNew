@@ -33,6 +33,7 @@ def build_execution_management_decision(
     ems_cfg = _dict(config.get("execution_management"))
     plan = _dict(scheduler_verdict.get("execution_plan"))
     objective_scores = _dict(global_objective.get("scores"))
+    objective_flags = set(list(global_objective.get("hard_flags", []) or []))
     recommended_budget = _dict(global_objective.get("recommended_budget"))
     harvest_score = _float(harvest_risk.get("harvest_risk_score"), 0.0)
     evidence_score = _float(objective_scores.get("evidence"), 0.0)
@@ -84,6 +85,12 @@ def build_execution_management_decision(
             allowed_actions = ["monitor"]
             pacing = "hold"
             urgency = "none"
+    if {"guardrail_penalty_above_ceiling", "incremental_value_below_floor"} & objective_flags:
+        posture = "shadow" if posture not in {"reduce_only", "standby"} else posture
+        pacing = "observe" if posture == "shadow" else pacing
+        urgency = "none" if posture == "shadow" else urgency
+        allowed_actions = ["shadow_only", "monitor"] if posture == "shadow" else allowed_actions
+        rationale.append("econometric_guardrail_stop")
 
     max_child_order_ratio = min(max(_float(ems_cfg.get("max_child_order_ratio"), 0.20), 0.01), 1.0)
     if posture in {"defensive", "reduce_only"}:

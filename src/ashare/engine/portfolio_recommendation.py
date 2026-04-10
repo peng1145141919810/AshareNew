@@ -37,8 +37,7 @@ from .portfolio_pre_release_objective import apply_pre_release_proxy_objective
 from .trade_discipline import apply_trade_discipline_weights, build_trade_discipline
 from .portfolio import build_portfolio_artifacts
 from .technical_confirmation import build_technical_confirmation_artifacts
-from .global_objective import build_global_objective_snapshot
-from .harvest_risk import assess_harvest_risk
+from .global_objective import build_unified_objective_bundle
 
 
 def _sort_score_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -1136,21 +1135,23 @@ def build_portfolio_recommendation(config: Dict[str, Any], bridge_root: Path | N
     candidate_pool_path = out_root / 'candidate_pool.csv'
     summary_path = out_root / 'portfolio_recommendation.json'
     harvest_risk_path = out_root / 'harvest_risk_assessment.json'
+    econometric_guardrails_path = out_root / 'econometric_guardrails.json'
     objective_snapshot_path = out_root / 'global_objective_snapshot.json'
-    harvest_risk = assess_harvest_risk(
-        source_summary=summary,
-        market_state=market_state,
-    )
-    global_objective = build_global_objective_snapshot(
+    objective_bundle = build_unified_objective_bundle(
         config=config,
         stage='portfolio_recommendation',
         source_summary=summary,
         market_state=market_state,
-        harvest_risk=harvest_risk,
+        account_snapshot=account_ctx,
     )
+    harvest_risk = dict(objective_bundle.get('harvest_risk', {}) or {})
+    econometric_guardrails = dict(objective_bundle.get('econometric_guardrails', {}) or {})
+    global_objective = dict(objective_bundle.get('global_objective', {}) or {})
     summary['harvest_risk'] = harvest_risk
+    summary['econometric_guardrails'] = econometric_guardrails
     summary['global_objective'] = global_objective
     summary['artifacts']['harvest_risk_assessment_path'] = str(harvest_risk_path)
+    summary['artifacts']['econometric_guardrails_path'] = str(econometric_guardrails_path)
     summary['artifacts']['global_objective_snapshot_path'] = str(objective_snapshot_path)
     pos_df.to_csv(target_path, index=False, encoding='utf-8-sig')
     rebalance_df.to_csv(rebalance_path, index=False, encoding='utf-8-sig')
@@ -1164,6 +1165,7 @@ def build_portfolio_recommendation(config: Dict[str, Any], bridge_root: Path | N
     else:
         pd.DataFrame().to_csv(candidate_pool_path, index=False, encoding='utf-8-sig')
     harvest_risk_path.write_text(json.dumps(harvest_risk, ensure_ascii=False, indent=2), encoding='utf-8')
+    econometric_guardrails_path.write_text(json.dumps(econometric_guardrails, ensure_ascii=False, indent=2), encoding='utf-8')
     objective_snapshot_path.write_text(json.dumps(global_objective, ensure_ascii=False, indent=2), encoding='utf-8')
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
     pos_df.to_csv(prev_path, index=False, encoding='utf-8-sig')

@@ -42,6 +42,7 @@ def _advisor_chain(
     operating_brain: Dict[str, Any],
     global_objective: Dict[str, Any],
     harvest_risk: Dict[str, Any],
+    econometric_guardrails: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     gate_reason = _text(gate.get("reason"))
@@ -171,6 +172,25 @@ def _advisor_chain(
             payload=harvest_risk,
         )
     )
+    items.append(
+        build_advice(
+            advisor="econometric_guardrails",
+            category="risk",
+            status="warning" if _text(econometric_guardrails.get("stability_flag")) in {"warning", "fragile"} else "ok",
+            summary=_text(econometric_guardrails.get("stability_flag")) or "unknown",
+            reasons=[
+                f"guardrail_penalty={_float(econometric_guardrails.get('guardrail_penalty'), 0.0):.3f}",
+                f"spurious_correlation_risk={_float(econometric_guardrails.get('spurious_correlation_risk'), 0.0):.3f}",
+            ],
+            evidence={
+                "stability_score": _float(econometric_guardrails.get("stability_score"), 0.0),
+                "guardrail_penalty": _float(econometric_guardrails.get("guardrail_penalty"), 0.0),
+                "regime_dependency_score": _float(econometric_guardrails.get("regime_dependency_score"), 0.0),
+                "incremental_value_score": _float(econometric_guardrails.get("incremental_value_score"), 0.0),
+            },
+            payload=econometric_guardrails,
+        )
+    )
     dimensions = []
     verdict = "proceed"
     summary = "constraint_brain_unavailable"
@@ -231,6 +251,7 @@ def build_execution_scheduler_verdict(
     operating_brain: Dict[str, Any],
     global_objective: Dict[str, Any] | None = None,
     harvest_risk: Dict[str, Any] | None = None,
+    econometric_guardrails: Dict[str, Any] | None = None,
     trigger_label: str,
     trigger_source: str,
     intent_source: str,
@@ -241,6 +262,7 @@ def build_execution_scheduler_verdict(
     release_identity = release_context["artifact_identity"]
     objective_payload = dict(global_objective or {})
     harvest_payload = dict(harvest_risk or {})
+    guardrail_payload = dict(econometric_guardrails or {})
     scheduler_identity = artifact_identity(
         run_id=_text(release_identity.get("run_id")),
         trade_date=_text(release_identity.get("trade_date")),
@@ -258,9 +280,14 @@ def build_execution_scheduler_verdict(
         operating_brain=operating_brain,
         global_objective=objective_payload,
         harvest_risk=harvest_payload,
+        econometric_guardrails=guardrail_payload,
     )
     reasons = compact_reason_chain(advice_chain)
     brain_verdict = _text(getattr(brain_decision, "verdict", "")) or "proceed"
+    objective_flags = set(list(objective_payload.get("hard_flags", []) or []))
+    objective_scores = dict(objective_payload.get("scores", {}) or {})
+    guardrail_penalty = _float(guardrail_payload.get("guardrail_penalty"), 0.0)
+    recommended_budget = dict(objective_payload.get("recommended_budget", {}) or {})
     if not _bool(gate.get("ok", False)):
         final_verdict = "block"
     elif not _bool(safety.get("allow_execution", True)) and not shadow_run:
@@ -269,8 +296,16 @@ def build_execution_scheduler_verdict(
         final_verdict = brain_verdict if brain_verdict in FINAL_VERDICTS else "proceed_degraded"
     elif not _bool(gate.get("should_execute", False)):
         final_verdict = "defer"
+    elif {"execution_below_floor", "guardrail_penalty_above_ceiling"} & objective_flags:
+        final_verdict = "reduce_only"
+    elif {"harvest_risk_above_ceiling", "incremental_value_below_floor"} & objective_flags:
+        final_verdict = "proceed_degraded"
+    elif bool(recommended_budget.get("shadow_only", False)):
+        final_verdict = "proceed_degraded"
     elif brain_verdict in FINAL_VERDICTS:
         final_verdict = brain_verdict
+    elif _float(objective_scores.get("overall"), 0.0) < 0.42 or guardrail_penalty >= 0.60:
+        final_verdict = "proceed_degraded"
     else:
         final_verdict = "proceed"
     reduce_only = _bool(getattr(brain_decision, "reduce_only", False))
@@ -278,6 +313,12 @@ def build_execution_scheduler_verdict(
     favored_symbols = list(getattr(brain_decision, "favored_symbols", []) or [])
     turnover_multiplier = _float(getattr(brain_decision, "turnover_multiplier", 1.0), 1.0)
     size_multiplier = _float(getattr(brain_decision, "size_multiplier", 1.0), 1.0)
+    if final_verdict == "proceed_degraded":
+        turnover_multiplier = min(turnover_multiplier, 0.75)
+        size_multiplier = min(size_multiplier, 0.80)
+    if final_verdict == "reduce_only":
+        turnover_multiplier = min(turnover_multiplier, 0.60)
+        size_multiplier = min(size_multiplier, 0.50)
     should_dispatch = final_verdict in {"proceed", "proceed_degraded", "reduce_only"} or shadow_run
     execution_allowed = should_dispatch and final_verdict != "block"
     status = {
@@ -307,6 +348,7 @@ def build_execution_scheduler_verdict(
         "advisor_chain": advice_chain,
         "global_objective": objective_payload,
         "harvest_risk": harvest_payload,
+        "econometric_guardrails": guardrail_payload,
         "execution_plan": {
             "reduce_only": reduce_only or final_verdict == "reduce_only",
             "turnover_multiplier": turnover_multiplier,
@@ -315,6 +357,7 @@ def build_execution_scheduler_verdict(
             "favored_symbols": favored_symbols,
             "market_regime": _text(market_state.get("market_regime")),
             "new_position_policy": _text(market_state.get("new_position_policy")),
+            "policy_posture": _text(objective_payload.get("policy_posture")),
         },
         "context_snapshot": {
             "release_id": release_context["release_id"],

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from .econometric_guardrails import assess_econometric_guardrails
+from .harvest_risk import assess_harvest_risk
+
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
@@ -65,6 +68,8 @@ def _constitution(config: Dict[str, Any]) -> Dict[str, Any]:
         "maximum_family_concentration": _float(root.get("maximum_family_concentration"), 0.60),
         "minimum_execution_score": _float(root.get("minimum_execution_score"), 0.30),
         "minimum_candidate_count": _int(root.get("minimum_candidate_count"), 3),
+        "maximum_guardrail_penalty": _float(root.get("maximum_guardrail_penalty"), 0.78),
+        "minimum_incremental_value_score": _float(root.get("minimum_incremental_value_score"), 0.28),
     }
 
 
@@ -76,6 +81,7 @@ def _policy(config: Dict[str, Any]) -> Dict[str, Any]:
         "diversity_weight": _float(root.get("diversity_weight"), 0.18),
         "execution_weight": _float(root.get("execution_weight"), 0.18),
         "adversarial_weight": _float(root.get("adversarial_weight"), 0.18),
+        "guardrail_weight": _float(root.get("guardrail_weight"), 0.12),
         "exploration_budget": _float(root.get("exploration_budget"), 0.15),
         "max_cycles": _int(root.get("max_cycles"), 3),
     }
@@ -88,6 +94,7 @@ def build_global_objective_snapshot(
     source_summary: Dict[str, Any],
     market_state: Dict[str, Any],
     harvest_risk: Dict[str, Any] | None = None,
+    econometric_guardrails: Dict[str, Any] | None = None,
     execution_review: Dict[str, Any] | None = None,
     account_snapshot: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
@@ -101,6 +108,7 @@ def build_global_objective_snapshot(
     portfolio_posture = _dict(summary.get("portfolio_posture"))
     review_payload = _dict(_dict(execution_review).get("review"))
     harvest = _dict(harvest_risk)
+    guardrails = _dict(econometric_guardrails)
     constitution = _constitution(config)
     policy = _policy(config)
 
@@ -150,12 +158,14 @@ def build_global_objective_snapshot(
     )
 
     harvest_score = _clamp(1.0 - _float(harvest.get("harvest_risk_score"), 0.0))
+    guardrail_score = _clamp(1.0 - _float(guardrails.get("guardrail_penalty"), 0.0))
     overall_score = _clamp(
         policy["outcome_weight"] * outcome_score
         + policy["evidence_weight"] * evidence_score
         + policy["diversity_weight"] * diversity_score
         + policy["execution_weight"] * execution_score
         + policy["adversarial_weight"] * harvest_score
+        + policy["guardrail_weight"] * guardrail_score
     )
 
     policy_posture = "balanced"
@@ -175,6 +185,10 @@ def build_global_objective_snapshot(
         hard_flags.append("execution_below_floor")
     if candidate_count < constitution["minimum_candidate_count"]:
         hard_flags.append("candidate_count_below_floor")
+    if _float(guardrails.get("guardrail_penalty"), 0.0) > constitution["maximum_guardrail_penalty"]:
+        hard_flags.append("guardrail_penalty_above_ceiling")
+    if _float(guardrails.get("incremental_value_score"), 0.0) < constitution["minimum_incremental_value_score"]:
+        hard_flags.append("incremental_value_below_floor")
 
     account_ctx = _dict(account_snapshot)
     return {
@@ -188,6 +202,7 @@ def build_global_objective_snapshot(
             "diversity": diversity_score,
             "execution": execution_score,
             "adversarial": harvest_score,
+            "guardrail": guardrail_score,
             "overall": overall_score,
         },
         "signals": {
@@ -201,13 +216,61 @@ def build_global_objective_snapshot(
             "market_regime": _text(market_state.get("market_regime")),
             "style_bias": _text(market_state.get("style_bias")),
             "account_nav": _float(account_ctx.get("nav"), 0.0),
+            "guardrail_penalty": _float(guardrails.get("guardrail_penalty"), 0.0),
+            "incremental_value_score": _float(guardrails.get("incremental_value_score"), 0.0),
         },
         "hard_flags": hard_flags,
         "policy_posture": policy_posture,
         "recommended_budget": {
             "exploration_budget": policy["exploration_budget"],
             "max_cycles": policy["max_cycles"],
-            "early_stop": bool(overall_score < 0.40 and candidate_count >= constitution["minimum_candidate_count"]),
-            "shadow_only": bool("execution_below_floor" in hard_flags or "harvest_risk_above_ceiling" in hard_flags),
+            "early_stop": bool(
+                overall_score < 0.40
+                or (
+                    "guardrail_penalty_above_ceiling" in hard_flags
+                    and candidate_count >= constitution["minimum_candidate_count"]
+                )
+            ),
+            "shadow_only": bool(
+                "execution_below_floor" in hard_flags
+                or "harvest_risk_above_ceiling" in hard_flags
+                or "guardrail_penalty_above_ceiling" in hard_flags
+            ),
         },
+    }
+
+
+def build_unified_objective_bundle(
+    *,
+    config: Dict[str, Any],
+    stage: str,
+    source_summary: Dict[str, Any],
+    market_state: Dict[str, Any],
+    execution_review: Dict[str, Any] | None = None,
+    account_snapshot: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    harvest_risk = assess_harvest_risk(
+        source_summary=source_summary,
+        market_state=market_state,
+        execution_review=execution_review,
+    )
+    econometric_guardrails = assess_econometric_guardrails(
+        source_summary=source_summary,
+        market_state=market_state,
+    )
+    global_objective = build_global_objective_snapshot(
+        config=config,
+        stage=stage,
+        source_summary=source_summary,
+        market_state=market_state,
+        harvest_risk=harvest_risk,
+        econometric_guardrails=econometric_guardrails,
+        execution_review=execution_review,
+        account_snapshot=account_snapshot,
+    )
+    return {
+        "version": "unified_objective_bundle_v1",
+        "harvest_risk": harvest_risk,
+        "econometric_guardrails": econometric_guardrails,
+        "global_objective": global_objective,
     }

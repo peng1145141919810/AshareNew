@@ -8,6 +8,40 @@
 
 ## Change Log
 
+### CDL-20260410-028
+- Local time: `2026-04-10 20:05:00`
+- Type: `objective-unification`
+- Scope: `econometric guardrails and real scheduler arbitration`
+- Touched paths:
+  - `src\ashare\engine\econometric_guardrails.py`
+  - `src\ashare\engine\global_objective.py`
+  - `src\ashare\engine\intelligent_scheduler.py`
+  - `src\ashare\engine\execution_ems.py`
+  - `src\ashare\engine\execution_manager.py`
+  - `src\ashare\engine\portfolio_recommendation.py`
+  - `src\ashare\engine\config_builder.py`
+  - `src\ashare\engine\local_settings.example.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Added `econometric_guardrails.py` to produce explicit anti-overfit / pseudo-correlation / regime-dependency scores and a unified `guardrail_penalty`.
+  - Upgraded `global_objective.py` so a single `build_unified_objective_bundle(...)` now produces `econometric_guardrails`, `harvest_risk`, and `global_objective` together.
+  - Added constitution/policy knobs for guardrail ceilings and a `guardrail_weight`, and fed those into the overall objective score and hard-flag generation.
+  - Changed `intelligent_scheduler.py` so the unified objective bundle is no longer audit-only: high guardrail penalty, low incremental value, weak evidence, or excessive harvest risk can now directly downgrade the final execution verdict and reduce turnover/size multipliers.
+  - Updated `portfolio_recommendation.py` and `execution_manager.py` to consume the unified bundle instead of reassembling the layers separately.
+- Impact:
+  - The system now has one canonical producer for objective/risk/guardrail signals, and the scheduler is the actual final arbitration point for those signals.
+  - Econometric guardrails are now part of the live decision chain instead of being left as future design notes.
+- Validation:
+  - `python -m py_compile src\ashare\engine\econometric_guardrails.py src\ashare\engine\global_objective.py src\ashare\engine\execution_ems.py src\ashare\engine\intelligent_scheduler.py src\ashare\engine\portfolio_recommendation.py src\ashare\engine\execution_manager.py src\ashare\engine\config_builder.py src\ashare\engine\local_settings.example.py`
+  - Stress smoke: a deliberately crowded / low-evidence sample returned hard flags `['evidence_below_floor', 'family_concentration_above_ceiling', 'guardrail_penalty_above_ceiling', 'incremental_value_below_floor']`, `guardrail_penalty=0.7856`, and the scheduler downgraded the final verdict to `reduce_only`.
+- Compatibility:
+  - Existing recommendation and execution artifact paths remain valid; the new `econometric_guardrails.json` file is additive.
+  - Existing C# consumers still do not need to parse the new guardrail file immediately, but if they want the newest execution authority explanation they should start reading it together with `global_objective_snapshot.json`.
+- Rollback:
+  - Remove `econometric_guardrails.py`, revert `build_unified_objective_bundle(...)`, and restore the previous audit-only handling of objective signals in `intelligent_scheduler.py`.
+
 ### CDL-20260410-027
 - Local time: `2026-04-10 19:35:00`
 - Type: `objective-ems-architecture`

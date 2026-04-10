@@ -32,6 +32,7 @@
 - Runtime configs: `src\ashare\configs`
 
 ## Current Architecture Anchors
+- Econometric guardrails: `src\ashare\engine\econometric_guardrails.py`
 - Candidate orchestration: `src\ashare\engine\candidate_pipeline.py`
 - Portfolio construction: `src\ashare\engine\portfolio_construction_pipeline.py`
 - Global objective: `src\ashare\engine\global_objective.py`
@@ -47,6 +48,7 @@
 - LLM tracing: `src\ashare\engine\llm_trace.py`
 
 ## Update Index
+- `CDL-20260410-028`: added econometric guardrails, unified the objective-bundle producer, and made the scheduler truly arbitrate on objective hard flags instead of only logging them
 - `CDL-20260410-027`: added centralized global-objective scoring, harvest-risk assessment, and a first-class EMS policy layer with new portfolio/execution audit artifacts
 - `CDL-20260410-026`: added Eastmoney as the default intraday minute-bar (`rt_min`) provider with Tushare fallback, wired into the existing intraday proxy pipeline
 - `CDL-20260410-025`: fixed same-day `release_only` trade-date selection so midday manual releases stay on today if an afternoon execution window still remains
@@ -76,6 +78,8 @@
 - `CDL-20260410-001`: split dev log into stable/history/index, rewrote primary readmes and operator guide, updated doc sync tooling
 
 ## Retrieval Hints
+- Search `CDL-20260410-028` in `CODEX_DEV_UPDATES.md` for the econometric guardrail layer, new `build_unified_objective_bundle(...)`, and the scheduler downgrade logic.
+- Search `guardrail_penalty_above_ceiling` in `intelligent_scheduler.py` for where econometric / objective hard flags now directly force `reduce_only` or `proceed_degraded`.
 - Search `CDL-20260410-027` in `CODEX_DEV_UPDATES.md` for the new `Outcome/Evidence/Diversity/Execution/Adversarial` objective contract, EMS posture artifact, and harvest-risk integration points.
 - Search `global_objective_snapshot.json` in `portfolio_recommendation.py` for where recommendation runs now persist the centralized objective view.
 - Search `execution_management_decision.json` in `execution_manager.py` for the new EMS artifact path under `data\trade_clock\ems\...`.
