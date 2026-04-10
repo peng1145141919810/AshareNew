@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 import pandas as pd
 
 from .config_utils import ensure_dir
+from .eastmoney_client import EastmoneyClient
 from .portfolio_release import load_latest_release
 from .research_fact_store import ensure_schema, resolve_research_fact_sqlite_path, sqlite_connection, upsert_rows
 from .trading_clock import clock_now, market_stage
@@ -182,6 +183,27 @@ def _normalize_rt_min_frame(frame: pd.DataFrame, captured_at: str, trade_date: s
     return out[["row_id", "trade_date", "snapshot_time", "symbol", "ts_code", "time", "open", "close", "high", "low", "vol", "amount", "source_name", "source_class", "raw_payload_path"]].copy()
 
 
+def _load_rt_min_frame(
+    *,
+    config: Dict[str, Any],
+    client: TushareClient,
+    symbols: List[str],
+    freq: str,
+    trade_date: str,
+) -> pd.DataFrame:
+    market_cfg = dict(config.get("market_pipeline", {}) or {})
+    provider = str(market_cfg.get("rt_min_provider", "eastmoney") or "eastmoney").strip().lower()
+    if provider == "eastmoney":
+        em_client = EastmoneyClient(dict(config.get("eastmoney", {}) or {}))
+        frame = em_client.intraday_bars(ts_codes=symbols, freq=freq, trade_date=trade_date)
+        if not frame.empty:
+            return frame
+        fallback_provider = str(market_cfg.get("rt_min_fallback_provider", "tushare") or "tushare").strip().lower()
+        if fallback_provider != "tushare":
+            return pd.DataFrame()
+    return client.rt_min(ts_codes=symbols, freq=freq)
+
+
 def _summarize_tick_frame(ts_code: str, frame: pd.DataFrame, captured_at: str, trade_date: str) -> Dict[str, Any]:
     if frame.empty:
         return {}
@@ -325,14 +347,21 @@ def build_intraday_proxy_snapshot(config: Dict[str, Any], client: TushareClient,
         rt_min_enabled = True
     if rt_min_enabled and symbols:
         rt_min_limit = max(int(market_cfg.get("rt_min_symbol_limit", 12) or 12), 1)
+        rt_min_freq = str(market_cfg.get("rt_min_freq", "1MIN") or "1MIN")
         rt_min_df = _normalize_rt_min_frame(
-            client.rt_min(
-                ts_codes=symbols[:rt_min_limit],
-                freq=str(market_cfg.get("rt_min_freq", "1MIN") or "1MIN"),
+            _load_rt_min_frame(
+                config=config,
+                client=client,
+                symbols=symbols[:rt_min_limit],
+                freq=rt_min_freq,
+                trade_date=trade_date,
             ),
             captured_at=captured_at,
             trade_date=trade_date,
         )
+        if not rt_min_df.empty:
+            rt_min_source_name = "eastmoney.rt_min" if str(market_cfg.get("rt_min_provider", "eastmoney") or "eastmoney").strip().lower() == "eastmoney" else "tushare.rt_min"
+            rt_min_df["source_name"] = rt_min_source_name
     account_truth = _build_account_truth_row(config=config, trade_date=trade_date, captured_at=captured_at, namespace=namespace)
     quote_path = latest_root / "intraday_quote_snapshot.csv"
     list_path = latest_root / "intraday_list_snapshot.csv"

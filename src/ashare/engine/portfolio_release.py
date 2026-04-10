@@ -12,6 +12,7 @@ import pandas as pd
 
 from .config_utils import ensure_dir
 from .execution_bridge_runner import execution_policy
+from .runtime_protocol import artifact_identity
 from .sql_store import (
     append_runtime_jsonl_record,
     ensure_schema,
@@ -112,16 +113,18 @@ def _source_paths(config: Dict[str, Any], summary_path: str = "", target_positio
 
 def _resolve_trade_date(config: Dict[str, Any], now: datetime) -> Dict[str, Any]:
     trade_day_today = is_trading_day(config=config, target_date=now.date())
-    earliest_window = load_execution_windows(config)[0] if load_execution_windows(config) else None
+    execution_windows = load_execution_windows(config)
     allow_same_day = bool(trade_day_today.get("ok", False) and trade_day_today.get("is_trading_day", False))
-    if earliest_window is not None and now.timetz().replace(tzinfo=None) >= earliest_window.start:
-        allow_same_day = False
+    if execution_windows:
+        current_time = now.timetz().replace(tzinfo=None)
+        has_remaining_window_today = any(current_time <= window.end for window in execution_windows)
+        allow_same_day = bool(allow_same_day and has_remaining_window_today)
     if allow_same_day:
         trade_date = now.date().isoformat()
         return {
             "ok": True,
             "trade_date": trade_date,
-            "selection_reason": "same_day_before_execution_window",
+            "selection_reason": "same_day_with_remaining_execution_window",
         }
     next_day = next_trading_day(config=config, base_date=now.date(), include_today=False)
     return {
@@ -286,6 +289,15 @@ def publish_portfolio_release(
             "active_window_at_publish": window.label if window else "",
         },
     }
+    release_doc["artifact_identity"] = artifact_identity(
+        run_id=str(summary.get("run_id", "") or ""),
+        trade_date=trade_date,
+        release_id=release_id,
+        phase="release_manifest",
+        producer="portfolio_release",
+        generated_at=str(release_doc.get("generated_at", "") or ""),
+        schema_version=str(RELEASE_SCHEMA_VERSION),
+    )
     manifest_path.write_text(json.dumps(release_doc, ensure_ascii=False, indent=2), encoding="utf-8")
     _mirror_json_to_sql(config, manifest_path, release_doc)
 
@@ -337,6 +349,7 @@ def publish_portfolio_release(
         "target_positions_path": str(target_copy),
         "profile": str(profile or ""),
         "source_mode": str(source_mode or "research_only"),
+        "artifact_identity": dict(release_doc.get("artifact_identity", {}) or {}),
     }
     path_map["latest_pointer"].write_text(json.dumps(pointer_doc, ensure_ascii=False, indent=2), encoding="utf-8")
     _mirror_json_to_sql(config, path_map["latest_pointer"], pointer_doc)
@@ -372,16 +385,27 @@ def record_release_execution(release_doc: Dict[str, Any], execution_record: Dict
     release_dir = manifest_path.parent
     history_path = release_dir / "execution_history.jsonl"
     latest_path = release_dir / "latest_execution.json"
-    latest_path.write_text(json.dumps(execution_record, ensure_ascii=False, indent=2), encoding="utf-8")
+    enriched_record = dict(execution_record)
+    if not dict(enriched_record.get("artifact_identity", {}) or {}):
+        release_identity = dict(release_doc.get("artifact_identity", {}) or {})
+        enriched_record["artifact_identity"] = artifact_identity(
+            run_id=str(release_identity.get("run_id", "") or release_doc.get("run_id", "") or ""),
+            trade_date=str(release_identity.get("trade_date", "") or release_doc.get("trade_date", "") or ""),
+            release_id=str(release_identity.get("release_id", "") or release_doc.get("release_id", "") or ""),
+            phase="release_execution_record",
+            producer="portfolio_release.record_execution",
+            parent_lineage_token=str(release_identity.get("lineage_token", "") or ""),
+        )
+    latest_path.write_text(json.dumps(enriched_record, ensure_ascii=False, indent=2), encoding="utf-8")
     with history_path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(execution_record, ensure_ascii=False) + "\n")
+        fh.write(json.dumps(enriched_record, ensure_ascii=False) + "\n")
     if isinstance(config, dict):
-        _mirror_json_to_sql(config, latest_path, execution_record)
+        _mirror_json_to_sql(config, latest_path, enriched_record)
         _append_jsonl_to_sql(
             config,
             history_path,
-            execution_record,
-            record_id=str(execution_record.get("timestamp", "") or execution_record.get("generated_at", "") or uuid4().hex),
+            enriched_record,
+            record_id=str(enriched_record.get("timestamp", "") or enriched_record.get("generated_at", "") or uuid4().hex),
         )
     return {
         "history_path": str(history_path),

@@ -1,0 +1,804 @@
+# Codex Update Log
+
+## Indexing Rule
+- Every new entry must have a unique id in the form `CDL-YYYYMMDD-###`.
+- Add the new entry here in reverse chronological order.
+- Update `CODEX_DEV_STABLE.md` first if current truth changed.
+- Update `CODEX_DEV_LOG_INDEX.md` with the new id, summary, and retrieval hints in the same turn.
+
+## Change Log
+
+### CDL-20260410-027
+- Local time: `2026-04-10 19:35:00`
+- Type: `objective-ems-architecture`
+- Scope: `global objective scaffolding, harvest-risk scoring, EMS execution layer`
+- Touched paths:
+  - `src\ashare\engine\global_objective.py`
+  - `src\ashare\engine\harvest_risk.py`
+  - `src\ashare\engine\execution_ems.py`
+  - `src\ashare\engine\intelligent_scheduler.py`
+  - `src\ashare\engine\portfolio_recommendation.py`
+  - `src\ashare\engine\execution_manager.py`
+  - `src\ashare\engine\config_builder.py`
+  - `src\ashare\engine\local_settings.example.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Added a first-class `global_objective.py` layer that normalizes portfolio/execution state into five buckets: `Outcome`, `Evidence`, `Diversity`, `Execution`, and `Adversarial`.
+  - Added `harvest_risk.py` to score crowding / fallback / weak-fact / execution-risk style institutional-harvest danger using existing candidate-pool, market-state, and execution-review signals.
+  - Added `execution_ems.py` as a dedicated EMS policy layer that converts scheduler/objective/risk state into an explicit execution-management posture (`active`, `defensive`, `reduce_only`, `shadow`, `standby`) plus allowed actions and pacing.
+  - Wired `portfolio_recommendation.py` to emit `global_objective_snapshot.json` and `harvest_risk_assessment.json` beside `portfolio_recommendation.json`.
+  - Wired `execution_manager.py` and `intelligent_scheduler.py` to carry `global_objective`, `harvest_risk`, and EMS posture into the dispatch chain and to persist `data\trade_clock\ems\<namespace>\<timestamp>\execution_management_decision.json`.
+  - Added runtime-config/default knobs for `global_objective` and `execution_management` in `config_builder.py` and `local_settings.example.py`.
+- Impact:
+  - The system now has a centralized, machine-readable objective contract and adversarial-risk layer that downstream execution and future research-budget routing can consume without inferring everything from disparate local heuristics.
+  - EMS is now explicitly separated from OMS truth: OMS still records what happened, while EMS records how and why execution should be staged or constrained.
+  - Current behavior is intentionally conservative: the new objective/EMS layers annotate and steer execution, but they do not yet override upstream research cycle counts or route budgets.
+- Validation:
+  - `python -m py_compile src\ashare\engine\global_objective.py src\ashare\engine\harvest_risk.py src\ashare\engine\execution_ems.py src\ashare\engine\intelligent_scheduler.py src\ashare\engine\portfolio_recommendation.py src\ashare\engine\execution_manager.py src\ashare\engine\config_builder.py src\ashare\engine\local_settings.example.py`
+  - Smoke import / scoring probe:
+    - `assess_harvest_risk(...)`
+    - `build_global_objective_snapshot(...)`
+    - `build_execution_management_decision(...)`
+    - Returned `{'harvest_level': 'low', 'overall': 0.6701, 'ems_posture': 'stage'}`
+- Compatibility:
+  - Existing OMS ledger truth, bridge invocation, and release artifacts remain intact.
+  - Existing C# runtime readers are not yet required to consume the new objective / EMS artifacts; they remain additive JSON outputs for now.
+- Rollback:
+  - Revert the three new engine modules plus the portfolio/execution/scheduler wiring and remove the new runtime-config sections.
+
+### CDL-20260410-026
+- Local time: `2026-04-10 18:20:00`
+- Type: `market-data-integration`
+- Scope: `eastmoney intraday minute-bar provider`
+- Touched paths:
+  - `src\ashare\engine\eastmoney_client.py`
+  - `src\ashare\engine\intraday_proxy_store.py`
+  - `src\ashare\engine\config_builder.py`
+  - `src\ashare\engine\local_settings.example.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Added a lightweight `EastmoneyClient` that pulls minute K-line history from the public Eastmoney `push2his` endpoint and normalizes it into the repo's existing intraday-minute frame shape.
+  - Updated `intraday_proxy_store.build_intraday_proxy_snapshot(...)` so the `rt_min` leg now defaults to `market_pipeline.rt_min_provider = eastmoney` and falls back to Tushare `rt_min` only if the Eastmoney pull returns empty.
+  - Added runtime-config / local-settings knobs for `INTRADAY_RT_MIN_PROVIDER`, `INTRADAY_RT_MIN_FALLBACK_PROVIDER`, and the Eastmoney endpoint/retry/timeout settings.
+- Impact:
+  - The system now has a concrete Eastmoney-backed minute-bar history source wired into the existing intraday proxy pipeline without changing the quote/list/tick parts of that pipeline.
+  - New intraday proxy snapshots can accumulate Eastmoney minute bars into the existing `intraday_rt_min_snapshot.csv` artifact path and downstream consumers.
+- Validation:
+  - `python -m py_compile src\ashare\engine\eastmoney_client.py src\ashare\engine\intraday_proxy_store.py src\ashare\engine\config_builder.py`
+  - Live probe: `EastmoneyClient().intraday_bars(ts_codes=['600000.SH'], freq='1MIN', trade_date='2026-04-10')` returned `240` rows with normalized minute-bar fields.
+- Compatibility:
+  - Existing Tushare realtime quote/list/tick paths are unchanged.
+  - If the Eastmoney minute-bar call returns empty, the configured fallback provider still allows the previous Tushare `rt_min` path to run.
+- Rollback:
+  - Remove `eastmoney_client.py` and revert the `rt_min_provider` routing logic plus the new config/default settings.
+
+### CDL-20260410-025
+- Local time: `2026-04-10 17:40:00`
+- Type: `release-gating-fix`
+- Scope: `same-day release trade_date selection`
+- Touched paths:
+  - `src\ashare\engine\portfolio_release.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Changed `_resolve_trade_date(...)` so same-day release publication remains allowed whenever the current trading day still has at least one remaining execution window.
+  - Removed the previous behavior that forced `trade_date=next_trading_day` immediately after the first execution window start, even if an afternoon execution window still existed.
+- Impact:
+  - Manual `release_only` runs during midday now stay on the current trade date and remain eligible for the later precision paper-execution window.
+  - Releases created only after all configured windows have ended still roll forward to the next trading day.
+- Validation:
+  - `python -m py_compile src\ashare\engine\portfolio_release.py`
+  - Probed `_resolve_trade_date(...)` against `hub_config.v6.runtime.quick_test.json`:
+    - `2026-04-10T08:50:00+08:00` -> `trade_date=2026-04-10`
+    - `2026-04-10T11:00:00+08:00` -> `trade_date=2026-04-10`
+    - `2026-04-10T14:54:00+08:00` -> `trade_date=2026-04-13`
+- Compatibility:
+  - No change to forced trade-date overrides or non-trading-day handling.
+  - Same-day publication still requires a valid trading day and at least one remaining configured execution window.
+- Rollback:
+  - Restore the older `_resolve_trade_date(...)` logic that only allowed same-day release publication before the earliest execution-window start.
+
+### CDL-20260410-024
+- Local time: `2026-04-10 15:35:00`
+- Type: `execution-contract-fix`
+- Scope: `oms execution report success contract`
+- Touched paths:
+  - `src\ashare\engine\oms\runtime.py`
+  - `src\ashare\engine\execution_bridge_runner.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Added explicit `ok: true` and `status` fields to OMS `execution_report_*.json` payloads emitted by `run_oms_cycle(...)`.
+  - Hardened the execution-bridge stdout parser so older report-shaped JSON payloads that omitted `ok` / `status` are still interpreted as successful execution artifacts instead of defaulting to `execution_error`.
+- Impact:
+  - `execution_only` no longer misclassifies normal OMS artifact emission as bridge failure just because the child report omitted success flags.
+  - Existing older execution reports remain readable through the updated parser without rewriting historical files.
+- Validation:
+  - `python -m py_compile src\ashare\engine\oms\runtime.py src\ashare\engine\execution_bridge_runner.py`
+  - Parsed `data\live_execution_bridge\execution_report_20260410_145514.json` through `_parse_bridge_stdout(...)` and verified `ok=true`, `status=executed`
+- Compatibility:
+  - Older reports without `ok` / `status` now gain inferred success semantics only when they already contain execution-report structure such as `execution_report_path`, `timestamp`, `oms`, or `portfolio_control`.
+  - New reports always emit the fields directly at the source.
+- Rollback:
+  - Revert the `run_oms_cycle(...)` report-field addition and the compatibility inference in `_parse_bridge_stdout(...)`.
+
+### CDL-20260410-023
+- Local time: `2026-04-10 17:15:00`
+- Type: `ops-clarification`
+- Scope: `execution account semantics and default manual probe mode`
+- Touched paths:
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Recorded the user-facing operational distinction between the two current Gmtrade paper modes:
+    - `simulation` = simulated matching / mock execution
+    - `precision` = precision-matching paper account, still simulated capital rather than live trading
+  - Recorded that future live trading is intended to use QMT / QM rather than the current Gmtrade path.
+  - Clarified that the earlier bounded end-to-end smoke hit the `simulation` account only because the command explicitly overrode `--execution-mode simulation`.
+  - Verified the actual default runtime behavior for `quick_test`:
+    - `src\ashare\configs\hub_config.v6.runtime.quick_test.json` already sets `execution_policy.account_mode = precision`
+    - `execution_bridge_runner.build_execution_runtime_config(...)` maps that default to `account_profiles.precision`
+    - generated runtime config selected `account_id=b551a677-2f1a-11f1-b8c2-00163e022aa6` / `account_alias=precision_stock_01`
+- Impact:
+  - Future manual execution probes should default to the precision paper account unless the user explicitly asks for mock/simulated matching.
+  - The earlier no-order simulation smoke should not be misread as proof that the workspace default is still the deleted `simulation` account.
+- Validation:
+  - inspected `src\ashare\configs\hub_config.v6.runtime.quick_test.json`
+  - inspected `src\ashare\engine\execution_bridge_runner.py`
+  - generated a fresh runtime config through `build_execution_runtime_config(...)` and confirmed `selected_account_mode=precision`
+- Compatibility:
+  - No runtime code or config behavior changed in this step; this entry documents the current intended operating semantics.
+- Rollback:
+  - Revert the doc set changes only if the execution-account semantics or future real-trading platform plan changes.
+
+### CDL-20260410-022
+- Local time: `2026-04-10 15:05:00`
+- Type: `runtime-hardening`
+- Scope: `portfolio recommendation column-contract fixes and bounded end-to-end canonical smoke`
+- Touched paths:
+  - `src\ashare\engine\outer_intelligence.py`
+  - `src\ashare\engine\portfolio\runtime.py`
+  - `src\ashare\engine\portfolio\lifecycle_engine.py`
+  - `src\ashare\engine\portfolio\admission_engine.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Fixed a chain of portfolio recommendation / V2A failures caused by assuming `DataFrame.get(...).fillna(...)` always returns a Series even when the requested column is absent.
+  - Added local Series helpers and required-column defaults so missing optional columns such as `event_fact_backed`, `is_existing_position`, `router_allow_entry`, `tech_allow_entry`, `current_weight_ref`, `previous_state`, and `portfolio_weight` no longer crash outer-intelligence scoring, lifecycle construction, or admission replacement.
+  - Re-ran a bounded end-to-end canonical smoke during trading hours:
+    - `research_only` run `20260410_135207_52b93513` completed V5.1 research but originally died at portfolio recommendation with scalar `.fillna(...)`
+    - repaired portfolio recommendation then regenerated a fresh recommendation (`run_id=20260410_141652_84ddc5ec`)
+    - `release_only` published `release_20260410_145439_6eaa1b2b`
+    - `execution_only --execution-mode simulation --precision-trade on` wrote execution report `data\live_execution_bridge\execution_report_20260410_145514.json`, OMS ledgers, `control_feedback_latest.json`, and `research_meta_feedback_latest.json`
+    - `plan_only` run `20260410_145553_0cb4f257` successfully reloaded that execution meta feedback into `data\event_lake_v6\research\context_pack\research_context_pack.json`
+  - Confirmed a remaining runner-level issue: `main_research_runner._result_exit_code(...)` still returns exit code `2` for the simulation execution path because the returned payload is `ok=false` while the scheduler verdict is `reduce_only`, even though execution artifacts were emitted successfully.
+- Impact:
+  - Portfolio recommendation no longer fails just because upstream candidate frames omit optional columns.
+  - The research -> recommendation -> release -> simulation execution -> feedback -> next planning loop is now operationally verified in a bounded run.
+  - Operators should read execution artifacts, not only process exit code, when simulation execution ends under a `reduce_only` verdict.
+- Validation:
+  - `F:\quant_data\AshareC#\.venv\Scripts\python.exe -m py_compile src\ashare\engine\outer_intelligence.py src\ashare\engine\portfolio\runtime.py src\ashare\engine\portfolio\lifecycle_engine.py src\ashare\engine\portfolio\admission_engine.py`
+  - `F:\quant_data\AshareC#\.venv\Scripts\python.exe launch_canonical.py --skip-preflight --mode release_only --profile quick_test`
+  - `F:\quant_data\AshareC#\.venv\Scripts\python.exe launch_canonical.py --skip-preflight --mode execution_only --profile quick_test --execution-mode simulation --precision-trade on`
+  - `F:\quant_data\AshareC#\.venv\Scripts\python.exe launch_canonical.py --skip-preflight --mode plan_only --profile quick_test`
+- Compatibility:
+  - The fixes preserve existing artifact formats; they only harden missing-column handling inside the portfolio recommendation and V2A path.
+  - `execution_only` exit-code semantics are unchanged and still need separate cleanup if callers want process status to reflect successful simulation artifact emission under `reduce_only`.
+- Rollback:
+  - Revert the four engine files and the doc set to restore the earlier stricter column assumptions and remove the documented end-to-end smoke result.
+
+### CDL-20260410-021
+- Local time: `2026-04-10 13:05:00`
+- Type: `research-protocol`
+- Scope: `v5.1 codegen single-chain intent -> spec contract`
+- Touched paths:
+  - `src\ashare\research_brain\hub\codegen.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Refactored each V5.1 provider attempt so it no longer jumps straight from raw context to final spec.
+  - Each provider attempt now first requests a lightweight structured `intent`, then requests the final executable `spec` using that intent plus the original context.
+  - Kept the runtime/output surface simple: no new sidecar pipeline or parallel creativity branch was introduced; the extra intent stays inside the existing candidate validation record.
+  - Added the selected provider intent into `workspace_validation.json` so higher-level ideas are preserved without changing runtime loaders.
+- Impact:
+  - Higher-tier or more creative models can express research intent before the final schema-compressed step, reducing the chance that creativity is lost purely because the final spec must stay strict.
+  - The system remains a single execution chain (`intent -> spec -> compile -> run`) instead of branching into multiple side channels.
+- Validation:
+  - `F:\quant_data\AshareC#\.venv\Scripts\python.exe -m py_compile src\ashare\research_brain\hub\codegen.py`
+  - smoke workspace `outputs\codegen_smoke_tiered_intent_v1`
+- Compatibility:
+  - Runtime consumers are unchanged; only internal codegen sequencing and validation metadata changed.
+- Rollback:
+  - Revert `codegen.py` and the doc set to return to the earlier direct `context -> spec` flow.
+
+### CDL-20260410-020
+- Local time: `2026-04-10 12:50:00`
+- Type: `schema-hardening`
+- Scope: `v5.1 train-override prompt tightening and canonicalization`
+- Touched paths:
+  - `src\ashare\research_brain\hub\codegen.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Tightened the `train_override_spec` prompt so low-cost models are explicitly told the only legal values and shown concrete valid examples.
+  - Added canonicalization for the most common low-cost-tier drifts before train-override legality checks:
+    - `sample_weight_mode` aliases such as `balanced` / `uniform` -> `none`
+    - ratio-style `feature_cap` values like `0.95` -> context-derived integer caps
+    - pair-style `clip_label_quantile` values like `[0.05, 0.95]` -> single local quantile values
+  - Passed lightweight context through the train-override validation path so normalization can use candidate feature-pool size when needed.
+- Impact:
+  - `train_override` no longer needs OpenAI simply because local/DeepSeek used natural-but-noncanonical names for the same idea.
+  - More cheap-tier outputs are now captured locally instead of escalating for avoidable schema mismatches.
+- Validation:
+  - `F:\quant_data\AshareC#\.venv\Scripts\python.exe -m py_compile src\ashare\research_brain\hub\codegen.py`
+  - direct normalization probe covering `balanced`, `uniform`, ratio `feature_cap`, and pair `clip_label_quantile`
+  - tiered smoke workspace `outputs\codegen_smoke_tiered_injected_v3`
+- Compatibility:
+  - External contract stays `train_override_spec_v1`; only the local legality gate became more tolerant of common low-cost-tier aliases.
+- Rollback:
+  - Revert `codegen.py` and the doc set to restore the stricter pre-canonicalization train-override validation path.
+
+### CDL-20260410-019
+- Local time: `2026-04-10 12:35:00`
+- Type: `llm-hardening`
+- Scope: `local Ollama cooldown guardrails and V5.1 model-spec canonicalization`
+- Touched paths:
+  - `src\ashare\engine\llm_router.py`
+  - `src\ashare\engine\local_ollama_worker.py`
+  - `src\ashare\research_brain\hub\codegen.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Added cached local-Ollama health checks plus short cooldown behavior to the shared local client so repeated timeout/unreachable states return fast `service_unavailable` / `service_cooldown` errors instead of blocking every call site.
+  - Added the same timeout cooldown pattern to the event-extract-specific Ollama worker so announcement/title extraction no longer keeps hammering an unhealthy local daemon.
+  - Expanded V5.1 generated-model validation with canonicalization for common tree-model aliases and xgboost-flavored params before legality checks.
+  - Added family correction so tree-style `hist_gbdt` specs carrying `min_child_weight` can normalize into supported `extra_trees` params instead of failing straight into fallback.
+- Impact:
+  - Local Ollama remains the cheapest tier, but unhealthy local service now degrades quickly and predictably instead of creating long stalls across multiple LLM surfaces.
+  - V5.1 generated-model specs are materially less brittle against realistic LLM outputs such as `n_estimators`, `num_trees`, `eta`, and `min_child_weight`.
+  - OpenAI escalation is now reserved more for real reasoning/schema misses instead of avoidable parameter-alias mismatches.
+- Validation:
+  - `F:\quant_data\AshareC#\.venv\Scripts\python.exe -m py_compile src\ashare\engine\llm_router.py src\ashare\engine\local_ollama_worker.py src\ashare\research_brain\hub\codegen.py`
+  - canonicalization probe for `_validate_model_spec(...)` covering `n_estimators`, `num_trees`, `eta`, and `min_child_weight`
+  - tiered smoke workspace `outputs\codegen_smoke_tiered_injected_v2`
+  - bad-endpoint cooldown probe on `LocalOllamaChatClient` showing first `service_unavailable`, then `service_cooldown`
+- Compatibility:
+  - Existing local-Ollama configs keep working; the new cooldown/healthcheck behavior defaults on and requires no config migration.
+  - V5.1 model-spec output remains the same external contract (`model_spec_v1`), but more incoming aliases now normalize into supported local families/params.
+- Rollback:
+  - Revert the three code files and doc set to remove local cooldown behavior and restore the stricter pre-canonicalization V5.1 model validation.
+
+### CDL-20260410-018
+- Local time: `2026-04-10 11:10:00`
+- Type: `research-routing`
+- Scope: `v5.1 codegen legality gate with tiered local/deepseek/openai escalation`
+- Touched paths:
+  - `src\ashare\research_brain\hub\codegen.py`
+  - `src\ashare\research_brain\configs\hub_config.v5_1.example.json`
+  - `src\ashare\research_brain\configs\hub_config.v5_1.integrated_gpu.json`
+  - `src\ashare\research_brain\configs\hub_config.v5_1.local.json`
+  - `src\ashare\research_brain\configs\hub_config.v5_1.sandbox.json`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Added a tiered provider router inside V5.1 structured codegen so spec generation now escalates by cost/quality tier: `local_ollama` first, then `deepseek`, then `openai`.
+  - Kept legality checks fully local: each raw spec must pass schema validation and deterministic compiled-module validation before it is accepted.
+  - Added provider-tier metadata to repair history so each candidate workspace records which provider/model produced or failed each attempt.
+  - Added `provider_tiers` examples to the V5.1 config files so future runs can control provider order, attempts, models, and timeouts explicitly.
+  - Verified the tier path with a smoke workspace: local Ollama could satisfy a simple feature-spec case, DeepSeek still violated schema on some artifact types, and the OpenAI tier only works when `OPENAI_API_KEY` is actually visible in the active process environment.
+- Impact:
+  - V5.1 codegen now has explicit cost control and escalation behavior instead of implicitly betting on a single provider.
+  - Bad specs are judged by deterministic local rules, reducing the chance that a higher-tier model silently approves an invalid artifact.
+  - Repair diagnostics are more operationally useful because they now show provider-by-provider failure patterns.
+- Validation:
+  - `F:\quant_data\AshareC#\.venv\Scripts\python.exe -m py_compile src\ashare\research_brain\hub\codegen.py`
+  - Smoke workspace `outputs\codegen_smoke_tiered`
+  - Prior OpenAI-only smoke workspace `outputs\codegen_smoke_openai`
+- Compatibility:
+  - Existing single-provider `llm_brain` configs still work; if `provider_tiers` is omitted, the codegen router uses its default local/deepseek/openai sequence.
+  - If `llm_brain.enabled=false`, codegen still bypasses provider calls and uses deterministic fallback specs.
+- Rollback:
+  - Revert `codegen.py` and the V5.1 config files to return to the earlier non-tiered structured-spec flow.
+
+### CDL-20260410-017
+- Local time: `2026-04-10 10:40:00`
+- Type: `research-architecture`
+- Scope: `v5.1 candidate codegen moved from free-form Python to structured specs plus deterministic compilation`
+- Touched paths:
+  - `src\ashare\research_brain\hub\codegen.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Replaced direct LLM generation of `feature_pack.py`, `train_override.py`, and `generated_model.py` with structured JSON specs for each artifact type.
+  - Added local schema validation for feature specs, training-override specs, and generated-model specs, including allowed helper names, feature-name constraints, numeric bounds, and per-family model parameter whitelists.
+  - Added a deterministic local compiler that turns validated specs into the corresponding Python modules so runtime loading contracts remain stable while free-form code emission is eliminated.
+  - Kept bounded repair attempts, but they now repair invalid specs rather than repairing arbitrary broken Python source.
+  - Candidate lab output now includes both spec files and compiled Python files plus per-attempt validation history in `workspace_validation.json`.
+- Impact:
+  - LLM creativity is preserved at the research-design/spec layer while syntax fragility is moved out of the model and into deterministic local compilers.
+  - Candidate codegen failures should now cluster around explicit schema violations or unsupported helpers instead of random truncated Python modules.
+  - Existing runtime loaders can keep consuming Python module paths, so this improves safety without requiring a broader launcher/runtime cutover.
+- Validation:
+  - `F:\quant_data\AshareC#\.venv\Scripts\python.exe -m py_compile src\ashare\research_brain\hub\codegen.py`
+  - `F:\quant_data\AshareC#\.venv\Scripts\python.exe -m py_compile src\ashare\research_brain\hub\training_engine.py`
+  - `F:\quant_data\AshareC#\.venv\Scripts\python.exe -m py_compile src\ashare\research_brain\hub\candidate_factory.py`
+  - `F:\quant_data\AshareC#\.venv\Scripts\python.exe -m py_compile src\ashare\research_brain\hub\model_families.py`
+- Compatibility:
+  - Candidate lab metadata now includes spec-file paths in addition to compiled module paths.
+  - Downstream runtime consumers still use the compiled module paths, so no caller contract changed.
+- Rollback:
+  - Revert `codegen.py` and the doc set to restore direct free-form Python generation.
+
+### CDL-20260410-016
+- Local time: `2026-04-10 10:20:00`
+- Type: `research-runtime`
+- Scope: `v5.1 generated candidate code repair and invalid-code gate`
+- Touched paths:
+  - `src\ashare\research_brain\hub\codegen.py`
+  - `src\ashare\research_brain\hub\training_engine.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Root-caused the `candidate_004_d848cbc8` failure to invalid LLM-generated `feature_pack.py` / `train_override.py` code that was already failing compile validation before training, but was still being passed downstream.
+  - Reworked `CodegenLab` so generated candidate modules now go through bounded self-repair: when compile/import validation fails, the traceback is fed back to the LLM for up to 2 repair attempts instead of only recording the failure.
+  - Added repair-attempt history and exhaustion state into the stored validation payload so candidate workspaces show the original failure plus each repair result.
+  - Added a training-time gate in `training_engine.py` so unresolved invalid generated modules are skipped as `budget_action=skip_invalid_codegen` before training begins, preventing one bad candidate from crashing the full V5.1 batch.
+- Impact:
+  - V5.1 generated-candidate failures now have a direct correction path instead of a passive validation log.
+  - If codegen is still invalid after repair attempts, the affected candidate is isolated and recorded as skipped rather than terminating the batch run.
+  - Workspace diagnostics are richer for future root-cause analysis because the validation payload now includes per-attempt repair history.
+- Validation:
+  - `F:\quant_data\AshareC#\.venv\Scripts\python.exe -m py_compile src\ashare\research_brain\hub\codegen.py`
+  - `F:\quant_data\AshareC#\.venv\Scripts\python.exe -m py_compile src\ashare\research_brain\hub\training_engine.py`
+- Compatibility:
+  - No launcher/profile contract changed.
+  - Existing candidate lab payloads without `repair_attempts` remain readable; only new workspaces include the richer validation metadata.
+- Rollback:
+  - Revert `codegen.py` and `training_engine.py` to restore the previous single-pass validation-only behavior.
+
+### CDL-20260410-015
+- Local time: `2026-04-10 09:55:00`
+- Type: `broker-runtime`
+- Scope: `gmtrade precision bridge import failure on configured Python39 interpreter`
+- Touched paths:
+  - `src\ashare\live_execution_bridge\brokers\gmtrade_sim_broker.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Root-caused the 掘金 / Gmtrade outage to the broker interpreter itself: `C:\Users\Administrator\AppData\Local\Programs\Python\Python39\python.exe` did not have the `gmtrade` package, so `run_gmtrade_health_probe.py` failed at `import gmtrade.api as gm` before any login or account checks.
+  - Installed `gmtrade 3.0.6` into that configured Python 3.9 interpreter and re-ran the health probe successfully.
+  - Hardened `gmtrade_sim_broker.py` so future missing-package incidents raise a clear runtime error instead of failing during module import with a less actionable stack trace.
+  - Refreshed `latest_account_health.json` through `probe_account_health(..., force_refresh=True)` so the broker snapshot is fresh again.
+- Impact:
+  - 掘金 precision health probing is live again on this machine; the bridge now reaches account/balance/order inspection instead of dying before login.
+  - Future failures from a missing `gmtrade` install will point directly at `GMTRADE_PYTHON_EXECUTABLE` package readiness.
+- Validation:
+  - `python -m pip install gmtrade` on `C:\Users\Administrator\AppData\Local\Programs\Python\Python39\python.exe`
+  - `python -m py_compile src\ashare\live_execution_bridge\brokers\gmtrade_sim_broker.py` via workspace `.venv`
+  - `run_gmtrade_health_probe.py --config src\ashare\configs\generated_runtime\gmtrade_runtime_config.autogen_20260410_053111_fd3ea4c4.json` returned `ok: true`
+  - `probe_account_health(..., force_refresh=True)` returned `status: fresh` and wrote `data\trade_clock\latest_account_health.json`
+- Compatibility:
+  - No execution policy or account-routing contract changed.
+  - Machines using a different dedicated Gmtrade interpreter still need `gmtrade` installed in that exact interpreter.
+- Rollback:
+  - Uninstall `gmtrade` from the configured Python39 interpreter and revert `gmtrade_sim_broker.py` only if you intentionally want package readiness to fail fast at import time again.
+
+### CDL-20260410-014
+- Local time: `2026-04-10 06:30:00`
+- Type: `bugfix`
+- Scope: `integrated thesis daily CSV trade_date typing`
+- Touched paths:
+  - `src\ashare\engine\integrated_thesis\runtime.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - `research_only` run `20260410_053248_a8a690f9` failed in `build_integrated_thesis_artifacts` when appending `integrated_thesis_daily.csv`: pandas `sort_values("trade_date")` hit mixed `str` and `int` cells after `read_csv` + new row concat.
+  - Added `_normalize_integrated_thesis_trade_date` (compact `YYYYMMDD`) and apply it to the payload trade_date plus the whole frame before dedupe/sort.
+- Impact:
+  - V6 integrated-thesis stage can complete past market-state handoff without `TypeError: '<' not supported between instances of 'str' and 'int'`.
+- Validation:
+  - `python -m py_compile` on `integrated_thesis\runtime.py` via workspace `.venv`.
+- Compatibility:
+  - `integrated_thesis_daily.csv` trade_date values are normalized to `YYYYMMDD` strings when rewritten; consumers should treat the column as that canonical form.
+- Rollback:
+  - Revert `runtime.py` if downstream tooling required mixed legacy shapes in that CSV.
+
+### CDL-20260410-013
+- Local time: `2026-04-10 06:05:00`
+- Type: `runtime-config`
+- Scope: `PYTHON_EXECUTABLE points at workspace .venv instead of bare Python 3.14 install`
+- Touched paths:
+  - `src\ashare\engine\local_settings.example.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Corrected `PYTHON_EXECUTABLE` to `REPO_ROOT / .venv / Scripts / python.exe` because the system `Python314` directory lacks packages such as `pypdf` while the repo virtualenv is Python 3.14 with `requirements_v6_runtime` installed.
+  - Refreshed the stable known-issue wording to distinguish the venv from the bare interpreter.
+- Impact:
+  - `launch_canonical.py` and registered runs invoke `main_research_runner.py` with the same interpreter that already passed prior research dependency checks.
+- Validation:
+  - `python -c "import requests,pypdf"` on the `.venv` interpreter; `py_compile` not required for a string path change.
+- Compatibility:
+  - Clones without `.venv` must create it and install `src\ashare\requirements_v6_runtime.txt` or override `PYTHON_EXECUTABLE` in a private overlay.
+- Rollback:
+  - Restore the prior absolute `Python314` path only if operators intentionally maintain all deps on the global install.
+
+### CDL-20260410-012
+- Local time: `2026-04-10 05:45:00`
+- Type: `runtime-config`
+- Scope: `research interpreter split and SQLite contention on enriched daily sync`
+- Touched paths:
+  - `src\ashare\engine\local_settings.example.py`
+  - `src\ashare\engine\sql_store.py`
+  - `src\ashare\engine\market_pipeline.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Set `PYTHON_EXECUTABLE` to the operator Python 3.14 path (full research stack) and `GMTRADE_PYTHON_EXECUTABLE` to Python 3.9 in `local_settings.example.py`, with comments separating the main stack from the 掘金/Gmtrade adapter.
+  - Hardened `sqlite_connection` with WAL, `busy_timeout`, and a 60-second connect busy wait.
+  - Refactored `sync_enriched_daily_from_tushare` so all `_upsert_enriched_rows_sql` calls share one SQLite connection per sync instead of opening a new connection per symbol.
+- Impact:
+  - `launch_canonical.py` / registered runs spawn `main_research_runner.py` with the 3.14 interpreter instead of a bare `PATH` python missing `pypdf`.
+  - Concurrent writers to `research_data_v1.sqlite3` should see fewer `database is locked` failures during enriched daily sync.
+- Validation:
+  - `python -m py_compile` on `market_pipeline.py`, `sql_store.py`, and `local_settings.example.py` using Python 3.14.
+- Compatibility:
+  - Operators with a real `gmtrade39` venv should point `GMTRADE_PYTHON_EXECUTABLE` at that `Scripts\python.exe` instead of the system 3.9 exe.
+- Rollback:
+  - Revert the three engine files and remove the new stable known-issue bullets if the interpreter split or SQLite pragmas are undesirable.
+
+### CDL-20260410-011
+- Local time: `2026-04-10 04:22:00`
+- Type: `operational-stability`
+- Scope: `trade clock autostart, hot reload, and research interpreter readiness`
+- Touched paths:
+  - `scripts\start_trade_clock.ps1`
+  - `src\ashare\engine\clock_supervisor.py`
+  - `src\ashare\engine\config_builder.py`
+  - `src\ashare\engine\local_settings.example.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Pointed `start_trade_clock.ps1` at `src\ashare\engine\local_settings.py` instead of deleted repacked `hub_v6` paths so Python resolution works in this workspace layout.
+  - Fixed hot-reload candidate `project_root` in `clock_supervisor` (removed the erroneous doubled `src\ashare` segment) and excluded `__pycache__` from hot-reload fingerprints.
+  - Defaulted generated `trade_clock.runtime_hot_reload.enabled` to off when the setting is absent and set `TRADE_CLOCK_RUNTIME_HOT_RELOAD_ENABLED=False` in `local_settings.example.py` so long-lived clock processes are not continuously recycled by filesystem churn.
+  - On the operator machine, installed `xgboost` and `requirements_v6_runtime.txt` into the PATH `Python39` interpreter after research failed early on missing deps; documented the PATH-fallback risk in the stable snapshot.
+- Impact:
+  - `Start-Process` launched trade-clock supervisors can stay alive across heartbeats instead of exiting after hot-reload/exec loops.
+  - Night-before trading automation is operable without resurrecting removed directory names.
+- Validation:
+  - `python -m py_compile` on touched `clock_supervisor.py` and `config_builder.py`.
+  - Verified a launched trade-clock PID remained running after ~35s and `manual research_only` continued running on the provisioned interpreter.
+- Compatibility:
+  - Operators who relied on hot reload can re-enable it explicitly via `TRADE_CLOCK_RUNTIME_HOT_RELOAD_ENABLED=True` in their private settings overlay.
+- Rollback:
+  - Revert the four code files and restore the prior `TRADE_CLOCK_RUNTIME_HOT_RELOAD_ENABLED` example value if always-on hot reload must return.
+
+### CDL-20260410-010
+- Local time: `2026-04-10 03:56:34`
+- Type: `documentation-security`
+- Scope: `separate secure ops notes for ssh and credential workflow memory`
+- Touched paths:
+  - `CODEX_SECURE_OPS.md`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Added `CODEX_SECURE_OPS.md` as a separate operational-memory file for SSH, Git credential, remote env, and other secret-adjacent workflow notes.
+  - Kept the new file free of raw secret values and limited it to locations, readiness checks, dependency points, and handling rules.
+  - Added explicit pointers from the stable snapshot and index so future sessions do not lose SSH/credential workflow memory again.
+- Impact:
+  - SSH deployment and credential workflow knowledge is no longer squeezed out of the stable runtime snapshot.
+  - Sensitive operational memory now has a dedicated place without encouraging secret sprawl into normal docs.
+  - Future sessions have a clearer boundary between stable runtime truth and secret-adjacent operator setup.
+- Validation:
+  - Targeted file inspection of SSH- and credential-dependent scripts under `scripts\`.
+  - No runtime execution required.
+- Compatibility:
+  - Existing dev-log flow remains unchanged; this is an additive document split.
+- Rollback:
+  - Remove `CODEX_SECURE_OPS.md` and fold its non-sensitive notes back into the stable snapshot if the split is rejected.
+
+### CDL-20260410-009
+- Local time: `2026-04-10 03:47:28`
+- Type: `runtime-state-consumers`
+- Scope: `oms lifecycle ledgers and residual doctor probes unified`
+- Touched paths:
+  - `python_rpc_bridge.py`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.PythonBridge\PythonRpcBridge.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Execution\RuntimeStateQueryService.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Execution\OmsLifecycleService.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Program.cs`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Expanded `/runtime-state` again so it now includes `intent_ledger_latest.csv`, `order_ledger_latest.csv`, and `fill_ledger_latest.csv` metadata with row counts.
+  - Extended `RuntimeStateQueryService` to surface those ledger artifacts as authority snapshots and fall back to local CSV reads only when RPC data is missing.
+  - Changed `OmsLifecycleService` to use the authority snapshot for ledger availability and row counts instead of directly reading ledger CSVs as its primary path.
+  - Removed the remaining `doctor` file-existence probes for clock/safety and made them reflect the aggregated state paths instead.
+- Impact:
+  - OMS lifecycle capture is now aligned with the same RPC-first state authority as status and reconciliation.
+  - The last high-value execution-state consumers no longer depend primarily on ad hoc local CSV scanning.
+  - `doctor`, `status`, `gap-report`, desired-state loading, gap reconciliation, and OMS lifecycle now all share the same runtime-state authority layer.
+- Validation:
+  - `python -m py_compile python_rpc_bridge.py`
+  - `dotnet build csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj`
+  - `dotnet csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\bin\Debug\net8.0\Ashare.RuntimeSkeleton.OperatorCli.dll doctor --workspace-root F:\quant_data\AshareC#`
+  - `dotnet csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\bin\Debug\net8.0\Ashare.RuntimeSkeleton.OperatorCli.dll gap-report --workspace-root F:\quant_data\AshareC#`
+- Compatibility:
+  - Local file fallback still exists for ledger metadata if RPC is unavailable.
+  - No CLI syntax changed.
+- Rollback:
+  - Revert the ledger fields from `/runtime-state`, restore `OmsLifecycleService` local CSV counting, and revert the `doctor` path-status simplification.
+
+### CDL-20260410-008
+- Local time: `2026-04-10 03:40:58`
+- Type: `runtime-state-consumers`
+- Scope: `desired state gap report and oms lifecycle unified on query layer`
+- Touched paths:
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Execution\DesiredStateService.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Execution\GapReportService.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Execution\OmsLifecycleService.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Program.cs`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Added authority-snapshot-aware overloads to `DesiredStateService` and wired it to `RuntimeStateQueryService`.
+  - Changed `GapReportService` to prefer the same runtime authority snapshot for desired state and OMS actual state instead of directly re-reading release/OMS files as its primary path.
+  - Changed `OmsLifecycleService` to consume the same query layer for desired/actual state capture before writing lifecycle artifacts.
+  - Updated the main `OperatorCli` composition root so those services all receive the same `RuntimeStateQueryService`.
+- Impact:
+  - The remaining high-value C# status and reconciliation consumers now share one authority layer.
+  - `status`, `doctor`, `gap-report`, and OMS lifecycle capture are aligned on the same RPC-first runtime truth instead of each maintaining their own file-reading graph.
+  - Direct local files remain fallback, but they are no longer the primary integration boundary for these services.
+- Validation:
+  - `dotnet build csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj`
+  - `dotnet csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\bin\Debug\net8.0\Ashare.RuntimeSkeleton.OperatorCli.dll doctor --workspace-root F:\quant_data\AshareC#`
+  - `dotnet csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\bin\Debug\net8.0\Ashare.RuntimeSkeleton.OperatorCli.dll gap-report --workspace-root F:\quant_data\AshareC#`
+- Compatibility:
+  - Service interfaces remain backward compatible because the original `Read(registry)` / `Build(registry)` entrypoints still exist.
+  - Fallback file behavior remains intact if the runtime-state RPC path is unavailable.
+- Rollback:
+  - Revert the query-service-aware overloads and restore direct release/OMS reads inside the consumer services.
+
+### CDL-20260410-007
+- Local time: `2026-04-10 03:31:52`
+- Type: `runtime-state-transport`
+- Scope: `release clock safety oms moved under runtime-state rpc`
+- Touched paths:
+  - `python_rpc_bridge.py`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.PythonBridge\PythonRpcBridge.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Execution\RuntimeStateQueryService.cs`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Expanded `/runtime-state` so it now returns release pointer, release manifest, target-positions existence, clock state, safety state, OMS summary, actual portfolio state, and the two control-plane JSON artifacts.
+  - Changed `RuntimeStateQueryService` to build `ReleaseContractSnapshot`, `ClockState`, `SafetySnapshot`, and `OmsSnapshot` from RPC payloads when available, instead of using RPC only for the control-plane pair.
+  - Updated transport labeling so status aggregation now reports `rpc_runtime_state+file_fallback` when the full runtime-state RPC bundle is used.
+- Impact:
+  - The C# status/gating path now depends far less on direct `latest_*.json` file reads across release, clock, safety, and OMS surfaces.
+  - One loopback RPC call can supply nearly the whole runtime authority set used by `RuntimeStateAggregator`.
+  - Local file access remains as fallback, so the system is still tolerant of a missing or outdated bridge process.
+- Validation:
+  - `python -m py_compile python_rpc_bridge.py`
+  - `dotnet build csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj`
+  - `dotnet csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\bin\Debug\net8.0\Ashare.RuntimeSkeleton.OperatorCli.dll doctor --workspace-root F:\quant_data\AshareC#`
+  - Manual POST to `http://127.0.0.1:8765/runtime-state` confirmed all of these returned `exists: true`: release pointer, release manifest, target positions, clock state, safety state, OMS summary, actual state, operator runtime context, control-plane snapshot
+- Compatibility:
+  - Existing fallback behavior is preserved if `/runtime-state` is unavailable.
+  - No user-facing CLI syntax changed.
+- Rollback:
+  - Revert the `/runtime-state` payload expansion and restore `RuntimeStateQueryService` to the earlier control-plane-only RPC usage.
+
+### CDL-20260410-006
+- Local time: `2026-04-10 03:16:44`
+- Type: `runtime-state-transport`
+- Scope: `control-plane status query over rpc`
+- Touched paths:
+  - `python_rpc_bridge.py`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.PythonBridge\PythonRpcBridge.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Execution\RuntimeStateQueryService.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Execution\RuntimeStateAggregator.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Contracts\RuntimeStateContracts.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Program.cs`
+  - `csharp_runtime_skeleton\README.md`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Added `/runtime-state` to `python_rpc_bridge.py` so the loopback host can return control-plane runtime JSON artifacts on request.
+  - Extended `PythonRpcBridge` with `ReadRuntimeStateAsync(...)` to start or reuse the bridge host and query that new endpoint.
+  - Changed `RuntimeStateQueryService` to prefer RPC for `operator_runtime_context.json` and `control_plane_snapshot.json`, with local file fallback if RPC is unavailable.
+  - Injected the query service into `RuntimeStateAggregator` and added `state_query_transport` visibility to `status` / `doctor`.
+- Impact:
+  - C# runtime status is no longer file-only for the highest-level control-plane state surfaces.
+  - Operator commands can now show whether status truth came from RPC-assisted control-plane reads or file-only fallback.
+  - This reduces direct coupling between status aggregation and local control-plane file scanning without disturbing lower-level fallback artifacts.
+- Validation:
+  - `python -m py_compile python_rpc_bridge.py`
+  - `dotnet build csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj`
+  - `dotnet csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\bin\Debug\net8.0\Ashare.RuntimeSkeleton.OperatorCli.dll doctor --workspace-root F:\quant_data\AshareC#`
+  - `Invoke-WebRequest http://127.0.0.1:8765/runtime-state` with the two control-plane paths after restarting the bridge host
+- Compatibility:
+  - If the RPC host is absent or stale, the query layer falls back to direct file reads.
+  - Lower-level release / clock / safety / OMS status still uses the existing file-based services.
+- Rollback:
+  - Remove `/runtime-state` from `python_rpc_bridge.py`, revert `PythonRpcBridge.cs`, and restore `RuntimeStateQueryService` to file-only control-plane reads.
+
+### CDL-20260410-005
+- Local time: `2026-04-10 02:58:12`
+- Type: `runtime-state`
+- Scope: `unified query layer for csharp runtime status`
+- Touched paths:
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Execution\RuntimeStateQueryService.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Execution\RuntimeStateAggregator.cs`
+  - `csharp_runtime_skeleton\README.md`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Added `RuntimeStateQueryService` as a centralized query surface for release, clock, safety, OMS, operator runtime context, and control-plane snapshot state.
+  - Changed `RuntimeStateAggregator` to consume that service instead of directly reading scattered runtime files itself.
+  - Added authority resolution helpers so runtime status fields prefer `operator_runtime_context.json`, then `control_plane_snapshot.json`, then lower-level release/clock artifacts.
+- Impact:
+  - Status aggregation no longer hardcodes its own file-reading graph.
+  - Future migration of runtime truth from files to SQLite or RPC can happen behind the query-service boundary instead of touching every caller.
+  - Aggregated status is less tied to `latest_*` style paths because higher-level runtime summaries are now checked first.
+- Validation:
+  - `dotnet build csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj`
+  - `dotnet csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\bin\Debug\net8.0\Ashare.RuntimeSkeleton.OperatorCli.dll status --workspace-root F:\quant_data\AshareC#`
+- Compatibility:
+  - No CLI contract changes.
+  - Existing lower-level file artifacts remain supported as fallback sources.
+- Rollback:
+  - Remove `RuntimeStateQueryService.cs` and restore direct file reads in `RuntimeStateAggregator.cs`.
+
+### CDL-20260410-004
+- Local time: `2026-04-10 02:45:20`
+- Type: `operator-cli`
+- Scope: `workspace-root parsing and rpc smoke verification`
+- Touched paths:
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Program.cs`
+  - `csharp_runtime_skeleton\README.md`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Replaced the Operator CLI assumption that `args[1]` is always `workspaceRoot` with a parsed command context that supports both positional paths and explicit `--workspace-root` / `-w`.
+  - Switched `canonical-run`, `clock-run`, `guarded-run`, `phase-run`, `scheduler-*`, and `clock-host` to consume the parsed command arguments instead of raw positional offsets.
+  - Added `rpc_used` output for direct Python-launch commands so bridge selection is visible during smoke tests.
+- Impact:
+  - Python passthrough flags such as `--preflight-only`, `--profile`, and `--mode` no longer get misread as the workspace root.
+  - RPC bridge verification is now observable from the CLI without inspecting code or attaching a debugger.
+  - Legacy positional workspace-root invocations still remain compatible.
+- Validation:
+  - `dotnet build csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj`
+  - `dotnet run --project csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj -- canonical-run --workspace-root F:\quant_data\AshareC# --preflight-only --profile quick_test --mode execution_only`
+  - Direct Python comparison: `python launch_canonical.py --preflight-only --profile quick_test --mode execution_only`
+  - Smoke result matched on failure semantics; CLI printed `rpc_used: True`, and the non-zero exit was due to Python preflight failure rather than CLI/RPC transport failure.
+- Compatibility:
+  - Existing positional `workspaceRoot` invocations continue to work when the first non-option token is path-like.
+  - Commands that never took a workspace root remain unchanged.
+- Rollback:
+  - Revert `Program.cs` to the old positional parsing and remove the `rpc_used` console output.
+
+### CDL-20260410-003
+- Local time: `2026-04-10 02:31:17`
+- Type: `runtime-transport`
+- Scope: `csharp-python rpc bridge`
+- Touched paths:
+  - `python_rpc_bridge.py`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Contracts\ExecutionContracts.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.PythonBridge\PythonProcessBridge.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.PythonBridge\PythonRpcBridge.cs`
+  - `csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.Execution\ExecutionBackendService.cs`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+  - `README.md`
+  - `csharp_runtime_skeleton\README.md`
+- What changed:
+  - Added a local loopback Python RPC host with `/health` and `/invoke`.
+  - Changed the C# Python bridge to prefer RPC transport and fall back to direct process launch only if RPC is unavailable.
+  - Extended invocation results so structured payloads can be returned directly from RPC instead of being reconstructed only from stdout markers.
+  - Updated execution backend parsing to consume structured RPC payloads first.
+- Impact:
+  - Active C# -> Python calls are less tightly coupled to stdout parsing.
+  - The transport layer is now explicit request/response instead of only process + stdout scraping.
+  - Existing audit files remain intact because this change does not remove artifact writes.
+- Validation:
+  - `python -m py_compile python_rpc_bridge.py`
+  - `dotnet build csharp_runtime_skeleton\src\Ashare.RuntimeSkeleton.OperatorCli\Ashare.RuntimeSkeleton.OperatorCli.csproj`
+  - Manually started `python_rpc_bridge.py` and verified `http://127.0.0.1:8765/health`
+- Compatibility:
+  - Direct process execution remains as fallback, so environments without the RPC host still run.
+  - Existing CLI commands do not need new flags to benefit from the bridge.
+- Rollback:
+  - Remove `python_rpc_bridge.py` and revert `PythonProcessBridge.cs`, `PythonRpcBridge.cs`, `ExecutionContracts.cs`, and `ExecutionBackendService.cs`.
+
+### CDL-20260410-002
+- Local time: `2026-04-10 02:20:42`
+- Type: `code-and-config-governance`
+- Scope: `strategy activation weight governance`
+- Touched paths:
+  - `src\ashare\engine\strategy_activation.py`
+  - `src\ashare\engine\config_builder.py`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+- What changed:
+  - Replaced the hard-coded strategy-activation signal, meta, overlay, and priority weights with named runtime-config sections under `strategy_activation`.
+  - Added normalization helpers so signal and meta weight groups stay valid even if edited later.
+  - Made the LLM overlay bounds and cash/risk multipliers config-backed instead of scattered literals.
+  - Extended the activation summary to write the effective weight set used for the run.
+- Impact:
+  - The highest-power activation constants are now centrally governed and auditable.
+  - Future tuning can happen through config review instead of editing score formulas inline.
+  - Activation output now explains what weights were actually applied.
+- Validation:
+  - `python -m py_compile src\ashare\engine\strategy_activation.py src\ashare\engine\config_builder.py`
+- Compatibility:
+  - Default runtime behavior is preserved because the new config defaults match the previous hard-coded values.
+  - Existing callers still use the same `strategy_activation` section name.
+- Rollback:
+  - Revert the config-builder additions and restore the previous inline weights in `strategy_activation.py`.
+
+### CDL-20260410-001
+- Local time: `2026-04-10 02:00:36`
+- Type: `documentation-restructure`
+- Scope: `dev-log split, stable snapshot rewrite, README reset, doc sync maintenance`
+- Touched paths:
+  - `CODEX_DEV_LOG.md`
+  - `CODEX_DEV_STABLE.md`
+  - `CODEX_DEV_UPDATES.md`
+  - `CODEX_DEV_LOG_INDEX.md`
+  - `AGENTS.md`
+  - `README.md`
+  - `csharp_runtime_skeleton\README.md`
+  - `src\ashare\docs\README.md`
+  - `src\ashare\research_brain\README.md`
+  - `docs\SYSTEM_OPERATOR_DAILY_LOOP_GUIDE_CN.md`
+  - `scripts\sync_codex_dev_log_to_gdrive.py`
+  - `scripts\start_codex_dev_log_sync.ps1`
+- What changed:
+  - Split the oversized single dev log into a landing page, a stable-truth file, and a historical update file.
+  - Rebuilt the stable snapshot from current workspace files instead of inherited historical prose.
+  - Added an explicit indexed-entry rule for future updates.
+  - Rewrote the primary repository README and key sub-readmes to point at the real runtime chain and current workspace boundaries.
+  - Reframed the daily operator guide around the current launcher, trade clock, artifacts, and lightweight validation policy.
+  - Expanded the Google Drive sync helper from one file to the whole dev-log document set.
+- Impact:
+  - Future sessions can read current truth without scanning a monolithic mixed history file.
+  - Historical changes remain searchable and indexed.
+  - README-level guidance now matches current runtime root and launcher flow.
+  - Dev-log mirroring is aligned with the multi-file structure.
+- Validation:
+  - Read current contents of `launch_canonical.py`, `main_research_runner.py`, `trade_clock_service.py`, `SYSTEM_MANIFEST.yaml`, `RUN_PROFILES.yaml`, `ashare_control\control_plane.py`, and the current document set.
+  - Performed targeted file inspection only; no full runtime execution.
+- Compatibility:
+  - `CODEX_DEV_LOG.md` remains as the legacy entry filename so existing instructions do not break.
+  - New canonical reading order is now `CODEX_DEV_LOG.md` -> `CODEX_DEV_STABLE.md` -> `CODEX_DEV_LOG_INDEX.md` -> `CODEX_DEV_UPDATES.md`.
+- Rollback:
+  - Restore the previous `CODEX_DEV_LOG.md` monolithic file and revert the README/doc changes if the split workflow is rejected.

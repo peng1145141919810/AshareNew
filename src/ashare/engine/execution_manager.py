@@ -1,17 +1,22 @@
 from __future__ import annotations
 
-import copy
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
 from .config_utils import ensure_dir, load_config
-from .constraint_brain import evaluate as brain_evaluate, apply_to_config as brain_apply
+from .constraint_brain import apply_to_config as brain_apply
+from .constraint_brain import evaluate as brain_evaluate
 from .execution_llm_review import review_execution_plan
 from .execution_bridge_runner import execution_policy, run_execution_bridge
+from .execution_ems import build_execution_management_decision
+from .global_objective import build_global_objective_snapshot
+from .harvest_risk import assess_harvest_risk
+from .intelligent_scheduler import build_execution_scheduler_verdict
 from .market_state import load_latest_market_state
 from .portfolio_release import load_latest_release, load_release_by_id, record_release_execution
+from .runtime_protocol import artifact_identity, release_artifact_identity
 from .safety_guard import (
     assess_system_safety,
     load_system_safety_state,
@@ -72,7 +77,8 @@ def _load_release(config: Dict[str, Any], release_id: str = "") -> Dict[str, Any
 
 def _load_portfolio_summary(release_doc: Dict[str, Any]) -> Dict[str, Any]:
     artifacts = dict(release_doc.get("artifacts", {}) or {})
-    summary_path = Path(str(artifacts.get("portfolio_summary_path", "") or "")).resolve() if str(artifacts.get("portfolio_summary_path", "") or "").strip() else Path()
+    summary_path_text = str(artifacts.get("portfolio_summary_path", "") or "").strip()
+    summary_path = Path(summary_path_text).resolve() if summary_path_text else Path()
     if not summary_path.exists():
         return {}
     return _load_json(summary_path)
@@ -85,8 +91,6 @@ def _market_state_runtime(release_doc: Dict[str, Any], config: Dict[str, Any]) -
     return dict(load_latest_market_state(config=config, allow_build=False) or {})
 
 
-
-
 def _account_snapshot_from_safety(safety: Dict[str, Any]) -> Dict[str, Any]:
     latest = dict(safety.get("latest_account_health", {}) or {})
     account_state = dict(latest.get("account_state", {}) or {})
@@ -96,6 +100,39 @@ def _account_snapshot_from_safety(safety: Dict[str, Any]) -> Dict[str, Any]:
         "nav": float(account_state.get("nav", latest.get("total_asset", 0.0)) or 0.0),
         "positions_count": int(latest.get("positions_count", len(list(account_state.get("positions", []) or []))) or 0),
     }
+
+
+def _default_llm_review() -> Dict[str, Any]:
+    return {
+        "enabled": False,
+        "applied": False,
+        "review": {
+            "review_summary": "llm_review_skipped",
+            "risk_level": "medium",
+            "turnover_multiplier": 1.0,
+            "blocked_symbols": [],
+            "favored_symbols": [],
+            "reduce_only": False,
+            "risk_flags": [],
+            "decision_basis": [],
+            "uncertainty_flags": ["llm_review_skipped"],
+            "overfit_guard": "scheduler_fallback_to_structured_layers",
+            "candidate_pool_assessment": {},
+        },
+    }
+
+
+def _status_from_scheduler(verdict: Dict[str, Any], *, dispatched: bool, report_ok: bool = True, shadow_run: bool = False) -> str:
+    final_verdict = str(verdict.get("final_verdict", "") or "").strip().lower()
+    if final_verdict == "block":
+        return "blocked"
+    if final_verdict == "defer":
+        return "skipped"
+    if not dispatched:
+        return "skipped"
+    if not report_ok:
+        return "execution_error"
+    return "shadow_executed" if shadow_run else "executed"
 
 
 def _load_intraday_phase_state(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -122,12 +159,14 @@ def assess_execution_gate(
     try:
         release_doc = _load_release(config=config, release_id=release_id)
     except Exception as exc:
-        gate.update({
-            "ok": False,
-            "should_execute": False,
-            "reason": f"release_unavailable: {exc}",
-            "release": None,
-        })
+        gate.update(
+            {
+                "ok": False,
+                "should_execute": False,
+                "reason": f"release_unavailable: {exc}",
+                "release": None,
+            }
+        )
         return gate
 
     trading_day_info = is_trading_day(config=config, target_date=current_dt.date())
@@ -150,19 +189,18 @@ def assess_execution_gate(
         not_expired = bool(expires_at is None or current_dt <= expires_at)
         trade_date_ok = bool(release_trade_date == current_dt.date().isoformat())
         calendar_ok = bool(trading_day_info.get("ok", False) and trading_day_info.get("is_trading_day", False))
-        should_execute = all([
-            precision_trade_enabled,
-            calendar_ok,
-            trade_date_ok,
-            simulation_ready,
-            time_window_ok,
-            valid_after_ok,
-            not_expired,
-        ])
-        if not precision_trade_enabled:
-            reason = "precision_trade_disabled"
-        else:
-            reason = "eligible" if should_execute else "gate_blocked"
+        should_execute = all(
+            [
+                precision_trade_enabled,
+                calendar_ok,
+                trade_date_ok,
+                simulation_ready,
+                time_window_ok,
+                valid_after_ok,
+                not_expired,
+            ]
+        )
+        reason = "precision_trade_disabled" if not precision_trade_enabled else ("eligible" if should_execute else "gate_blocked")
     gate.update(
         {
             "ok": True,
@@ -178,7 +216,9 @@ def assess_execution_gate(
                 "label": window.label,
                 "start": window.start.strftime("%H:%M:%S"),
                 "end": window.end.strftime("%H:%M:%S"),
-            } if window else None,
+            }
+            if window
+            else None,
             "release": {
                 "release_id": str(release_doc.get("release_id", "") or ""),
                 "trade_date": release_trade_date,
@@ -221,58 +261,21 @@ def run_execution_only(
         current_mode="execution_only",
         force_account_refresh=bool(not gate_only),
     )
-    if gate_only:
-        return {
-            "ok": bool(gate.get("ok", False)),
-            "status": "gate_only",
-            "gate": gate,
-            "safety": safety,
-            "execution_namespace": namespace,
-            "allow_unfinished_orders_reconcile": bool(config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile", False)),
-            "shadow_run": shadow_run,
-            "market_state": _market_state_runtime(release_doc=_load_release(config=config, release_id=release_id), config=config) if bool(gate.get("ok", False)) else {},
-        }
-    tactical_continue = str(intent_source or "") == "intraday_tactical" and bool(tac_path)
-    if not bool(gate.get("should_execute", False)) and not shadow_run and not tactical_continue:
-        release_doc = _load_release(config=config, release_id=release_id) if bool(gate.get("ok", False)) else {}
-        return {
-            "ok": bool(gate.get("ok", False)),
-            "status": "skipped",
-            "gate": gate,
-            "safety": safety,
-            "execution_namespace": namespace,
-            "allow_unfinished_orders_reconcile": bool(config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile", False)),
-            "shadow_run": shadow_run,
-            "market_state": _market_state_runtime(release_doc=release_doc, config=config) if release_doc else {},
-        }
-    if not bool(safety.get("allow_execution", False)) and not shadow_run:
-        release_doc = _load_release(config=config, release_id=release_id) if bool(gate.get("ok", False)) else {}
-        return {
-            "ok": False,
-            "status": "safety_blocked",
-            "gate": gate,
-            "safety": safety,
-            "execution_namespace": namespace,
-            "allow_unfinished_orders_reconcile": bool(config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile", False)),
-            "shadow_run": shadow_run,
-            "market_state": _market_state_runtime(release_doc=release_doc, config=config) if release_doc else {},
-        }
-
-    release_doc = _load_release(config=config, release_id=release_id)
+    release_doc = _load_release(config=config, release_id=release_id) if bool(gate.get("ok", False)) else {}
     portfolio_summary = _load_portfolio_summary(release_doc)
     market_state = _market_state_runtime(release_doc=release_doc, config=config)
     account_snapshot = _account_snapshot_from_safety(safety)
-
-    # LLM review — runs before constraint brain so brain can consume its output
-    llm_review = review_execution_plan(
-        config=config,
-        release_doc=release_doc,
-        market_state=market_state,
-        account_state=account_snapshot,
-        safety=safety,
+    llm_review = (
+        review_execution_plan(
+            config=config,
+            release_doc=release_doc,
+            market_state=market_state,
+            account_state=account_snapshot,
+            safety=safety,
+        )
+        if release_doc and not gate_only
+        else _default_llm_review()
     )
-
-    # ConstraintBrain: 收所有信号，一次性决策，产出合并好的 config_overrides
     brain_decision = brain_evaluate(
         config=config,
         safety=safety,
@@ -283,8 +286,56 @@ def run_execution_only(
         clock_snapshot=_load_json(_trade_clock_root(config) / "clock_account_snapshot.json"),
         trade_discipline=dict(portfolio_summary.get("trade_discipline", {}) or {}),
     )
+    harvest_risk = assess_harvest_risk(
+        source_summary=portfolio_summary,
+        market_state=market_state,
+        execution_review=llm_review,
+    )
+    global_objective = build_global_objective_snapshot(
+        config=config,
+        stage="execution_dispatch",
+        source_summary=portfolio_summary,
+        market_state=market_state,
+        harvest_risk=harvest_risk,
+        execution_review=llm_review,
+        account_snapshot=account_snapshot,
+    )
+    scheduler_verdict = build_execution_scheduler_verdict(
+        gate=gate,
+        safety=safety,
+        release_doc=release_doc,
+        market_state=market_state,
+        account_snapshot=account_snapshot,
+        llm_review=llm_review,
+        brain_decision=brain_decision,
+        trade_discipline=dict(portfolio_summary.get("trade_discipline", {}) or {}),
+        operating_brain=dict(release_doc.get("llm_operating_brain", {}) or {}),
+        global_objective=global_objective,
+        harvest_risk=harvest_risk,
+        trigger_label=trigger_label,
+        trigger_source=trigger_source,
+        intent_source=intent_source,
+        execution_namespace=namespace,
+        shadow_run=shadow_run,
+    )
+    ems_decision = build_execution_management_decision(
+        config=config,
+        scheduler_verdict=scheduler_verdict,
+        release_doc=release_doc,
+        portfolio_summary=portfolio_summary,
+        market_state=market_state,
+        account_snapshot=account_snapshot,
+        harvest_risk=harvest_risk,
+        global_objective=global_objective,
+    )
     execution_config = brain_apply(config, brain_decision)
-
+    release_identity = release_artifact_identity(release_doc, producer="execution_manager.release") if release_doc else artifact_identity(
+        run_id="",
+        trade_date=str(gate.get("release_trade_date", "") or dict(gate.get("release", {}) or {}).get("trade_date", "") or ""),
+        release_id=str(dict(gate.get("release", {}) or {}).get("release_id", "") or ""),
+        phase="release_manifest",
+        producer="execution_manager.release_missing",
+    )
     release_context = {
         "release_id": str(release_doc.get("release_id", "") or ""),
         "trade_date": str(release_doc.get("trade_date", "") or ""),
@@ -304,7 +355,17 @@ def run_execution_only(
         "shadow_reason": "shadow_run_bypass" if shadow_run and (not bool(gate.get("should_execute", False)) or not bool(safety.get("allow_execution", False))) else "",
         "intent_source": str(intent_source or "release"),
         "intraday_tactical_orders_path": str(tac_path or ""),
+        "artifact_identity": release_identity,
         "constraint_brain": brain_decision.to_audit_dict(),
+        "scheduler_verdict": scheduler_verdict,
+        "global_objective": global_objective,
+        "harvest_risk": harvest_risk,
+        "execution_management": {
+            "posture": str(ems_decision.get("posture", "") or ""),
+            "pacing": str(ems_decision.get("pacing", "") or ""),
+            "urgency": str(ems_decision.get("urgency", "") or ""),
+            "allowed_actions": list(ems_decision.get("allowed_actions", []) or []),
+        },
         "llm_execution_review": {
             "enabled": bool(llm_review.get("enabled", False)),
             "applied": bool(llm_review.get("applied", False)),
@@ -325,7 +386,35 @@ def run_execution_only(
             release_context["preferred_t_mechanism_source"] = "latest_t_audit"
         release_context["t_audit_top_reject_reason"] = str(latest_t_audit.get("top_reject_reason", "") or "")
         release_context["t_audit_policy_change_suggestions"] = list(latest_t_audit.get("policy_change_suggestions", []) or [])[:3]
-
+    base_payload = {
+        "ok": True,
+        "gate": gate,
+        "safety": safety,
+        "execution_namespace": namespace,
+        "allow_unfinished_orders_reconcile": bool(config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile", False)),
+        "shadow_run": shadow_run,
+        "market_state": market_state,
+        "release": release_context,
+        "artifact_identity": dict(scheduler_verdict.get("artifact_identity", {}) or {}),
+        "scheduler_verdict": scheduler_verdict,
+        "global_objective": global_objective,
+        "harvest_risk": harvest_risk,
+        "execution_management": ems_decision,
+    }
+    if gate_only:
+        payload = dict(base_payload)
+        payload["status"] = "gate_only"
+        return payload
+    ems_root = ensure_dir(_trade_clock_root(config) / "ems" / namespace / datetime.now().strftime("%Y%m%d_%H%M%S"))
+    ems_path = ems_root / "execution_management_decision.json"
+    ems_path.write_text(json.dumps(ems_decision, ensure_ascii=False, indent=2), encoding="utf-8")
+    _mirror_json_to_sql(config, ems_path, ems_decision)
+    release_context["execution_management_path"] = str(ems_path)
+    base_payload["execution_management_path"] = str(ems_path)
+    if not bool(scheduler_verdict.get("should_dispatch", False)):
+        payload = dict(base_payload)
+        payload["status"] = _status_from_scheduler(scheduler_verdict, dispatched=False, shadow_run=shadow_run)
+        return payload
     if tac_path:
         execution_config = dict(execution_config)
         execution_config["intraday_tactical_orders_path"] = tac_path
@@ -368,30 +457,41 @@ def run_execution_only(
             "allow_unfinished_orders_reconcile": bool(config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile", False)),
             "shadow_run": shadow_run,
             "error": str(exc),
+            "artifact_identity": dict(scheduler_verdict.get("artifact_identity", {}) or {}),
+            "scheduler_verdict": scheduler_verdict,
         }
     if not bool(report.get("ok", False)):
-        return {
-            "ok": False,
-            "status": "execution_error",
-            "gate": gate,
-            "safety": safety,
-            "execution_namespace": namespace,
-            "allow_unfinished_orders_reconcile": bool(config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile", False)),
-            "shadow_run": shadow_run,
-            "market_state": market_state,
-            "release": release_context,
-            "error": str(report.get("parse_error", "") or report.get("error", "") or "execution_bridge_report_not_ok"),
-            "execution_report": report,
-        }
+        payload = dict(base_payload)
+        payload.update(
+            {
+                "ok": False,
+                "status": "execution_error",
+                "error": str(report.get("parse_error", "") or report.get("error", "") or "execution_bridge_report_not_ok"),
+                "execution_report": report,
+            }
+        )
+        return payload
     dispatch_root = ensure_dir(_trade_clock_root(config) / "dispatches" / namespace / datetime.now().strftime("%Y%m%d_%H%M%S"))
     dispatch_path = dispatch_root / "execution_dispatch.json"
     dispatch_doc = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "artifact_identity": artifact_identity(
+            run_id=str(release_identity.get("run_id", "") or ""),
+            trade_date=str(release_identity.get("trade_date", "") or ""),
+            release_id=str(release_identity.get("release_id", "") or ""),
+            phase="execution_dispatch",
+            producer="execution_manager.dispatch",
+            parent_lineage_token=str(scheduler_verdict.get("artifact_identity", {}).get("lineage_token", "") or ""),
+        ),
         "trigger_label": str(trigger_label or "manual"),
         "trigger_source": str(trigger_source or "manual"),
         "gate": gate,
         "safety": safety,
         "release": release_context,
+        "scheduler_verdict": scheduler_verdict,
+        "global_objective": global_objective,
+        "harvest_risk": harvest_risk,
+        "execution_management": ems_decision,
         "llm_execution_review": llm_review,
         "execution_report": report,
         "allow_unfinished_orders_reconcile": bool(config.get("execution_policy", {}).get("allow_unfinished_orders_reconcile", False)),
@@ -410,25 +510,29 @@ def run_execution_only(
             release_doc=release_doc,
             execution_record={
                 "timestamp": dispatch_doc["timestamp"],
+                "artifact_identity": dict(dispatch_doc.get("artifact_identity", {}) or {}),
                 "trigger_label": str(trigger_label or "manual"),
                 "trigger_source": str(trigger_source or "manual"),
+                "scheduler_verdict": scheduler_verdict,
+                "global_objective": global_objective,
+                "harvest_risk": harvest_risk,
+                "execution_management": ems_decision,
                 "execution_report_path": str(report.get("execution_report_path", "") or ""),
                 "dispatch_path": str(dispatch_path),
+                "execution_management_path": str(ems_path),
                 "n_orders": int(report.get("n_orders", 0) or 0),
                 "n_fills": int(report.get("n_fills", 0) or 0),
             },
         )
-    return {
-        "ok": True,
-        "status": "shadow_executed" if shadow_run else "executed",
-        "gate": gate,
-        "safety": safety,
-        "execution_namespace": namespace,
-        "shadow_run": shadow_run,
-        "market_state": market_state,
-        "release": release_context,
-        "dispatch_path": str(dispatch_path),
-        "latest_dispatch_path": str(latest_path),
-        "release_execution_paths": history_paths,
-        "execution_report": report,
-    }
+    payload = dict(base_payload)
+    payload.update(
+        {
+            "status": _status_from_scheduler(scheduler_verdict, dispatched=True, report_ok=True, shadow_run=shadow_run),
+            "dispatch_path": str(dispatch_path),
+            "latest_dispatch_path": str(latest_path),
+            "execution_management_path": str(ems_path),
+            "release_execution_paths": history_paths,
+            "execution_report": report,
+        }
+    )
+    return payload
